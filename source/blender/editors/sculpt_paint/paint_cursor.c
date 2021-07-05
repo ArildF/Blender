@@ -1278,66 +1278,6 @@ static void sculpt_multiplane_scrape_preview_draw(const uint gpuattr,
   immEnd();
 }
 
-void sculpt_cloth_simulation_limits_draw(const uint gpuattr,
-                                         const Brush *brush,
-                                         const float obmat[4][4],
-                                         const float location[3],
-                                         const float normal[3],
-                                         const float rds,
-                                         const float line_width,
-                                         const float outline_col[3],
-                                         const float alpha)
-{
-  float cursor_trans[4][4], cursor_rot[4][4];
-  float z_axis[4] = {0.0f, 0.0f, 1.0f, 0.0f};
-  float quat[4];
-  copy_m4_m4(cursor_trans, obmat);
-  translate_m4(cursor_trans, location[0], location[1], location[2]);
-  rotation_between_vecs_to_quat(quat, z_axis, normal);
-  quat_to_mat4(cursor_rot, quat);
-  GPU_matrix_mul(cursor_trans);
-  GPU_matrix_mul(cursor_rot);
-
-  GPU_line_width(line_width);
-  immUniformColor3fvAlpha(outline_col, alpha * 0.5f);
-  imm_draw_circle_dashed_3d(
-      gpuattr, 0, 0, rds + (rds * brush->cloth_sim_limit * brush->cloth_sim_falloff), 320);
-  immUniformColor3fvAlpha(outline_col, alpha * 0.7f);
-  imm_draw_circle_wire_3d(gpuattr, 0, 0, rds + rds * brush->cloth_sim_limit, 80);
-}
-
-static void sculpt_cloth_plane_falloff_preview_draw(const uint gpuattr,
-                                                    SculptSession *ss,
-                                                    const float outline_col[3],
-                                                    float outline_alpha)
-{
-  float local_mat_inv[4][4];
-  invert_m4_m4(local_mat_inv, ss->cache->stroke_local_mat);
-  GPU_matrix_mul(ss->cache->stroke_local_mat);
-
-  const float dist = ss->cache->radius;
-  const float arrow_x = ss->cache->radius * 0.2f;
-  const float arrow_y = ss->cache->radius * 0.1f;
-
-  immUniformColor3fvAlpha(outline_col, outline_alpha * 0.1f);
-  GPU_line_width(2.0f);
-  immBegin(GPU_PRIM_LINES, 2);
-  immVertex3f(gpuattr, dist, 0.0f, 0.0f);
-  immVertex3f(gpuattr, -dist, 0.0f, 0.0f);
-  immEnd();
-
-  immBegin(GPU_PRIM_TRIS, 6);
-  immVertex3f(gpuattr, dist, 0.0f, 0.0f);
-  immVertex3f(gpuattr, dist - arrow_x, arrow_y, 0.0f);
-  immVertex3f(gpuattr, dist - arrow_x, -arrow_y, 0.0f);
-
-  immVertex3f(gpuattr, -dist, 0.0f, 0.0f);
-  immVertex3f(gpuattr, -dist + arrow_x, arrow_y, 0.0f);
-  immVertex3f(gpuattr, -dist + arrow_x, -arrow_y, 0.0f);
-
-  immEnd();
-}
-
 static bool paint_use_2d_cursor(ePaintMode mode)
 {
   if (mode >= PAINT_MODE_TEXTURE_3D) {
@@ -1573,20 +1513,10 @@ static void paint_draw_cursor(bContext *C, int x, int y, void *UNUSED(unused))
           immUniformColor3fvAlpha(outline_col, outline_alpha);
           GPU_line_width(2.0f);
           imm_draw_circle_wire_3d(pos, 0, 0, rds, 80);
-
           GPU_line_width(1.0f);
           immUniformColor3fvAlpha(outline_col, outline_alpha * 0.5f);
           imm_draw_circle_wire_3d(pos, 0, 0, rds * clamp_f(brush->alpha, 0.0f, 1.0f), 80);
           GPU_matrix_pop();
-
-          /* Cloth brush simulation areas */
-          if (brush->sculpt_tool == SCULPT_TOOL_CLOTH) {
-            GPU_matrix_push();
-            const float white[3] = {1.0f, 1.0f, 1.0f};
-            sculpt_cloth_simulation_limits_draw(
-                pos, brush, vc.obact->obmat, gi.location, gi.normal, rds, 1.0f, white, 0.25f);
-            GPU_matrix_pop();
-          }
 
           /* Update and draw dynamic mesh preview lines */
           GPU_matrix_push();
@@ -1674,48 +1604,6 @@ static void paint_draw_cursor(bContext *C, int x, int y, void *UNUSED(unused))
             GPU_matrix_mul(vc.obact->obmat);
             sculpt_multiplane_scrape_preview_draw(pos, ss, outline_col, outline_alpha);
             GPU_matrix_pop();
-            GPU_matrix_pop_projection();
-          }
-
-          if (brush->sculpt_tool == SCULPT_TOOL_CLOTH && !ss->cache->first_time) {
-            GPU_matrix_push_projection();
-            ED_view3d_draw_setup_view(CTX_wm_window(C),
-                                      CTX_data_depsgraph_pointer(C),
-                                      CTX_data_scene(C),
-                                      ar,
-                                      CTX_wm_view3d(C),
-                                      NULL,
-                                      NULL,
-                                      NULL);
-
-            /* Plane falloff preview */
-            if (brush->cloth_force_falloff_type == BRUSH_CLOTH_FORCE_FALLOFF_PLANE) {
-              GPU_matrix_push();
-              GPU_matrix_mul(vc.obact->obmat);
-              sculpt_cloth_plane_falloff_preview_draw(pos, ss, outline_col, outline_alpha);
-              GPU_matrix_pop();
-            }
-
-            /* Display the simulation limits if sculpting outside them. */
-            /* This does not makes much sense of plane fallof as the fallof is infinte. */
-            if (brush->cloth_force_falloff_type == BRUSH_CLOTH_FORCE_FALLOFF_RADIAL) {
-              if (len_v3v3(ss->cache->true_location, ss->cache->true_initial_location) >
-                  ss->cache->radius * (1.0f + brush->cloth_sim_limit)) {
-                const float red[3] = {1.0f, 0.2f, 0.2f};
-                GPU_matrix_push();
-                sculpt_cloth_simulation_limits_draw(pos,
-                                                    brush,
-                                                    vc.obact->obmat,
-                                                    ss->cache->true_initial_location,
-                                                    ss->cache->true_initial_normal,
-                                                    ss->cache->radius,
-                                                    2.0f,
-                                                    red,
-                                                    0.8f);
-                GPU_matrix_pop();
-              }
-            }
-
             GPU_matrix_pop_projection();
           }
 

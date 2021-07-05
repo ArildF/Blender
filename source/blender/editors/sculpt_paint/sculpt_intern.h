@@ -228,8 +228,6 @@ typedef struct SculptThreadedTaskData {
 
   float transform_mats[8][4][4];
 
-  float cloth_time_step;
-
   float dirty_mask_min;
   float dirty_mask_max;
   bool dirty_mask_dirty_only;
@@ -391,13 +389,6 @@ typedef struct StrokeCache {
 
   /* Pose brush */
   struct SculptPoseIKChain *pose_ik_chain;
-
-  /* Cloth brush */
-  struct SculptClothSimulation *cloth_sim;
-  float initial_location[3];
-  float true_initial_location[3];
-  float initial_normal[3];
-  float true_initial_normal[3];
 
   float vertex_rotation; /* amount to rotate the vertices when using rotate brush */
   struct Dial *dial;

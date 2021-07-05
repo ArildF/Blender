@@ -311,28 +311,9 @@ static void imm_draw_circle_3D(
   immEnd();
 }
 
-static void imm_draw_circle_dashed_3D(
-    GPUPrimType prim_type, uint pos, float x, float y, float rad, int nsegments)
-{
-  const int tot_segments = nsegments / 2.0f;
-  immBegin(prim_type, tot_segments);
-  for (int i = 0; i < nsegments; i++) {
-    if (i % 2 == 0) {
-      float angle = (float)(2 * M_PI) * ((float)i / (float)nsegments);
-      immVertex3f(pos, x + rad * cosf(angle), y + rad * sinf(angle), 0.0f);
-    }
-  }
-  immEnd();
-}
-
 void imm_draw_circle_wire_3d(uint pos, float x, float y, float rad, int nsegments)
 {
   imm_draw_circle_3D(GPU_PRIM_LINE_LOOP, pos, x, y, rad, nsegments);
-}
-
-void imm_draw_circle_dashed_3d(uint pos, float x, float y, float rad, int nsegments)
-{
-  imm_draw_circle_dashed_3D(GPU_PRIM_LINES, pos, x, y, rad, nsegments);
 }
 
 void imm_draw_circle_fill_3d(uint pos, float x, float y, float rad, int nsegments)
