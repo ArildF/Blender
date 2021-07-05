@@ -18,8 +18,7 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_SCENE_DEFAULTS_H__
-#define __DNA_SCENE_DEFAULTS_H__
+#pragma once
 
 #include "DNA_view3d_defaults.h"
 
@@ -85,7 +84,6 @@
  \
     .im_format = _DNA_DEFAULT_ImageFormatData, \
  \
-    .displaymode = R_OUTPUT_WINDOW, \
     .framapto = 100, \
     .images = 100, \
     .framelen = 1.0, \
@@ -130,6 +128,7 @@
  \
     .simplify_subsurf = 6, \
     .simplify_particles = 1.0f, \
+    .simplify_volumes = 1.0f, \
  \
     .border.xmin = 0.0f, \
     .border.ymin = 0.0f, \
@@ -209,8 +208,11 @@
     .gtao_factor = 1.0f, \
     .gtao_quality = 0.25f, \
  \
+    .bokeh_overblur = 5.0f, \
     .bokeh_max_size = 100.0f, \
     .bokeh_threshold = 1.0f, \
+    .bokeh_neighbor_max = 10.0f, \
+    .bokeh_denoise_fac = 0.75f, \
  \
     .bloom_color = {1.0f, 1.0f, 1.0f}, \
     .bloom_threshold = 0.8f, \
@@ -219,13 +221,15 @@
     .bloom_radius = 6.5f, \
     .bloom_clamp = 0.0f, \
  \
-    .motion_blur_samples = 8, \
     .motion_blur_shutter = 0.5f, \
+    .motion_blur_depth_scale = 100.0f, \
+    .motion_blur_max = 32, \
+    .motion_blur_steps = 1, \
  \
     .shadow_cube_size = 512, \
     .shadow_cascade_size = 1024, \
  \
-    .light_cache = NULL, \
+    .light_cache_data = NULL, \
     .light_threshold = 0.01f, \
  \
     .overscan = 3.0f, \
@@ -280,6 +284,15 @@
     .count = 10, \
   }
 
+#define _DNA_DEFAULTS_UnifiedPaintSettings \
+  { \
+    .size = 50, \
+    .unprojected_radius = 0.29, \
+    .alpha = 0.5f, \
+    .weight = 0.5f, \
+    .flag = UNIFIED_PAINT_SIZE | UNIFIED_PAINT_ALPHA, \
+  }
+
 #define _DNA_DEFAULTS_ParticleEditSettings \
   { \
     .flag = PE_KEEP_LENGTHS | PE_LOCK_FIRST | PE_DEFLECT_EMITTER | PE_AUTO_VELOCITY, \
@@ -326,7 +339,7 @@
     .doublimit = 0.001, \
     .vgroup_weight = 1.0f, \
     .uvcalc_margin = 0.001f, \
-    .uvcalc_flag = UVCALC_TRANSFORM_CORRECT, \
+    .uvcalc_flag = UVCALC_TRANSFORM_CORRECT_SLIDE, \
     .unwrapper = 1, \
     .select_thresh = 0.01f, \
  \
@@ -341,6 +354,8 @@
     .snap_transform_mode_flag = SCE_SNAP_TRANSFORM_MODE_TRANSLATE, \
  \
     .curve_paint_settings = _DNA_DEFAULTS_CurvePaintSettings, \
+ \
+    .unified_paint_settings = _DNA_DEFAULTS_UnifiedPaintSettings, \
  \
     .statvis = _DNA_DEFAULTS_MeshStatVis, \
  \
@@ -364,5 +379,3 @@
   }
 
 /* clang-format off */
-
-#endif  /* __DNA_SCENE_DEFAULTS_H__ */

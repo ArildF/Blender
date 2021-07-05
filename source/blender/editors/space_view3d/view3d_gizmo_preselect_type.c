@@ -31,8 +31,8 @@
 #include "DNA_mesh_types.h"
 
 #include "BKE_context.h"
-#include "BKE_layer.h"
 #include "BKE_editmesh.h"
+#include "BKE_layer.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
@@ -45,14 +45,13 @@
 
 #include "bmesh.h"
 
-#include "ED_screen.h"
-#include "ED_mesh.h"
-#include "ED_view3d.h"
 #include "ED_gizmo_library.h"
+#include "ED_mesh.h"
+#include "ED_screen.h"
+#include "ED_view3d.h"
 
 /* -------------------------------------------------------------------- */
 /** \name Mesh Element (Vert/Edge/Face) Pre-Select Gizmo API
- *
  * \{ */
 
 typedef struct MeshElemGizmo3D {
@@ -155,10 +154,10 @@ static int gizmo_preselect_elem_test_select(bContext *C, wmGizmo *gz, const int 
        * Only pre-select a vertex when the cursor is really close to it. */
       if (eve_test) {
         BMVert *vert = (BMVert *)eve_test;
-        float vert_p_co[3], vert_co[3];
-        float mval_f[2] = {UNPACK2(vc.mval)};
+        float vert_p_co[2], vert_co[3];
+        const float mval_f[2] = {UNPACK2(vc.mval)};
         mul_v3_m4v3(vert_co, gz_ele->bases[base_index_vert]->object->obmat, vert->co);
-        ED_view3d_project(vc.ar, vert_co, vert_p_co);
+        ED_view3d_project_v2(vc.region, vert_co, vert_p_co);
         float len = len_v2v2(vert_p_co, mval_f);
         if (len < 35) {
           best.ele = (BMElem *)eve_test;
@@ -226,8 +225,8 @@ static int gizmo_preselect_elem_test_select(bContext *C, wmGizmo *gz, const int 
   RNA_int_set(gz->ptr, "face_index", gz_ele->face_index);
 
   if (best.ele) {
-    ARegion *ar = CTX_wm_region(C);
-    ED_region_tag_redraw(ar);
+    ARegion *region = CTX_wm_region(C);
+    ED_region_tag_redraw_editor_overlays(region);
   }
 
   // return best.eed ? 0 : -1;
@@ -282,7 +281,6 @@ static void GIZMO_GT_mesh_preselect_elem_3d(wmGizmoType *gzt)
 
 /* -------------------------------------------------------------------- */
 /** \name Mesh Edge-Ring Pre-Select Gizmo API
- *
  * \{ */
 
 typedef struct MeshEdgeRingGizmo3D {
@@ -364,16 +362,19 @@ static int gizmo_preselect_edgering_test_select(bContext *C, wmGizmo *gz, const 
   }
   else {
     if (best.eed) {
-      const float(*coords)[3] = NULL;
-      {
-        Object *ob = gz_ring->bases[gz_ring->base_index]->object;
-        Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
-        Mesh *me_eval = (Mesh *)DEG_get_evaluated_id(depsgraph, ob->data);
-        if (me_eval->runtime.edit_data) {
-          coords = me_eval->runtime.edit_data->vertexCos;
-        }
-      }
+      Object *ob = gz_ring->bases[gz_ring->base_index]->object;
+      Scene *scene_eval = (Scene *)DEG_get_evaluated_id(vc.depsgraph, &vc.scene->id);
+      Object *ob_eval = DEG_get_evaluated_object(vc.depsgraph, ob);
+      BMEditMesh *em_eval = BKE_editmesh_from_object(ob_eval);
+      /* Re-allocate coords each update isn't ideal, however we can't be sure
+       * the mesh hasn't been edited since last update. */
+      bool is_alloc = false;
+      const float(*coords)[3] = BKE_editmesh_vert_coords_when_deformed(
+          vc.depsgraph, em_eval, scene_eval, ob_eval, NULL, &is_alloc);
       EDBM_preselect_edgering_update_from_edge(gz_ring->psel, bm, best.eed, 1, coords);
+      if (is_alloc) {
+        MEM_freeN((void *)coords);
+      }
     }
     else {
       EDBM_preselect_edgering_clear(gz_ring->psel);
@@ -382,8 +383,8 @@ static int gizmo_preselect_edgering_test_select(bContext *C, wmGizmo *gz, const 
     RNA_int_set(gz->ptr, "object_index", gz_ring->base_index);
     RNA_int_set(gz->ptr, "edge_index", gz_ring->edge_index);
 
-    ARegion *ar = CTX_wm_region(C);
-    ED_region_tag_redraw(ar);
+    ARegion *region = CTX_wm_region(C);
+    ED_region_tag_redraw_editor_overlays(region);
   }
 
   // return best.eed ? 0 : -1;
@@ -436,7 +437,6 @@ static void GIZMO_GT_mesh_preselect_edgering_3d(wmGizmoType *gzt)
 
 /* -------------------------------------------------------------------- */
 /** \name Gizmo API
- *
  * \{ */
 
 void ED_gizmotypes_preselect_3d(void)
@@ -450,7 +450,7 @@ void ED_gizmotypes_preselect_3d(void)
 /* -------------------------------------------------------------------- */
 /** \name Gizmo Accessors
  *
- * This avoids each user of the gizmo needing to write their own look-ups to access
+ * This avoids each user of the gizmo needing to write their own lookups to access
  * the information from this gizmo.
  * \{ */
 

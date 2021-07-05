@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GRIDHELPERS_H__
-#define __GRIDHELPERS_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -39,7 +38,7 @@ namespace Freestyle {
 
 namespace GridHelpers {
 
-/*! Computes the distance from a point P to a segment AB */
+/** Computes the distance from a point P to a segment AB */
 template<class T> T closestPointToSegment(const T &P, const T &A, const T &B, real &distance)
 {
   T AB, AP, BP;
@@ -212,5 +211,3 @@ inline void expandProscenium(real proscenium[4], const Vec3r &point)
 };  // namespace GridHelpers
 
 } /* namespace Freestyle */
-
-#endif  // __GRIDHELPERS_H__

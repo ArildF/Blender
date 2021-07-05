@@ -35,7 +35,7 @@ GHOST_DisplayManagerWin32::GHOST_DisplayManagerWin32(void)
 {
 }
 
-GHOST_TSuccess GHOST_DisplayManagerWin32::getNumDisplays(GHOST_TUns8 &numDisplays) const
+GHOST_TSuccess GHOST_DisplayManagerWin32::getNumDisplays(uint8_t &numDisplays) const
 {
   numDisplays = ::GetSystemMetrics(SM_CMONITORS);
   return numDisplays > 0 ? GHOST_kSuccess : GHOST_kFailure;
@@ -54,8 +54,8 @@ static BOOL get_dd(DWORD d, DISPLAY_DEVICE *dd)
  * the information that was cached the last time the function was called with iModeNum
  * set to zero.
  */
-GHOST_TSuccess GHOST_DisplayManagerWin32::getNumDisplaySettings(GHOST_TUns8 display,
-                                                                GHOST_TInt32 &numSettings) const
+GHOST_TSuccess GHOST_DisplayManagerWin32::getNumDisplaySettings(uint8_t display,
+                                                                int32_t &numSettings) const
 {
   DISPLAY_DEVICE display_device;
   if (!get_dd(display, &display_device))
@@ -69,8 +69,8 @@ GHOST_TSuccess GHOST_DisplayManagerWin32::getNumDisplaySettings(GHOST_TUns8 disp
   return GHOST_kSuccess;
 }
 
-GHOST_TSuccess GHOST_DisplayManagerWin32::getDisplaySetting(GHOST_TUns8 display,
-                                                            GHOST_TInt32 index,
+GHOST_TSuccess GHOST_DisplayManagerWin32::getDisplaySetting(uint8_t display,
+                                                            int32_t index,
                                                             GHOST_DisplaySetting &setting) const
 {
   DISPLAY_DEVICE display_device;
@@ -80,13 +80,13 @@ GHOST_TSuccess GHOST_DisplayManagerWin32::getDisplaySetting(GHOST_TUns8 display,
   GHOST_TSuccess success;
   DEVMODE dm;
   if (::EnumDisplaySettings(display_device.DeviceName, index, &dm)) {
-#ifdef GHOST_DEBUG
+#ifdef WITH_GHOST_DEBUG
     printf("display mode: width=%d, height=%d, bpp=%d, frequency=%d\n",
            dm.dmPelsWidth,
            dm.dmPelsHeight,
            dm.dmBitsPerPel,
            dm.dmDisplayFrequency);
-#endif  // GHOST_DEBUG
+#endif  // WITH_GHOST_DEBUG
     setting.xPixels = dm.dmPelsWidth;
     setting.yPixels = dm.dmPelsHeight;
     setting.bpp = dm.dmBitsPerPel;
@@ -111,13 +111,13 @@ GHOST_TSuccess GHOST_DisplayManagerWin32::getDisplaySetting(GHOST_TUns8 display,
 }
 
 GHOST_TSuccess GHOST_DisplayManagerWin32::getCurrentDisplaySetting(
-    GHOST_TUns8 display, GHOST_DisplaySetting &setting) const
+    uint8_t display, GHOST_DisplaySetting &setting) const
 {
   return getDisplaySetting(display, ENUM_CURRENT_SETTINGS, setting);
 }
 
 GHOST_TSuccess GHOST_DisplayManagerWin32::setCurrentDisplaySetting(
-    GHOST_TUns8 display, const GHOST_DisplaySetting &setting)
+    uint8_t display, const GHOST_DisplaySetting &setting)
 {
   DISPLAY_DEVICE display_device;
   if (!get_dd(display, &display_device))
@@ -142,16 +142,16 @@ GHOST_TSuccess GHOST_DisplayManagerWin32::setCurrentDisplaySetting(
    * dm.dmSize = sizeof(DEVMODE);
    * dm.dmDriverExtra = 0;
    */
-#ifdef GHOST_DEBUG
+#ifdef WITH_GHOST_DEBUG
   printf("display change: Requested settings:\n");
   printf("  dmBitsPerPel=%d\n", dm.dmBitsPerPel);
   printf("  dmPelsWidth=%d\n", dm.dmPelsWidth);
   printf("  dmPelsHeight=%d\n", dm.dmPelsHeight);
   printf("  dmDisplayFrequency=%d\n", dm.dmDisplayFrequency);
-#endif  // GHOST_DEBUG
+#endif  // WITH_GHOST_DEBUG
 
   LONG status = ::ChangeDisplaySettings(&dm, CDS_FULLSCREEN);
-#ifdef GHOST_DEBUG
+#ifdef WITH_GHOST_DEBUG
   switch (status) {
     case DISP_CHANGE_SUCCESSFUL:
       printf("display change: The settings change was successful.\n");
@@ -182,6 +182,6 @@ GHOST_TSuccess GHOST_DisplayManagerWin32::setCurrentDisplaySetting(
       printf("display change: Return value invalid\n");
       break;
   }
-#endif  // GHOST_DEBUG
+#endif  // WITH_GHOST_DEBUG
   return status == DISP_CHANGE_SUCCESSFUL ? GHOST_kSuccess : GHOST_kFailure;
 }

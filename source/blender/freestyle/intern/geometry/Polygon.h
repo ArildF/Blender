@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __POLYGON_H__
-#define __POLYGON_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -206,7 +205,7 @@ class Polygon3r : public Polygon<Vec3r> {
     return _normal;
   }
 
-  /*! Check whether the Polygon intersects with the ray or not */
+  /** Check whether the Polygon intersects with the ray or not */
   inline bool rayIntersect(const Vec3r &orig,
                            const Vec3r &dir,
                            real &t,
@@ -230,5 +229,3 @@ class Polygon3r : public Polygon<Vec3r> {
 }  // end of namespace Geometry
 
 } /* namespace Freestyle */
-
-#endif  // __POLYGON_H__

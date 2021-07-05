@@ -22,6 +22,7 @@
 
 #include "DRW_render.h"
 
+#include "BLI_listbase.h"
 #include "BLI_string.h"
 
 #include "DNA_armature_types.h"
@@ -48,11 +49,11 @@ void OVERLAY_motion_path_cache_init(OVERLAY_Data *vedata)
 
   sh = OVERLAY_shader_motion_path_line();
   pd->motion_path_lines_grp = grp = DRW_shgroup_create(sh, psl->motion_paths_ps);
-  DRW_shgroup_uniform_block_persistent(grp, "globalsBlock", G_draw.block_ubo);
+  DRW_shgroup_uniform_block(grp, "globalsBlock", G_draw.block_ubo);
 
   sh = OVERLAY_shader_motion_path_vert();
   pd->motion_path_points_grp = grp = DRW_shgroup_create(sh, psl->motion_paths_ps);
-  DRW_shgroup_uniform_block_persistent(grp, "globalsBlock", G_draw.block_ubo);
+  DRW_shgroup_uniform_block(grp, "globalsBlock", G_draw.block_ubo);
 }
 
 /* Just convert the CPU cache to GPU cache. */
@@ -67,7 +68,9 @@ static GPUVertBuf *mpath_vbo_get(bMotionPath *mpath)
     mpath->points_vbo = GPU_vertbuf_create_with_format(&format);
     GPU_vertbuf_data_alloc(mpath->points_vbo, mpath->length);
     /* meh... a useless memcpy. */
-    memcpy(mpath->points_vbo->data, mpath->points, sizeof(bMotionPathVert) * mpath->length);
+    memcpy(GPU_vertbuf_get_data(mpath->points_vbo),
+           mpath->points,
+           sizeof(bMotionPathVert) * mpath->length);
   }
   return mpath->points_vbo;
 }
@@ -148,32 +151,33 @@ static void motion_path_cache(OVERLAY_Data *vedata,
 
   /* Draw curve-line of path. */
   if (show_lines) {
-    int motion_path_settings[4] = {cfra, sfra, efra, mpath->start_frame};
+    const int motion_path_settings[4] = {cfra, sfra, efra, mpath->start_frame};
     DRWShadingGroup *grp = DRW_shgroup_create_sub(pd->motion_path_lines_grp);
     DRW_shgroup_uniform_ivec4_copy(grp, "mpathLineSettings", motion_path_settings);
     DRW_shgroup_uniform_int_copy(grp, "lineThickness", mpath->line_thickness);
     DRW_shgroup_uniform_bool_copy(grp, "selected", selected);
     DRW_shgroup_uniform_vec3_copy(grp, "customColor", color);
     /* Only draw the required range. */
-    DRW_shgroup_call_range(grp, mpath_batch_line_get(mpath), start_index, len);
+    DRW_shgroup_call_range(grp, NULL, mpath_batch_line_get(mpath), start_index, len);
   }
 
   /* Draw points. */
   {
     int pt_size = max_ii(mpath->line_thickness - 1, 1);
-    int motion_path_settings[4] = {pt_size, cfra, mpath->start_frame, stepsize};
+    const int motion_path_settings[4] = {pt_size, cfra, mpath->start_frame, stepsize};
     DRWShadingGroup *grp = DRW_shgroup_create_sub(pd->motion_path_points_grp);
     DRW_shgroup_uniform_ivec4_copy(grp, "mpathPointSettings", motion_path_settings);
     DRW_shgroup_uniform_bool_copy(grp, "showKeyFrames", show_keyframes);
     DRW_shgroup_uniform_vec3_copy(grp, "customColor", color);
     /* Only draw the required range. */
-    DRW_shgroup_call_range(grp, mpath_batch_points_get(mpath), start_index, len);
+    DRW_shgroup_call_range(grp, NULL, mpath_batch_points_get(mpath), start_index, len);
   }
 
   /* Draw frame numbers at each frame-step value. */
   if (show_frame_no || (show_keyframes_no && show_keyframes)) {
     int i;
     uchar col[4], col_kf[4];
+    /* Color Management: Exception here as texts are drawn in sRGB space directly. */
     UI_GetThemeColor3ubv(TH_TEXT_HI, col);
     UI_GetThemeColor3ubv(TH_VERTEX_SELECT, col_kf);
     col[3] = col_kf[3] = 255;
@@ -186,7 +190,7 @@ static void motion_path_cache(OVERLAY_Data *vedata,
       bool is_keyframe = (mpv->flag & MOTIONPATH_VERT_KEY) != 0;
 
       if ((show_keyframes && show_keyframes_no && is_keyframe) || (show_frame_no && (i == 0))) {
-        numstr_len = BLI_snprintf(numstr, sizeof(numstr), " %d", frame);
+        numstr_len = BLI_snprintf_rlen(numstr, sizeof(numstr), " %d", frame);
         DRW_text_cache_add(
             dt, mpv->co, numstr, numstr_len, 0, 0, txt_flag, (is_keyframe) ? col_kf : col);
       }
@@ -196,7 +200,7 @@ static void motion_path_cache(OVERLAY_Data *vedata,
         /* Only draw frame number if several consecutive highlighted points
          * don't occur on same point. */
         if ((equals_v3v3(mpv->co, mpvP->co) == 0) || (equals_v3v3(mpv->co, mpvN->co) == 0)) {
-          numstr_len = BLI_snprintf(numstr, sizeof(numstr), " %d", frame);
+          numstr_len = BLI_snprintf_rlen(numstr, sizeof(numstr), " %d", frame);
           DRW_text_cache_add(dt, mpv->co, numstr, numstr_len, 0, 0, txt_flag, col);
         }
       }
@@ -210,7 +214,7 @@ void OVERLAY_motion_path_cache_populate(OVERLAY_Data *vedata, Object *ob)
 
   if (ob->type == OB_ARMATURE) {
     if (OVERLAY_armature_is_pose_mode(ob, draw_ctx)) {
-      for (bPoseChannel *pchan = ob->pose->chanbase.first; pchan; pchan = pchan->next) {
+      LISTBASE_FOREACH (bPoseChannel *, pchan, &ob->pose->chanbase) {
         if (pchan->mpath) {
           motion_path_cache(vedata, ob, pchan, &ob->pose->avs, pchan->mpath);
         }

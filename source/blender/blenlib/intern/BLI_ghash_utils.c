@@ -21,16 +21,16 @@
  * \ingroup bli
  *
  * Helper functions and implementations of standard data types for #GHash
- * (not it's implementation).
+ * (not its implementation).
  */
 
 #include <string.h>
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
-#include "BLI_hash_mm2a.h"
 #include "BLI_ghash.h" /* own include */
+#include "BLI_hash_mm2a.h"
+#include "BLI_utildefines.h"
 
 /* keep last */
 #include "BLI_strict_flags.h"
@@ -53,9 +53,9 @@ uint BLI_ghashutil_ptrhash(const void *key)
   /* bottom 3 or 4 bits are likely to be 0; rotate y by 4 to avoid
    * excessive hash collisions for dicts and sets */
 
-  /* Note: Unlike Python 'sizeof(uint)' is used instead of 'sizeof(void *)',
+  /* NOTE: Unlike Python 'sizeof(uint)' is used instead of 'sizeof(void *)',
    * Otherwise casting to 'uint' ignores the upper bits on 64bit platforms. */
-  return (uint)(y >> 4) | ((uint)y << (8 * sizeof(uint) - 4));
+  return (uint)(y >> 4) | ((uint)y << (sizeof(uint[8]) - 4));
 }
 #endif
 bool BLI_ghashutil_ptrcmp(const void *a, const void *b)
@@ -75,9 +75,10 @@ uint BLI_ghashutil_uinthash_v4(const uint key[4])
   hash += key[3];
   return hash;
 }
+
 uint BLI_ghashutil_uinthash_v4_murmur(const uint key[4])
 {
-  return BLI_hash_mm2((const unsigned char *)key, sizeof(int) * 4 /* sizeof(key) */, 0);
+  return BLI_hash_mm2((const unsigned char *)key, sizeof(int[4]) /* sizeof(key) */, 0);
 }
 
 bool BLI_ghashutil_uinthash_v4_cmp(const void *a, const void *b)
@@ -140,7 +141,7 @@ size_t BLI_ghashutil_combine_hash(size_t hash_a, size_t hash_b)
  * string, is updated: ``hash = hash * 33 + c``.  This
  * function uses the signed value of each byte.
  *
- * note: this is the same hash method that glib 2.34.0 uses.
+ * NOTE: this is the same hash method that glib 2.34.0 uses.
  */
 uint BLI_ghashutil_strhash_n(const char *key, size_t n)
 {

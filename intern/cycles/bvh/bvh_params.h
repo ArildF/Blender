@@ -89,7 +89,6 @@ class BVHParams {
   int bvh_type;
 
   /* These are needed for Embree. */
-  int curve_flags;
   int curve_subdivisions;
 
   /* fixed parameters */
@@ -122,7 +121,6 @@ class BVHParams {
 
     bvh_type = 0;
 
-    curve_flags = 0;
     curve_subdivisions = 4;
   }
 
@@ -299,7 +297,7 @@ struct BVHSpatialBin {
  */
 
 struct BVHSpatialStorage {
-  /* Accumulated bounds when sweeping from right to left.  */
+  /* Accumulated bounds when sweeping from right to left. */
   vector<BoundBox> right_bounds;
 
   /* Bins used for histogram when selecting best split plane. */

@@ -20,7 +20,7 @@
 
 if(CMAKE_COMPILER_IS_GNUCC)
   # add here so we fail early.
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=implicit-function-declaration")
+  string(APPEND CMAKE_C_FLAGS " -Werror=implicit-function-declaration")
 endif()
 
 # files rna_access.c rna_define.c makesrna.c intentionally excluded.
@@ -30,6 +30,8 @@ set(DEFSRC
   rna_animation.c
   rna_animviz.c
   rna_armature.c
+  rna_asset.c
+  rna_attribute.c
   rna_boid.c
   rna_brush.c
   rna_cachefile.c
@@ -88,11 +90,24 @@ set(DEFSRC
   rna_ui.c
   rna_userdef.c
   rna_vfont.c
+  rna_volume.c
   rna_wm.c
   rna_wm_gizmo.c
   rna_workspace.c
   rna_world.c
+  rna_xr.c
 )
+
+if(WITH_EXPERIMENTAL_FEATURES)
+  add_definitions(-DWITH_SIMULATION_DATABLOCK)
+  add_definitions(-DWITH_POINT_CLOUD)
+  add_definitions(-DWITH_HAIR_NODES)
+  list(APPEND DEFSRC
+    rna_hair.c
+    rna_pointcloud.c
+    rna_simulation.c
+  )
+endif()
 
 set(APISRC
   rna_action_api.c
@@ -137,7 +152,7 @@ if(CMAKE_COMPILER_IS_GNUCC OR (CMAKE_C_COMPILER_ID MATCHES "Clang"))
   set(GENSRC_CFLAGS "-Wno-missing-prototypes")
 endif()
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-  set(GENSRC_CFLAGS "${GENSRC_CFLAGS} -Wno-missing-variable-declarations")
+  string(APPEND GENSRC_CFLAGS " -Wno-missing-variable-declarations")
 endif()
 
 if(GENSRC_CFLAGS)
@@ -145,6 +160,16 @@ if(GENSRC_CFLAGS)
 endif()
 unset(GENSRC_CFLAGS)
 
+
+# NOTE: Disable clang-tidy because generated files are stored outside of the source,
+# so the clang-tidy can not find our .clang-tidy and fall-backs to own set of rules
+# which are too noisy for Blender.
+#
+# In the future clang-tidy would either need to be inlined checks and passed via the
+# command line (instead of using .clang-tidy file). Or, maybe, there is a way to
+# pass configuration file to the clang-tidy command.
+unset(CMAKE_C_CLANG_TIDY)
+unset(CMAKE_CXX_CLANG_TIDY)
 
 set(SRC_RNA_INC
   ../RNA_access.h
@@ -160,10 +185,10 @@ set(SRC
   ${DEFSRC}
   ${APISRC}
   ../../../../intern/clog/clog.c
+  ../../../../intern/guardedalloc/intern/leak_detector.cc
   ../../../../intern/guardedalloc/intern/mallocn.c
   ../../../../intern/guardedalloc/intern/mallocn_guarded_impl.c
   ../../../../intern/guardedalloc/intern/mallocn_lockfree_impl.c
-  ../../../../intern/guardedalloc/intern/mmap_win.c
 
   # Needed for defaults.
   ../../../../release/datafiles/userdef/userdef_default.c
@@ -273,8 +298,20 @@ if(WITH_OPENAL)
   add_definitions(-DWITH_OPENAL)
 endif()
 
+if(WITH_COREAUDIO)
+  add_definitions(-DWITH_COREAUDIO)
+endif()
+
 if(WITH_JACK)
   add_definitions(-DWITH_JACK)
+endif()
+
+if(WITH_PULSEAUDIO)
+  add_definitions(-DWITH_PULSEAUDIO)
+endif()
+
+if(WITH_WASAPI)
+  add_definitions(-DWITH_WASAPI)
 endif()
 
 if(WITH_OPENCOLLADA)
@@ -287,7 +324,7 @@ endif()
 
 if(WITH_ALEMBIC)
   list(APPEND INC
-    ../../alembic
+    ../../io/alembic
   )
   add_definitions(-DWITH_ALEMBIC)
 endif()
@@ -325,6 +362,14 @@ if(WITH_INPUT_NDOF)
   add_definitions(-DWITH_INPUT_NDOF)
 endif()
 
+if(WITH_XR_OPENXR)
+  add_definitions(-DWITH_XR_OPENXR)
+endif()
+
+if(WITH_GMP)
+  add_definitions(-DWITH_GMP)
+endif()
+
 # Build makesrna executable
 blender_include_dirs(
   .
@@ -340,11 +385,13 @@ blender_include_dirs(
   ../../ikplugin
   ../../imbuf
   ../../makesdna
+  ../../modifiers
   ../../nodes/
-  ../../physics
+  ../../sequencer
+  ../../simulation
   ../../windowmanager
   ../../editors/include
-  ../../render/extern/include
+  ../../render
   ../../../../intern/cycles/blender
   ../../../../intern/atomic
   ../../../../intern/glew-mx
@@ -353,17 +400,17 @@ blender_include_dirs(
   ../../../../intern/mantaflow/extern
 )
 
-blender_include_dirs_sys(
-  "${GLEW_INCLUDE_PATH}"
-)
-
 add_cc_flags_custom_test(makesrna)
-setup_platform_linker_flags()
 
 add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})
+setup_platform_linker_flags(makesrna)
 
 target_link_libraries(makesrna bf_dna)
 target_link_libraries(makesrna bf_dna_blenlib)
+
+if(WIN32 AND NOT UNIX)
+  target_link_libraries(makesrna ${PTHREADS_LIBRARIES})
+endif()
 
 # Output rna_*_gen.c
 # note (linux only): with crashes try add this after COMMAND: valgrind --leak-check=full --track-origins=yes
@@ -392,6 +439,7 @@ set(LIB
 
   bf_editor_animation
   bf_editor_armature
+  bf_editor_asset
   bf_editor_curve
   bf_editor_gizmo_library
   bf_editor_gpencil
@@ -410,3 +458,6 @@ set(LIB
 add_definitions(${GL_DEFINITIONS})
 
 blender_add_lib(bf_rna "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
+
+# Needed so we can use dna_type_offsets.h for defaults initialization.
+add_dependencies(bf_blenkernel bf_dna)

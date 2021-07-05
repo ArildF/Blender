@@ -32,8 +32,8 @@
 #include "BKE_layer.h"
 #include "BKE_report.h"
 
-#include "RNA_define.h"
 #include "RNA_access.h"
+#include "RNA_define.h"
 
 #include "WM_types.h"
 
@@ -155,7 +155,12 @@ static int edbm_screw_exec(bContext *C, wmOperator *op)
       continue;
     }
 
-    EDBM_update_generic(obedit->data, true, true);
+    EDBM_update(obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = false,
+                    .is_destructive = true,
+                });
   }
   MEM_freeN(objects);
 

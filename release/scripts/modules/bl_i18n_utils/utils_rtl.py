@@ -32,32 +32,31 @@
 #        \", %s, %x12, %.4f, etc.), protecting them from ugly (evil) fribidi,
 #        which seems completely unaware of such things (as unicode is...).
 
-import sys
 import ctypes
 import re
 
 
-#define FRIBIDI_MASK_NEUTRAL    0x00000040L /* Is neutral */
+# define FRIBIDI_MASK_NEUTRAL    0x00000040L /* Is neutral */
 FRIBIDI_PAR_ON = 0x00000040
 
 
-#define FRIBIDI_FLAG_SHAPE_MIRRORING    0x00000001
-#define FRIBIDI_FLAG_REORDER_NSM    0x00000002
+# define FRIBIDI_FLAG_SHAPE_MIRRORING    0x00000001
+# define FRIBIDI_FLAG_REORDER_NSM    0x00000002
 
-#define FRIBIDI_FLAG_SHAPE_ARAB_PRES    0x00000100
-#define FRIBIDI_FLAG_SHAPE_ARAB_LIGA    0x00000200
-#define FRIBIDI_FLAG_SHAPE_ARAB_CONSOLE 0x00000400
+# define FRIBIDI_FLAG_SHAPE_ARAB_PRES    0x00000100
+# define FRIBIDI_FLAG_SHAPE_ARAB_LIGA    0x00000200
+# define FRIBIDI_FLAG_SHAPE_ARAB_CONSOLE 0x00000400
 
-#define FRIBIDI_FLAG_REMOVE_BIDI    0x00010000
-#define FRIBIDI_FLAG_REMOVE_JOINING 0x00020000
-#define FRIBIDI_FLAG_REMOVE_SPECIALS    0x00040000
+# define FRIBIDI_FLAG_REMOVE_BIDI    0x00010000
+# define FRIBIDI_FLAG_REMOVE_JOINING 0x00020000
+# define FRIBIDI_FLAG_REMOVE_SPECIALS    0x00040000
 
-#define FRIBIDI_FLAGS_DEFAULT       ( \
+# define FRIBIDI_FLAGS_DEFAULT       ( \
 #   FRIBIDI_FLAG_SHAPE_MIRRORING    | \
 #   FRIBIDI_FLAG_REORDER_NSM    | \
 #   FRIBIDI_FLAG_REMOVE_SPECIALS    )
 
-#define FRIBIDI_FLAGS_ARABIC        ( \
+# define FRIBIDI_FLAGS_ARABIC        ( \
 #   FRIBIDI_FLAG_SHAPE_ARAB_PRES    | \
 #   FRIBIDI_FLAG_SHAPE_ARAB_LIGA    )
 
@@ -85,11 +84,11 @@ def protect_format_seq(msg):
 #    LRM = "\u200E"
 #    RLM = "\u200F"
     LRE = "\u202A"
-    RLE = "\u202B"
+#    RLE = "\u202B"
     PDF = "\u202C"
     LRO = "\u202D"
-    RLO = "\u202E"
-    uctrl = {LRE, RLE, PDF, LRO, RLO}
+#    RLO = "\u202E"
+    # uctrl = {LRE, RLE, PDF, LRO, RLO}
     # Most likely incomplete, but seems to cover current needs.
     format_codes = set("tslfd")
     digits = set(".0123456789")

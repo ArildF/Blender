@@ -21,14 +21,13 @@
  * \ingroup bli
  */
 
-#ifndef __BLI_MEMARENA_H__
-#define __BLI_MEMARENA_H__
+#pragma once
+
+#include "BLI_compiler_attrs.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "BLI_compiler_attrs.h"
 
 /* A reasonable standard buffer size, big
  * enough to not cause much internal fragmentation,
@@ -39,7 +38,8 @@ extern "C" {
 struct MemArena;
 typedef struct MemArena MemArena;
 
-struct MemArena *BLI_memarena_new(const size_t bufsize, const char *name) ATTR_WARN_UNUSED_RESULT
+struct MemArena *BLI_memarena_new(const size_t bufsize,
+                                  const char *name) ATTR_WARN_UNUSED_RESULT ATTR_RETURNS_NONNULL
     ATTR_NONNULL(2) ATTR_MALLOC;
 void BLI_memarena_free(struct MemArena *ma) ATTR_NONNULL(1);
 void BLI_memarena_use_malloc(struct MemArena *ma) ATTR_NONNULL(1);
@@ -55,5 +55,3 @@ void BLI_memarena_clear(MemArena *ma) ATTR_NONNULL(1);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BLI_MEMARENA_H__ */

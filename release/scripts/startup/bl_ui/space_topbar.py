@@ -165,11 +165,11 @@ class TOPBAR_PT_gpencil_layers(Panel):
 
             srow = col.row(align=True)
             srow.prop(gpl, "opacity", text="Opacity", slider=True)
-            srow.prop(gpl, "mask_layer", text="",
-                      icon='MOD_MASK' if gpl.mask_layer else 'LAYER_ACTIVE')
+            srow.prop(gpl, "use_mask_layer", text="",
+                      icon='MOD_MASK' if gpl.use_mask_layer else 'LAYER_ACTIVE')
 
             srow = col.row(align=True)
-            srow.prop(gpl, "use_solo_mode", text="Show Only On Keyframed")
+            srow.prop(gpl, "use_lights")
 
         col = row.column()
 
@@ -207,7 +207,8 @@ class TOPBAR_MT_editor_menus(Menu):
     def draw(self, context):
         layout = self.layout
 
-        if context.area.show_menus:
+        # Allow calling this menu directly (this might not be a header area).
+        if getattr(context.area, "show_menus", False):
             layout.menu("TOPBAR_MT_app", text="", icon='BLENDER')
         else:
             layout.menu("TOPBAR_MT_app", text="Blender")
@@ -228,29 +229,53 @@ class TOPBAR_MT_app(Menu):
         layout = self.layout
 
         layout.operator("wm.splash")
-
-        layout.separator()
-
-        layout.menu("TOPBAR_MT_app_support")
-
-        layout.separator()
-
-        layout.menu("TOPBAR_MT_app_about")
+        layout.operator("wm.splash_about")
 
         layout.separator()
 
         layout.operator("preferences.app_template_install",
                         text="Install Application Template...")
 
+        layout.separator()
+
+        layout.menu("TOPBAR_MT_app_system")
+
 
 class TOPBAR_MT_file_cleanup(Menu):
     bl_label = "Clean Up"
 
-    def draw(self, context):
+    def draw(self, _context):
         layout = self.layout
         layout.separator()
 
-        layout.operator("outliner.orphans_purge")
+        op_props = layout.operator("outliner.orphans_purge", text="Unused Data-Blocks")
+        op_props.do_local_ids = True
+        op_props.do_linked_ids = True
+        op_props.do_recursive = False
+        op_props = layout.operator("outliner.orphans_purge", text="Recursive Unused Data-Blocks")
+        op_props.do_local_ids = True
+        op_props.do_linked_ids = True
+        op_props.do_recursive = True
+
+        layout.separator()
+        op_props = layout.operator("outliner.orphans_purge", text="Unused Linked Data-Blocks")
+        op_props.do_local_ids = False
+        op_props.do_linked_ids = True
+        op_props.do_recursive = False
+        op_props = layout.operator("outliner.orphans_purge", text="Recursive Unused Linked Data-Blocks")
+        op_props.do_local_ids = False
+        op_props.do_linked_ids = True
+        op_props.do_recursive = True
+
+        layout.separator()
+        op_props = layout.operator("outliner.orphans_purge", text="Unused Local Data-Blocks")
+        op_props.do_local_ids = True
+        op_props.do_linked_ids = False
+        op_props.do_recursive = False
+        op_props = layout.operator("outliner.orphans_purge", text="Recursive Unused Local Data-Blocks")
+        op_props.do_local_ids = True
+        op_props.do_linked_ids = False
+        op_props.do_recursive = True
 
 
 class TOPBAR_MT_file(Menu):
@@ -311,16 +336,18 @@ class TOPBAR_MT_file_new(Menu):
 
         template_paths = bpy.utils.app_template_paths()
 
-        # expand template paths
-        app_templates = []
+        # Expand template paths.
+
+        # Use a set to avoid duplicate user/system templates.
+        # This is a corner case, but users managed to do it! T76849.
+        app_templates = set()
         for path in template_paths:
             for d in os.listdir(path):
                 if d.startswith(("__", ".")):
                     continue
                 template = os.path.join(path, d)
                 if os.path.isdir(template):
-                    # template_paths_expand.append(template)
-                    app_templates.append(d)
+                    app_templates.add(d)
 
         return sorted(app_templates)
 
@@ -402,43 +429,24 @@ class TOPBAR_MT_file_defaults(Menu):
             props.app_template = app_template
 
 
-class TOPBAR_MT_app_about(Menu):
-    bl_label = "About"
+# Include technical operators here which would otherwise have no way for users to access.
+class TOPBAR_MT_app_system(Menu):
+    bl_label = "System"
 
     def draw(self, _context):
         layout = self.layout
 
-        layout.operator("wm.url_open_preset", text="Release Notes",
-                        icon='URL').type = 'RELEASE_NOTES'
+        layout.operator("script.reload")
 
         layout.separator()
 
-        layout.operator("wm.url_open_preset",
-                        text="Blender Website", icon='URL').type = 'BLENDER'
-        layout.operator("wm.url_open_preset", text="Credits",
-                        icon='URL').type = 'CREDITS'
+        layout.operator("wm.memory_statistics")
+        layout.operator("wm.debug_menu")
+        layout.operator_menu_enum("wm.redraw_timer", "type")
 
         layout.separator()
 
-        layout.operator(
-            "wm.url_open", text="License", icon='URL',
-        ).url = "https://www.blender.org/about/license/"
-
-
-class TOPBAR_MT_app_support(Menu):
-    bl_label = "Support Blender"
-
-    def draw(self, _context):
-        layout = self.layout
-
-        layout.operator("wm.url_open_preset",
-                        text="Development Fund", icon='FUND').type = 'FUND'
-
-        layout.separator()
-
-        layout.operator(
-            "wm.url_open", text="Blender Store", icon='URL',
-        ).url = "https://store.blender.org"
+        layout.operator("screen.spacedata_cleanup")
 
 
 class TOPBAR_MT_templates_more(Menu):
@@ -461,13 +469,15 @@ class TOPBAR_MT_file_import(Menu):
         if bpy.app.build_options.alembic:
             self.layout.operator("wm.alembic_import", text="Alembic (.abc)")
 
+        self.layout.operator("wm.gpencil_import_svg", text="SVG as Grease Pencil")
+
 
 class TOPBAR_MT_file_export(Menu):
     bl_idname = "TOPBAR_MT_file_export"
     bl_label = "Export"
     bl_owner_use_filter = False
 
-    def draw(self, context):
+    def draw(self, _context):
         if bpy.app.build_options.collada:
             self.layout.operator("wm.collada_export",
                                  text="Collada (Default) (.dae)")
@@ -476,6 +486,13 @@ class TOPBAR_MT_file_export(Menu):
         if bpy.app.build_options.usd:
             self.layout.operator(
                 "wm.usd_export", text="Universal Scene Description (.usd, .usdc, .usda)")
+
+        # Pugixml lib dependency
+        if bpy.app.build_options.pugixml:
+            self.layout.operator("wm.gpencil_export_svg", text="Grease Pencil as SVG")
+        # Haru lib dependency
+        if bpy.app.build_options.haru:
+            self.layout.operator("wm.gpencil_export_pdf", text="Grease Pencil as PDF")
 
 
 class TOPBAR_MT_file_external_data(Menu):
@@ -487,8 +504,6 @@ class TOPBAR_MT_file_external_data(Menu):
         icon = 'CHECKBOX_HLT' if bpy.data.use_autopack else 'CHECKBOX_DEHLT'
         layout.operator("file.autopack_toggle", icon=icon)
 
-        layout.separator()
-
         pack_all = layout.row()
         pack_all.operator("file.pack_all")
         pack_all.active = not bpy.data.use_autopack
@@ -499,8 +514,16 @@ class TOPBAR_MT_file_external_data(Menu):
 
         layout.separator()
 
+        layout.operator("file.pack_libraries")
+        layout.operator("file.unpack_libraries")
+
+        layout.separator()
+
         layout.operator("file.make_paths_relative")
         layout.operator("file.make_paths_absolute")
+
+        layout.separator()
+
         layout.operator("file.report_missing_files")
         layout.operator("file.find_missing_files")
 
@@ -555,6 +578,8 @@ class TOPBAR_MT_edit(Menu):
     def draw(self, context):
         layout = self.layout
 
+        show_developer = context.preferences.view.show_developer_ui
+
         layout.operator("ed.undo")
         layout.operator("ed.redo")
 
@@ -573,8 +598,9 @@ class TOPBAR_MT_edit(Menu):
 
         layout.separator()
 
-        layout.operator("wm.search_menu",
-                        text="Operator Search...", icon='VIEWZOOM')
+        layout.operator("wm.search_menu", text="Menu Search...", icon='VIEWZOOM')
+        if show_developer:
+            layout.operator("wm.search_operator", text="Operator Search...", icon='VIEWZOOM')
 
         layout.separator()
 
@@ -583,7 +609,7 @@ class TOPBAR_MT_edit(Menu):
         props.name = "TOPBAR_PT_name"
         props.keep_open = False
 
-        layout.operator("wm.batch_rename")
+        layout.operator("wm.batch_rename", text="Batch Rename...")
 
         layout.separator()
 
@@ -826,8 +852,7 @@ classes = (
     TOPBAR_MT_workspace_menu,
     TOPBAR_MT_editor_menus,
     TOPBAR_MT_app,
-    TOPBAR_MT_app_about,
-    TOPBAR_MT_app_support,
+    TOPBAR_MT_app_system,
     TOPBAR_MT_file,
     TOPBAR_MT_file_new,
     TOPBAR_MT_file_recover,

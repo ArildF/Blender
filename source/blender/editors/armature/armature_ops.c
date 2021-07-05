@@ -28,8 +28,6 @@
 
 #include "ED_armature.h"
 #include "ED_screen.h"
-#include "ED_select_utils.h"
-#include "ED_transform.h"
 
 #include "armature_intern.h"
 
@@ -56,6 +54,7 @@ void ED_operatortypes_armature(void)
   WM_operatortype_append(ARMATURE_OT_select_less);
   WM_operatortype_append(ARMATURE_OT_select_hierarchy);
   WM_operatortype_append(ARMATURE_OT_select_linked);
+  WM_operatortype_append(ARMATURE_OT_select_linked_pick);
   WM_operatortype_append(ARMATURE_OT_select_similar);
   WM_operatortype_append(ARMATURE_OT_shortest_path_pick);
 
@@ -68,7 +67,6 @@ void ED_operatortypes_armature(void)
   WM_operatortype_append(ARMATURE_OT_reveal);
   WM_operatortype_append(ARMATURE_OT_click_extrude);
   WM_operatortype_append(ARMATURE_OT_fill);
-  WM_operatortype_append(ARMATURE_OT_merge);
   WM_operatortype_append(ARMATURE_OT_separate);
   WM_operatortype_append(ARMATURE_OT_split);
 
@@ -100,6 +98,7 @@ void ED_operatortypes_armature(void)
   WM_operatortype_append(POSE_OT_select_parent);
   WM_operatortype_append(POSE_OT_select_hierarchy);
   WM_operatortype_append(POSE_OT_select_linked);
+  WM_operatortype_append(POSE_OT_select_linked_pick);
   WM_operatortype_append(POSE_OT_select_constraint_target);
   WM_operatortype_append(POSE_OT_select_grouped);
   WM_operatortype_append(POSE_OT_select_mirror);

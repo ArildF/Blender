@@ -35,14 +35,17 @@ _modules = [
     "properties_data_curve",
     "properties_data_empty",
     "properties_data_gpencil",
+    "properties_data_hair",
     "properties_data_light",
     "properties_data_lattice",
     "properties_data_mesh",
     "properties_data_metaball",
     "properties_data_modifier",
+    "properties_data_pointcloud",
     "properties_data_shaderfx",
     "properties_data_lightprobe",
     "properties_data_speaker",
+    "properties_data_volume",
     "properties_mask_common",
     "properties_material",
     "properties_material_gpencil",
@@ -64,6 +67,7 @@ _modules = [
     "properties_scene",
     "properties_texture",
     "properties_world",
+    "properties_collection",
 
     # Generic Space Modules
     #
@@ -83,6 +87,7 @@ _modules = [
     "space_outliner",
     "space_properties",
     "space_sequencer",
+    "space_spreadsheet",
     "space_statusbar",
     "space_text",
     "space_time",

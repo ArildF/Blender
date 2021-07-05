@@ -28,14 +28,14 @@
 #include "BLI_math.h"
 
 #include "BKE_context.h"
-#include "BKE_report.h"
 
 #include "transform.h"
+#include "transform_snap.h"
+
 #include "transform_convert.h"
 
 /* -------------------------------------------------------------------- */
 /** \name Meta Elements Transform Creation
- *
  * \{ */
 
 void createTransMBallVerts(TransInfo *t)
@@ -48,6 +48,7 @@ void createTransMBallVerts(TransInfo *t)
     float mtx[3][3], smtx[3][3];
     int count = 0, countsel = 0;
     const bool is_prop_edit = (t->flag & T_PROP_EDIT) != 0;
+    const bool is_prop_connected = (t->flag & T_PROP_CONNECTED) != 0;
 
     /* count totals */
     for (ml = mb->editelems->first; ml; ml = ml->next) {
@@ -59,8 +60,9 @@ void createTransMBallVerts(TransInfo *t)
       }
     }
 
-    /* note: in prop mode we need at least 1 selected */
-    if (countsel == 0) {
+    /* Support other objects using PET to adjust these, unless connected is enabled. */
+    if (((is_prop_edit && !is_prop_connected) ? count : countsel) == 0) {
+      tc->data_len = 0;
       continue;
     }
 
@@ -123,6 +125,24 @@ void createTransMBallVerts(TransInfo *t)
         td++;
         tx++;
       }
+    }
+  }
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Recalc Meta Ball
+ * \{ */
+
+void recalcData_mball(TransInfo *t)
+{
+  if (t->state != TRANS_CANCEL) {
+    applyProject(t);
+  }
+  FOREACH_TRANS_DATA_CONTAINER (t, tc) {
+    if (tc->data_len) {
+      DEG_id_tag_update(tc->obedit->data, ID_RECALC_GEOMETRY);
     }
   }
 }

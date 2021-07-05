@@ -25,8 +25,8 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_alloca.h"
+#include "BLI_math.h"
 #include "BLI_utildefines_stack.h"
 
 #include "BKE_customdata.h"
@@ -221,7 +221,7 @@ void bmo_offset_edgeloops_exec(BMesh *bm, BMOperator *op)
               }
             }
 
-            /* Note: instead of duplicate code in alternate direction,
+            /* NOTE: instead of duplicate code in alternate direction,
              * we can be sure to hit the other vertex, so the code above runs. */
 #if 0
             else if (BM_elem_index_get(l->prev->v) == -1) {
@@ -263,7 +263,7 @@ void bmo_offset_edgeloops_exec(BMesh *bm, BMOperator *op)
       }
 
       while ((v = STACK_POP(varr))) {
-        bmesh_kernel_join_edge_kill_vert(bm, v->e, v, true, false, false);
+        bmesh_kernel_join_edge_kill_vert(bm, v->e, v, true, false, false, true);
       }
     }
   }

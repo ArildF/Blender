@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-#include "render/image.h"
-#include "render/hair.h"
-#include "render/mesh.h"
 #include "render/attribute.h"
+#include "render/hair.h"
+#include "render/image.h"
+#include "render/mesh.h"
 
 #include "util/util_foreach.h"
 #include "util/util_transform.h"
@@ -26,46 +26,51 @@ CCL_NAMESPACE_BEGIN
 
 /* Attribute */
 
-Attribute::~Attribute()
+Attribute::Attribute(
+    ustring name, TypeDesc type, AttributeElement element, Geometry *geom, AttributePrimitive prim)
+    : name(name), std(ATTR_STD_NONE), type(type), element(element), flags(0), modified(true)
 {
-  /* for voxel data, we need to remove the image from the image manager */
-  if (element == ATTR_ELEMENT_VOXEL) {
-    VoxelAttribute *voxel_data = data_voxel();
-
-    if (voxel_data && voxel_data->slot != -1) {
-      voxel_data->manager->remove_image(voxel_data->slot);
-    }
-  }
-}
-
-void Attribute::set(ustring name_, TypeDesc type_, AttributeElement element_)
-{
-  name = name_;
-  type = type_;
-  element = element_;
-  std = ATTR_STD_NONE;
-  flags = 0;
-
   /* string and matrix not supported! */
   assert(type == TypeDesc::TypeFloat || type == TypeDesc::TypeColor ||
          type == TypeDesc::TypePoint || type == TypeDesc::TypeVector ||
          type == TypeDesc::TypeNormal || type == TypeDesc::TypeMatrix || type == TypeFloat2 ||
-         type == TypeRGBA);
+         type == TypeFloat4 || type == TypeRGBA);
+
+  if (element == ATTR_ELEMENT_VOXEL) {
+    buffer.resize(sizeof(ImageHandle));
+    new (buffer.data()) ImageHandle();
+  }
+  else {
+    resize(geom, prim, false);
+  }
+}
+
+Attribute::~Attribute()
+{
+  /* For voxel data, we need to free the image handle. */
+  if (element == ATTR_ELEMENT_VOXEL && buffer.size()) {
+    ImageHandle &handle = data_voxel();
+    handle.~ImageHandle();
+  }
 }
 
 void Attribute::resize(Geometry *geom, AttributePrimitive prim, bool reserve_only)
 {
-  if (reserve_only) {
-    buffer.reserve(buffer_size(geom, prim));
-  }
-  else {
-    buffer.resize(buffer_size(geom, prim), 0);
+  if (element != ATTR_ELEMENT_VOXEL) {
+    if (reserve_only) {
+      buffer.reserve(buffer_size(geom, prim));
+    }
+    else {
+      buffer.resize(buffer_size(geom, prim), 0);
+    }
   }
 }
 
 void Attribute::resize(size_t num_elements)
 {
-  buffer.resize(num_elements * data_sizeof(), 0);
+  if (element != ATTR_ELEMENT_VOXEL) {
+    buffer.resize(num_elements * data_sizeof(), 0);
+  }
 }
 
 void Attribute::add(const float &f)
@@ -77,6 +82,8 @@ void Attribute::add(const float &f)
 
   for (size_t i = 0; i < size; i++)
     buffer.push_back(data[i]);
+
+  modified = true;
 }
 
 void Attribute::add(const uchar4 &f)
@@ -88,6 +95,8 @@ void Attribute::add(const uchar4 &f)
 
   for (size_t i = 0; i < size; i++)
     buffer.push_back(data[i]);
+
+  modified = true;
 }
 
 void Attribute::add(const float2 &f)
@@ -99,6 +108,8 @@ void Attribute::add(const float2 &f)
 
   for (size_t i = 0; i < size; i++)
     buffer.push_back(data[i]);
+
+  modified = true;
 }
 
 void Attribute::add(const float3 &f)
@@ -110,6 +121,8 @@ void Attribute::add(const float3 &f)
 
   for (size_t i = 0; i < size; i++)
     buffer.push_back(data[i]);
+
+  modified = true;
 }
 
 void Attribute::add(const Transform &f)
@@ -121,17 +134,8 @@ void Attribute::add(const Transform &f)
 
   for (size_t i = 0; i < size; i++)
     buffer.push_back(data[i]);
-}
 
-void Attribute::add(const VoxelAttribute &f)
-{
-  assert(data_sizeof() == sizeof(VoxelAttribute));
-
-  char *data = (char *)&f;
-  size_t size = sizeof(f);
-
-  for (size_t i = 0; i < size; i++)
-    buffer.push_back(data[i]);
+  modified = true;
 }
 
 void Attribute::add(const char *data)
@@ -140,12 +144,32 @@ void Attribute::add(const char *data)
 
   for (size_t i = 0; i < size; i++)
     buffer.push_back(data[i]);
+
+  modified = true;
+}
+
+void Attribute::set_data_from(Attribute &&other)
+{
+  assert(other.std == std);
+  assert(other.type == type);
+  assert(other.element == element);
+
+  this->flags = other.flags;
+
+  if (this->buffer.size() != other.buffer.size()) {
+    this->buffer = std::move(other.buffer);
+    modified = true;
+  }
+  else if (memcmp(this->data(), other.data(), other.buffer.size()) != 0) {
+    this->buffer = std::move(other.buffer);
+    modified = true;
+  }
 }
 
 size_t Attribute::data_sizeof() const
 {
   if (element == ATTR_ELEMENT_VOXEL)
-    return sizeof(VoxelAttribute);
+    return sizeof(ImageHandle);
   else if (element == ATTR_ELEMENT_CORNER_BYTE)
     return sizeof(uchar4);
   else if (type == TypeDesc::TypeFloat)
@@ -173,62 +197,62 @@ size_t Attribute::element_size(Geometry *geom, AttributePrimitive prim) const
       size = 1;
       break;
     case ATTR_ELEMENT_VERTEX:
-      if (geom->type == Geometry::MESH) {
+      if (geom->geometry_type == Geometry::MESH || geom->geometry_type == Geometry::VOLUME) {
         Mesh *mesh = static_cast<Mesh *>(geom);
-        size = mesh->verts.size() + mesh->num_ngons;
+        size = mesh->get_verts().size() + mesh->get_num_ngons();
         if (prim == ATTR_PRIM_SUBD) {
-          size -= mesh->num_subd_verts;
+          size -= mesh->get_num_subd_verts();
         }
       }
       break;
     case ATTR_ELEMENT_VERTEX_MOTION:
-      if (geom->type == Geometry::MESH) {
+      if (geom->geometry_type == Geometry::MESH) {
         Mesh *mesh = static_cast<Mesh *>(geom);
-        size = (mesh->verts.size() + mesh->num_ngons) * (mesh->motion_steps - 1);
+        size = (mesh->get_verts().size() + mesh->get_num_ngons()) * (mesh->get_motion_steps() - 1);
         if (prim == ATTR_PRIM_SUBD) {
-          size -= mesh->num_subd_verts * (mesh->motion_steps - 1);
+          size -= mesh->get_num_subd_verts() * (mesh->get_motion_steps() - 1);
         }
       }
       break;
     case ATTR_ELEMENT_FACE:
-      if (geom->type == Geometry::MESH) {
+      if (geom->geometry_type == Geometry::MESH || geom->geometry_type == Geometry::VOLUME) {
         Mesh *mesh = static_cast<Mesh *>(geom);
         if (prim == ATTR_PRIM_GEOMETRY) {
           size = mesh->num_triangles();
         }
         else {
-          size = mesh->subd_faces.size() + mesh->num_ngons;
+          size = mesh->get_num_subd_faces() + mesh->get_num_ngons();
         }
       }
       break;
     case ATTR_ELEMENT_CORNER:
     case ATTR_ELEMENT_CORNER_BYTE:
-      if (geom->type == Geometry::MESH) {
+      if (geom->geometry_type == Geometry::MESH) {
         Mesh *mesh = static_cast<Mesh *>(geom);
         if (prim == ATTR_PRIM_GEOMETRY) {
           size = mesh->num_triangles() * 3;
         }
         else {
-          size = mesh->subd_face_corners.size() + mesh->num_ngons;
+          size = mesh->get_subd_face_corners().size() + mesh->get_num_ngons();
         }
       }
       break;
     case ATTR_ELEMENT_CURVE:
-      if (geom->type == Geometry::HAIR) {
+      if (geom->geometry_type == Geometry::HAIR) {
         Hair *hair = static_cast<Hair *>(geom);
         size = hair->num_curves();
       }
       break;
     case ATTR_ELEMENT_CURVE_KEY:
-      if (geom->type == Geometry::HAIR) {
+      if (geom->geometry_type == Geometry::HAIR) {
         Hair *hair = static_cast<Hair *>(geom);
-        size = hair->curve_keys.size();
+        size = hair->get_curve_keys().size();
       }
       break;
     case ATTR_ELEMENT_CURVE_KEY_MOTION:
-      if (geom->type == Geometry::HAIR) {
+      if (geom->geometry_type == Geometry::HAIR) {
         Hair *hair = static_cast<Hair *>(geom);
-        size = hair->curve_keys.size() * (hair->motion_steps - 1);
+        size = hair->get_curve_keys().size() * (hair->get_motion_steps() - 1);
       }
       break;
     default:
@@ -301,6 +325,8 @@ const char *Attribute::standard_name(AttributeStandard std)
       return "tangent";
     case ATTR_STD_UV_TANGENT_SIGN:
       return "tangent_sign";
+    case ATTR_STD_VERTEX_COLOR:
+      return "vertex_color";
     case ATTR_STD_POSITION_UNDEFORMED:
       return "undeformed";
     case ATTR_STD_POSITION_UNDISPLACED:
@@ -357,6 +383,23 @@ AttributeStandard Attribute::name_standard(const char *name)
   return ATTR_STD_NONE;
 }
 
+AttrKernelDataType Attribute::kernel_type(const Attribute &attr)
+{
+  if (attr.element == ATTR_ELEMENT_CORNER) {
+    return AttrKernelDataType::UCHAR4;
+  }
+
+  if (attr.type == TypeDesc::TypeFloat) {
+    return AttrKernelDataType::FLOAT;
+  }
+
+  if (attr.type == TypeFloat2) {
+    return AttrKernelDataType::FLOAT2;
+  }
+
+  return AttrKernelDataType::FLOAT3;
+}
+
 void Attribute::get_uv_tiles(Geometry *geom,
                              AttributePrimitive prim,
                              unordered_set<int> &tiles) const
@@ -391,7 +434,7 @@ void Attribute::get_uv_tiles(Geometry *geom,
 /* Attribute Set */
 
 AttributeSet::AttributeSet(Geometry *geometry, AttributePrimitive prim)
-    : geometry(geometry), prim(prim)
+    : modified_flag(~0u), geometry(geometry), prim(prim)
 {
 }
 
@@ -412,23 +455,10 @@ Attribute *AttributeSet::add(ustring name, TypeDesc type, AttributeElement eleme
     remove(name);
   }
 
-#if __cplusplus >= 201103L
-  attributes.emplace_back();
-  attr = &attributes.back();
-  attr->set(name, type, element);
-#else
-  {
-    Attribute attr_temp;
-    attr_temp.set(name, type, element);
-    attributes.push_back(attr_temp);
-    attr = &attributes.back();
-  }
-#endif
-
-  /* this is weak .. */
-  attr->resize(geometry, prim, false);
-
-  return attr;
+  Attribute new_attr(name, type, element, geometry, prim);
+  attributes.emplace_back(std::move(new_attr));
+  tag_modified(attributes.back());
+  return &attributes.back();
 }
 
 Attribute *AttributeSet::find(ustring name) const
@@ -449,7 +479,7 @@ void AttributeSet::remove(ustring name)
 
     for (it = attributes.begin(); it != attributes.end(); it++) {
       if (&*it == attr) {
-        attributes.erase(it);
+        remove(it);
         return;
       }
     }
@@ -463,7 +493,7 @@ Attribute *AttributeSet::add(AttributeStandard std, ustring name)
   if (name == ustring())
     name = Attribute::standard_name(std);
 
-  if (geometry->type == Geometry::MESH) {
+  if (geometry->geometry_type == Geometry::MESH) {
     switch (std) {
       case ATTR_STD_VERTEX_NORMAL:
         attr = add(name, TypeDesc::TypeNormal, ATTR_ELEMENT_VERTEX);
@@ -479,6 +509,9 @@ Attribute *AttributeSet::add(AttributeStandard std, ustring name)
         break;
       case ATTR_STD_UV_TANGENT_SIGN:
         attr = add(name, TypeDesc::TypeFloat, ATTR_ELEMENT_CORNER);
+        break;
+      case ATTR_STD_VERTEX_COLOR:
+        attr = add(name, TypeRGBA, ATTR_ELEMENT_CORNER_BYTE);
         break;
       case ATTR_STD_GENERATED:
       case ATTR_STD_POSITION_UNDEFORMED:
@@ -500,6 +533,25 @@ Attribute *AttributeSet::add(AttributeStandard std, ustring name)
       case ATTR_STD_GENERATED_TRANSFORM:
         attr = add(name, TypeDesc::TypeMatrix, ATTR_ELEMENT_MESH);
         break;
+      case ATTR_STD_POINTINESS:
+        attr = add(name, TypeDesc::TypeFloat, ATTR_ELEMENT_VERTEX);
+        break;
+      case ATTR_STD_RANDOM_PER_ISLAND:
+        attr = add(name, TypeDesc::TypeFloat, ATTR_ELEMENT_FACE);
+        break;
+      default:
+        assert(0);
+        break;
+    }
+  }
+  else if (geometry->geometry_type == Geometry::VOLUME) {
+    switch (std) {
+      case ATTR_STD_VERTEX_NORMAL:
+        attr = add(name, TypeDesc::TypeNormal, ATTR_ELEMENT_VERTEX);
+        break;
+      case ATTR_STD_FACE_NORMAL:
+        attr = add(name, TypeDesc::TypeNormal, ATTR_ELEMENT_FACE);
+        break;
       case ATTR_STD_VOLUME_DENSITY:
       case ATTR_STD_VOLUME_FLAME:
       case ATTR_STD_VOLUME_HEAT:
@@ -512,18 +564,12 @@ Attribute *AttributeSet::add(AttributeStandard std, ustring name)
       case ATTR_STD_VOLUME_VELOCITY:
         attr = add(name, TypeDesc::TypeVector, ATTR_ELEMENT_VOXEL);
         break;
-      case ATTR_STD_POINTINESS:
-        attr = add(name, TypeDesc::TypeFloat, ATTR_ELEMENT_VERTEX);
-        break;
-      case ATTR_STD_RANDOM_PER_ISLAND:
-        attr = add(name, TypeDesc::TypeFloat, ATTR_ELEMENT_FACE);
-        break;
       default:
         assert(0);
         break;
     }
   }
-  else if (geometry->type == Geometry::HAIR) {
+  else if (geometry->geometry_type == Geometry::HAIR) {
     switch (std) {
       case ATTR_STD_UV:
         attr = add(name, TypeFloat2, ATTR_ELEMENT_CURVE);
@@ -578,7 +624,7 @@ void AttributeSet::remove(AttributeStandard std)
 
     for (it = attributes.begin(); it != attributes.end(); it++) {
       if (&*it == attr) {
-        attributes.erase(it);
+        remove(it);
         return;
       }
     }
@@ -601,6 +647,12 @@ void AttributeSet::remove(Attribute *attribute)
   else {
     remove(attribute->std);
   }
+}
+
+void AttributeSet::remove(list<Attribute>::iterator it)
+{
+  tag_modified(*it);
+  attributes.erase(it);
 }
 
 void AttributeSet::resize(bool reserve_only)
@@ -627,6 +679,66 @@ void AttributeSet::clear(bool preserve_voxel_data)
   else {
     attributes.clear();
   }
+}
+
+void AttributeSet::update(AttributeSet &&new_attributes)
+{
+  /* add or update old_attributes based on the new_attributes */
+  foreach (Attribute &attr, new_attributes.attributes) {
+    Attribute *nattr = add(attr.name, attr.type, attr.element);
+    nattr->std = attr.std;
+    nattr->set_data_from(std::move(attr));
+  }
+
+  /* remove any attributes not on new_attributes */
+  list<Attribute>::iterator it;
+  for (it = attributes.begin(); it != attributes.end();) {
+    if (it->std != ATTR_STD_NONE) {
+      if (new_attributes.find(it->std) == nullptr) {
+        remove(it++);
+        continue;
+      }
+    }
+    else if (it->name != "") {
+      if (new_attributes.find(it->name) == nullptr) {
+        remove(it++);
+        continue;
+      }
+    }
+
+    it++;
+  }
+
+  /* If all attributes were replaced, transform is no longer applied. */
+  geometry->transform_applied = false;
+}
+
+void AttributeSet::clear_modified()
+{
+  foreach (Attribute &attr, attributes) {
+    attr.modified = false;
+  }
+
+  modified_flag = 0;
+}
+
+void AttributeSet::tag_modified(const Attribute &attr)
+{
+  /* Some attributes are not stored in the various kernel attribute arrays
+   * (DeviceScene::attribute_*), so the modified flags are only set if the associated standard
+   * corresponds to an attribute which will be stored in the kernel's attribute arrays. */
+  const bool modifies_device_array = (attr.std != ATTR_STD_FACE_NORMAL &&
+                                      attr.std != ATTR_STD_VERTEX_NORMAL);
+
+  if (modifies_device_array) {
+    AttrKernelDataType kernel_type = Attribute::kernel_type(attr);
+    modified_flag |= (1u << kernel_type);
+  }
+}
+
+bool AttributeSet::modified(AttrKernelDataType kernel_type) const
+{
+  return (modified_flag & (1u << kernel_type)) != 0;
 }
 
 /* AttributeRequest */

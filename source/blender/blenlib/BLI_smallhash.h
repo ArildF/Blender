@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BLI_SMALLHASH_H__
-#define __BLI_SMALLHASH_H__
+#pragma once
 
 /** \file
  * \ingroup bli
@@ -26,13 +25,17 @@
 
 #include "BLI_compiler_attrs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
   uintptr_t key;
   void *val;
 } SmallHashEntry;
 
-/* how much stack space to use before dynamically allocating memory.
- * set to match one of the values in 'hashsizes' to avoid too many mallocs  */
+/* How much stack space to use before dynamically allocating memory.
+ * set to match one of the values in 'hashsizes' to avoid too many mallocs. */
 #define SMSTACKSIZE 131
 typedef struct SmallHash {
   unsigned int nbuckets;
@@ -74,4 +77,6 @@ void **BLI_smallhash_iternew_p(const SmallHash *sh, SmallHashIter *iter, uintptr
 double BLI_smallhash_calc_quality(SmallHash *sh);
 #endif
 
-#endif /* __BLI_SMALLHASH_H__ */
+#ifdef __cplusplus
+}
+#endif

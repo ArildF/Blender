@@ -18,13 +18,12 @@
  * \ingroup freestyle
  */
 
-#ifndef __FREESTYLE_PYTHON_UNARYFUNCTION1DVECTORVIEWSHAPE_H__
-#define __FREESTYLE_PYTHON_UNARYFUNCTION1DVECTORVIEWSHAPE_H__
+#pragma once
 
 #include "../BPy_UnaryFunction1D.h"
 
-#include <vector>
 #include "../../view_map/ViewMap.h"
+#include <vector>
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,7 +40,7 @@ extern PyTypeObject UnaryFunction1DVectorViewShape_Type;
  * definition----------*/
 typedef struct {
   BPy_UnaryFunction1D py_uf1D;
-  UnaryFunction1D<std::vector<ViewShape *>> *uf1D_vectorviewshape;
+  Freestyle::UnaryFunction1D<std::vector<Freestyle::ViewShape *>> *uf1D_vectorviewshape;
 } BPy_UnaryFunction1DVectorViewShape;
 
 /*---------------------------Python BPy_UnaryFunction1DVectorViewShape visible
@@ -53,5 +52,3 @@ int UnaryFunction1DVectorViewShape_Init(PyObject *module);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __FREESTYLE_PYTHON_UNARYFUNCTION1DVECTORVIEWSHAPE_H__ */

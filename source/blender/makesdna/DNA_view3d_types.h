@@ -21,8 +21,7 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_VIEW3D_TYPES_H__
-#define __DNA_VIEW3D_TYPES_H__
+#pragma once
 
 struct BoundBox;
 struct Object;
@@ -34,10 +33,15 @@ struct bGPdata;
 struct wmTimer;
 
 #include "DNA_defs.h"
-#include "DNA_listBase.h"
 #include "DNA_image_types.h"
-#include "DNA_object_types.h"
+#include "DNA_listBase.h"
 #include "DNA_movieclip_types.h"
+#include "DNA_object_types.h"
+#include "DNA_view3d_enums.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct RegionView3D {
 
@@ -65,10 +69,9 @@ typedef struct RegionView3D {
   float clip_local[6][4];
   struct BoundBox *clipbb;
 
-  /** Allocated backup of its self while in localview. */
+  /** Allocated backup of its self while in local-view. */
   struct RegionView3D *localvd;
   struct RenderEngine *render_engine;
-  struct ViewDepths *depths;
 
   /** Animated smooth view. */
   struct SmoothView3DStore *sms;
@@ -98,16 +101,19 @@ typedef struct RegionView3D {
   /** Viewport zoom on the camera frame, see BKE_screen_view3d_zoom_to_fac. */
   float camzoom;
   /**
-   * Check if persp/ortho view, since 'persp' cant be used for this since
+   * Check if persp/ortho view, since 'persp' can't be used for this since
    * it can have cameras assigned as well. (only set in #view3d_winmatrix_set)
    */
   char is_persp;
   char persp;
   char view;
-  char viewlock;
+  char view_axis_roll;
+  char viewlock; /* Should usually be accessed with RV3D_LOCK_FLAGS()! */
+  /** Options for runtime only locking (cleared on file read) */
+  char runtime_viewlock; /* Should usually be accessed with RV3D_LOCK_FLAGS()! */
   /** Options for quadview (store while out of quad view). */
   char viewlock_quad;
-  char _pad[3];
+  char _pad[1];
   /** Normalized offset for locked view: (-1, -1) bottom left, (1, 1) upper right. */
   float ofs_lock[2];
 
@@ -118,7 +124,10 @@ typedef struct RegionView3D {
   /** Last view (use when switching out of camera view). */
   float lviewquat[4];
   /** Lpersp can never be set to 'RV3D_CAMOB'. */
-  short lpersp, lview;
+  char lpersp;
+  char lview;
+  char lview_axis_roll;
+  char _pad8[1];
 
   /** Active rotation from NDOF or elsewhere. */
   float rot_angle;
@@ -166,6 +175,7 @@ typedef struct View3DShading {
   float studiolight_rot_z;
   float studiolight_background;
   float studiolight_intensity;
+  float studiolight_blur;
 
   float object_outline_color[3];
   float xray_alpha;
@@ -181,9 +191,10 @@ typedef struct View3DShading {
 
   /* Render pass displayed in the viewport. Is an `eScenePassType` where one bit is set */
   int render_pass;
-  char _pad2[4];
+  char aov_name[64];
 
   struct IDProperty *prop;
+  void *_pad2;
 } View3DShading;
 
 /** 3D Viewport Overlay settings. */
@@ -206,24 +217,48 @@ typedef struct View3DOverlay {
   float vertex_paint_mode_opacity;
   float weight_paint_mode_opacity;
   float sculpt_mode_mask_opacity;
+  float sculpt_mode_face_sets_opacity;
 
   /** Armature edit/pose mode settings. */
-  int _pad3;
   float xray_alpha_bone;
+
+  /** Darken Inactive. */
+  float fade_alpha;
 
   /** Other settings. */
   float wireframe_threshold;
+  float wireframe_opacity;
 
   /** Grease pencil settings. */
   float gpencil_paper_opacity;
   float gpencil_grid_opacity;
   float gpencil_fade_layer;
 
+  /** Factor for mixing vertex paint with original color */
+  float gpencil_vertex_paint_opacity;
+  /** Handles display type for curves. */
+  int handle_display;
 } View3DOverlay;
+
+/* View3DOverlay->handle_display */
+typedef enum eHandleDisplay {
+  /* Display only selected points. */
+  CURVE_HANDLE_SELECTED = 0,
+  /* Display all handles. */
+  CURVE_HANDLE_ALL = 1,
+  /* No display handles. */
+  CURVE_HANDLE_NONE = 2,
+} eHandleDisplay;
 
 typedef struct View3D_Runtime {
   /** Nkey panel stores stuff here. */
   void *properties_storage;
+  /** Runtime only flags. */
+  int flag;
+
+  char _pad1[4];
+  /* Only used for overlay stats while in local-view. */
+  struct SceneStats *local_stats;
 } View3D_Runtime;
 
 /** 3D ViewPort Struct. */
@@ -257,14 +292,14 @@ typedef struct View3D {
   short persp DNA_DEPRECATED;
   short view DNA_DEPRECATED;
 
-  struct Object *camera, *ob_centre;
+  struct Object *camera, *ob_center;
   rctf render_border;
 
-  /** Allocated backup of its self while in localview. */
+  /** Allocated backup of its self while in local-view. */
   struct View3D *localvd;
 
   /** Optional string for armature bone to define center, MAXBONENAME. */
-  char ob_centre_bone[64];
+  char ob_center_bone[64];
 
   unsigned short local_view_uuid;
   char _pad6[2];
@@ -273,7 +308,7 @@ typedef struct View3D {
   short _pad7[3];
 
   /** Optional bool for 3d cursor to define center. */
-  short ob_centre_cursor;
+  short ob_center_cursor;
   short scenelock;
   short gp_flag;
   short flag;
@@ -333,13 +368,22 @@ typedef struct View3D {
 #define V3D_LOCAL_COLLECTIONS (1 << 0)
 #define V3D_FLAG_UNUSED_1 (1 << 1) /* cleared */
 #define V3D_HIDE_HELPLINES (1 << 2)
-#define V3D_INVALID_BACKBUF (1 << 3)
+#define V3D_FLAG_UNUSED_2 (1 << 3) /* cleared */
+#define V3D_XR_SESSION_MIRROR (1 << 4)
 
 #define V3D_FLAG_UNUSED_10 (1 << 10) /* cleared */
 #define V3D_SELECT_OUTLINE (1 << 11)
 #define V3D_FLAG_UNUSED_12 (1 << 12) /* cleared */
 #define V3D_GLOBAL_STATS (1 << 13)
 #define V3D_DRAW_CENTERS (1 << 15)
+
+/** #View3D_Runtime.flag */
+enum {
+  /** The 3D view which the XR session was created in is flagged with this. */
+  V3D_RUNTIME_XR_SESSION_ROOT = (1 << 0),
+  /** Some operators override the depth buffer for dedicated occlusion operations. */
+  V3D_RUNTIME_DEPTHBUF_OVERRIDDEN = (1 << 1),
+};
 
 /** #RegionView3D.persp */
 #define RV3D_ORTHO 0
@@ -359,9 +403,19 @@ typedef struct View3D {
 #define RV3D_ZOFFSET_DISABLED 64
 
 /** #RegionView3D.viewlock */
-#define RV3D_LOCKED (1 << 0)
-#define RV3D_BOXVIEW (1 << 1)
-#define RV3D_BOXCLIP (1 << 2)
+enum {
+  RV3D_LOCK_ROTATION = (1 << 0),
+  RV3D_BOXVIEW = (1 << 1),
+  RV3D_BOXCLIP = (1 << 2),
+  RV3D_LOCK_LOCATION = (1 << 3),
+  RV3D_LOCK_ZOOM_AND_DOLLY = (1 << 4),
+
+  RV3D_LOCK_ANY_TRANSFORM = (RV3D_LOCK_LOCATION | RV3D_LOCK_ROTATION | RV3D_LOCK_ZOOM_AND_DOLLY),
+};
+
+/* Bitwise OR of the regular lock-flags with runtime only lock-flags. */
+#define RV3D_LOCK_FLAGS(rv3d) ((rv3d)->viewlock | ((rv3d)->runtime_viewlock))
+
 /** #RegionView3D.viewlock_quad */
 #define RV3D_VIEWLOCK_INIT (1 << 7)
 
@@ -376,9 +430,22 @@ typedef struct View3D {
 #define RV3D_VIEW_CAMERA 8
 
 #define RV3D_VIEW_IS_AXIS(view) (((view) >= RV3D_VIEW_FRONT) && ((view) <= RV3D_VIEW_BOTTOM))
+
+/**
+ * #RegionView3D.view_axis_roll
+ *
+ * Clockwise rotation to use for axis-views, when #RV3D_VIEW_IS_AXIS is true.
+ */
+enum {
+  RV3D_VIEW_AXIS_ROLL_0 = 0,
+  RV3D_VIEW_AXIS_ROLL_90 = 1,
+  RV3D_VIEW_AXIS_ROLL_180 = 2,
+  RV3D_VIEW_AXIS_ROLL_270 = 3,
+};
+
 #define RV3D_CLIPPING_ENABLED(v3d, rv3d) \
-  (rv3d && v3d && (rv3d->rflag & RV3D_CLIPPING) && ELEM(v3d->shading.type, OB_WIRE, OB_SOLID) && \
-   rv3d->clipbb)
+  ((rv3d) && (v3d) && ((rv3d)->rflag & RV3D_CLIPPING) && \
+   ELEM((v3d)->shading.type, OB_WIRE, OB_SOLID) && (rv3d)->clipbb)
 
 /** #View3D.flag2 (int) */
 #define V3D_HIDE_OVERLAYS (1 << 2)
@@ -397,20 +464,16 @@ typedef struct View3D {
 #define V3D_FLAG2_UNUSED_15 (1 << 15) /* cleared */
 
 /** #View3D.gp_flag (short) */
-#define V3D_GP_SHOW_PAPER (1 << 0) /* Activate paper to cover all viewport */
-#define V3D_GP_SHOW_GRID (1 << 1)  /* Activate paper grid */
+#define V3D_GP_FADE_OBJECTS (1 << 0) /* Fade all non GP objects */
+#define V3D_GP_SHOW_GRID (1 << 1)    /* Activate paper grid */
 #define V3D_GP_SHOW_EDIT_LINES (1 << 2)
 #define V3D_GP_SHOW_MULTIEDIT_LINES (1 << 3)
 #define V3D_GP_SHOW_ONION_SKIN (1 << 4)       /* main switch at view level */
 #define V3D_GP_FADE_NOACTIVE_LAYERS (1 << 5)  /* fade layers not active */
 #define V3D_GP_FADE_NOACTIVE_GPENCIL (1 << 6) /* Fade other GPencil objects */
-
-/** #View3DShading.light */
-enum {
-  V3D_LIGHTING_FLAT = 0,
-  V3D_LIGHTING_STUDIO = 1,
-  V3D_LIGHTING_MATCAP = 2,
-};
+#define V3D_GP_SHOW_STROKE_DIRECTION (1 << 7) /* Show Strokes Directions */
+#define V3D_GP_SHOW_MATERIAL_NAME (1 << 8)    /* Show Material names */
+#define V3D_GP_SHOW_GRID_XRAY (1 << 9)        /* Show Canvas Grid on Top */
 
 /** #View3DShading.flag */
 enum {
@@ -428,27 +491,7 @@ enum {
   V3D_SHADING_DEPTH_OF_FIELD = (1 << 11),
   V3D_SHADING_SCENE_LIGHTS_RENDER = (1 << 12),
   V3D_SHADING_SCENE_WORLD_RENDER = (1 << 13),
-};
-
-/** #View3DShading.color_type */
-enum {
-  V3D_SHADING_MATERIAL_COLOR = 0,
-  V3D_SHADING_RANDOM_COLOR = 1,
-  V3D_SHADING_SINGLE_COLOR = 2,
-  V3D_SHADING_TEXTURE_COLOR = 3,
-  V3D_SHADING_OBJECT_COLOR = 4,
-  V3D_SHADING_VERTEX_COLOR = 5,
-
-  /* Is used to display the object using the error color. For example when in
-   * solid texture paint mode without any textures configured */
-  V3D_SHADING_ERROR_COLOR = 999,
-};
-
-/** #View3DShading.background_type */
-enum {
-  V3D_SHADING_BACKGROUND_THEME = 0,
-  V3D_SHADING_BACKGROUND_WORLD = 1,
-  V3D_SHADING_BACKGROUND_VIEWPORT = 2,
+  V3D_SHADING_STUDIOLIGHT_VIEW_ROTATION = (1 << 14),
 };
 
 /** #View3DShading.cavity_type */
@@ -471,6 +514,8 @@ enum {
   V3D_OVERLAY_HIDE_BONES = (1 << 8),
   V3D_OVERLAY_HIDE_OBJECT_XTRAS = (1 << 9),
   V3D_OVERLAY_HIDE_OBJECT_ORIGINS = (1 << 10),
+  V3D_OVERLAY_STATS = (1 << 11),
+  V3D_OVERLAY_FADE_INACTIVE = (1 << 12),
 };
 
 /** #View3DOverlay.edit_flag */
@@ -502,7 +547,9 @@ enum {
   V3D_OVERLAY_EDIT_FACE_AREA = (1 << 18),
   V3D_OVERLAY_EDIT_INDICES = (1 << 19),
 
-  V3D_OVERLAY_EDIT_CU_HANDLES = (1 << 20),
+  /* Deprecated. */
+  // V3D_OVERLAY_EDIT_CU_HANDLES = (1 << 20),
+
   V3D_OVERLAY_EDIT_CU_NORMALS = (1 << 21),
 };
 
@@ -530,7 +577,7 @@ enum {
   V3D_AROUND_ACTIVE = 4,
 };
 
-/** #View3d.gridflag */
+/** #View3D.gridflag */
 #define V3D_SHOW_FLOOR (1 << 0)
 #define V3D_SHOW_X (1 << 1)
 #define V3D_SHOW_Y (1 << 2)
@@ -590,13 +637,6 @@ enum {
   V3D_GIZMO_SHOW_CAMERA_DOF_DIST = (1 << 2),
 };
 
-/** Settings for offscreen rendering */
-enum {
-  V3D_OFSDRAW_NONE = (0),
-  V3D_OFSDRAW_SHOW_ANNOTATION = (1 << 0),
-  V3D_OFSDRAW_OVERRIDE_SCENE_SETTINGS = (1 << 1),
-};
-
 #define RV3D_CAMZOOM_MIN -30
 #define RV3D_CAMZOOM_MAX 600
 
@@ -604,4 +644,6 @@ enum {
 #define RV3D_CAMZOOM_MIN_FACTOR 0.1657359312880714853f
 #define RV3D_CAMZOOM_MAX_FACTOR 44.9852813742385702928f
 
+#ifdef __cplusplus
+}
 #endif

@@ -30,20 +30,19 @@
 #include "DNA_object_types.h"
 
 #include "BLI_math_geom.h"
+#include "BLI_task.h"
 #include "BLI_threads.h"
 
 #include "BKE_bvhutils.h"
-#include "BKE_library.h"
+#include "BKE_lib_id.h"
 #include "BKE_mesh.h"
 #include "BKE_mesh_runtime.h"
-#include "BKE_subdiv_ccg.h"
 #include "BKE_shrinkwrap.h"
+#include "BKE_subdiv_ccg.h"
 
 /* -------------------------------------------------------------------- */
 /** \name Mesh Runtime Struct Utils
  * \{ */
-
-static ThreadRWMutex loops_cache_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 /**
  * Default values defined at read time.
@@ -100,7 +99,7 @@ void BKE_mesh_runtime_clear_cache(Mesh *mesh)
  */
 static void mesh_ensure_looptri_data(Mesh *mesh)
 {
-  const unsigned int totpoly = mesh->totpoly;
+  const uint totpoly = mesh->totpoly;
   const int looptris_len = poly_to_tri_count(totpoly, mesh->totloop);
 
   BLI_assert(mesh->runtime.looptris.array_wip == NULL);
@@ -153,28 +152,35 @@ int BKE_mesh_runtime_looptri_len(const Mesh *mesh)
   return looptri_len;
 }
 
-/* This is a ported copy of dm_getLoopTriArray(dm). */
-const MLoopTri *BKE_mesh_runtime_looptri_ensure(Mesh *mesh)
+static void mesh_runtime_looptri_recalc_isolated(void *userdata)
 {
-  MLoopTri *looptri;
+  Mesh *mesh = userdata;
+  BKE_mesh_runtime_looptri_recalc(mesh);
+}
 
-  BLI_rw_mutex_lock(&loops_cache_lock, THREAD_LOCK_READ);
-  looptri = mesh->runtime.looptris.array;
-  BLI_rw_mutex_unlock(&loops_cache_lock);
+/**
+ * \note This function only fills a cache, and therefore the mesh argument can
+ * be considered logically const. Concurrent access is protected by a mutex.
+ * \note This is a ported copy of dm_getLoopTriArray(dm).
+ */
+const MLoopTri *BKE_mesh_runtime_looptri_ensure(const Mesh *mesh)
+{
+  ThreadMutex *mesh_eval_mutex = (ThreadMutex *)mesh->runtime.eval_mutex;
+  BLI_mutex_lock(mesh_eval_mutex);
+
+  MLoopTri *looptri = mesh->runtime.looptris.array;
 
   if (looptri != NULL) {
     BLI_assert(BKE_mesh_runtime_looptri_len(mesh) == mesh->runtime.looptris.len);
   }
   else {
-    BLI_rw_mutex_lock(&loops_cache_lock, THREAD_LOCK_WRITE);
-    /* We need to ensure array is still NULL inside mutex-protected code,
-     * some other thread might have already recomputed those looptris. */
-    if (mesh->runtime.looptris.array == NULL) {
-      BKE_mesh_runtime_looptri_recalc(mesh);
-    }
+    /* Must isolate multithreaded tasks while holding a mutex lock. */
+    BLI_task_isolate(mesh_runtime_looptri_recalc_isolated, (void *)mesh);
     looptri = mesh->runtime.looptris.array;
-    BLI_rw_mutex_unlock(&loops_cache_lock);
   }
+
+  BLI_mutex_unlock(mesh_eval_mutex);
+
   return looptri;
 }
 
@@ -184,8 +190,7 @@ void BKE_mesh_runtime_verttri_from_looptri(MVertTri *r_verttri,
                                            const MLoopTri *looptri,
                                            int looptri_num)
 {
-  int i;
-  for (i = 0; i < looptri_num; i++) {
+  for (int i = 0; i < looptri_num; i++) {
     r_verttri[i].tri[0] = mloop[looptri[i].tri[0]].v;
     r_verttri[i].tri[1] = mloop[looptri[i].tri[1]].v;
     r_verttri[i].tri[2] = mloop[looptri[i].tri[2]].v;
@@ -202,32 +207,40 @@ bool BKE_mesh_runtime_ensure_edit_data(struct Mesh *mesh)
   return true;
 }
 
+bool BKE_mesh_runtime_reset_edit_data(Mesh *mesh)
+{
+  EditMeshData *edit_data = mesh->runtime.edit_data;
+  if (edit_data == NULL) {
+    return false;
+  }
+
+  MEM_SAFE_FREE(edit_data->polyCos);
+  MEM_SAFE_FREE(edit_data->polyNos);
+  MEM_SAFE_FREE(edit_data->vertexCos);
+  MEM_SAFE_FREE(edit_data->vertexNos);
+
+  return true;
+}
+
 bool BKE_mesh_runtime_clear_edit_data(Mesh *mesh)
 {
   if (mesh->runtime.edit_data == NULL) {
     return false;
   }
+  BKE_mesh_runtime_reset_edit_data(mesh);
 
-  if (mesh->runtime.edit_data->polyCos != NULL) {
-    MEM_freeN((void *)mesh->runtime.edit_data->polyCos);
-  }
-  if (mesh->runtime.edit_data->polyNos != NULL) {
-    MEM_freeN((void *)mesh->runtime.edit_data->polyNos);
-  }
-  if (mesh->runtime.edit_data->vertexCos != NULL) {
-    MEM_freeN((void *)mesh->runtime.edit_data->vertexCos);
-  }
-  if (mesh->runtime.edit_data->vertexNos != NULL) {
-    MEM_freeN((void *)mesh->runtime.edit_data->vertexNos);
-  }
+  MEM_freeN(mesh->runtime.edit_data);
+  mesh->runtime.edit_data = NULL;
 
-  MEM_SAFE_FREE(mesh->runtime.edit_data);
   return true;
 }
 
 void BKE_mesh_runtime_clear_geometry(Mesh *mesh)
 {
-  bvhcache_free(&mesh->runtime.bvh_cache);
+  if (mesh->runtime.bvh_cache) {
+    bvhcache_free(mesh->runtime.bvh_cache);
+    mesh->runtime.bvh_cache = NULL;
+  }
   MEM_SAFE_FREE(mesh->runtime.looptris.array);
   /* TODO(sergey): Does this really belong here? */
   if (mesh->runtime.subdiv_ccg != NULL) {
@@ -244,10 +257,10 @@ void BKE_mesh_runtime_clear_geometry(Mesh *mesh)
  * \{ */
 
 /* Draw Engine */
-void (*BKE_mesh_batch_cache_dirty_tag_cb)(Mesh *me, int mode) = NULL;
+void (*BKE_mesh_batch_cache_dirty_tag_cb)(Mesh *me, eMeshBatchDirtyMode mode) = NULL;
 void (*BKE_mesh_batch_cache_free_cb)(Mesh *me) = NULL;
 
-void BKE_mesh_batch_cache_dirty_tag(Mesh *me, int mode)
+void BKE_mesh_batch_cache_dirty_tag(Mesh *me, eMeshBatchDirtyMode mode)
 {
   if (me->runtime.batch_cache) {
     BKE_mesh_batch_cache_dirty_tag_cb(me, mode);
@@ -262,6 +275,7 @@ void BKE_mesh_batch_cache_free(Mesh *me)
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Mesh runtime debug helpers.
  * \{ */
 /* evaluated mesh info printing function,
@@ -276,7 +290,7 @@ static void mesh_runtime_debug_info_layers(DynStr *dynstr, CustomData *cd)
 
   for (type = 0; type < CD_NUMTYPES; type++) {
     if (CustomData_has_layer(cd, type)) {
-      /* note: doesn't account for multiple layers */
+      /* NOTE: doesn't account for multiple layers. */
       const char *name = CustomData_layertype_name(type);
       const int size = CustomData_sizeof(type);
       const void *pt = CustomData_get_layer(cd, type);

@@ -25,12 +25,12 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_buffer.h"
+#include "BLI_utildefines.h"
 
 #include "bmesh.h"
-#include "intern/bmesh_private.h"
 #include "bmesh_separate.h" /* own include */
+#include "intern/bmesh_private.h"
 
 /**
  * Split all faces that match `filter_fn`.
@@ -67,7 +67,7 @@ void BM_mesh_separate_faces(BMesh *bm, BMFaceFilterFunc filter_fn, void *user_da
   BMFace **faces_a = faces_array_all;
   BMFace **faces_b = faces_array_all + faces_a_len;
 
-  /* Enable for all  */
+  /* Enable for all. */
   BM_mesh_elem_hflag_enable_all(bm, BM_VERT, BM_ELEM_TAG, false);
 
   /* Disable vert tag on faces_b */

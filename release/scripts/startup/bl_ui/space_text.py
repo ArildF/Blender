@@ -35,12 +35,12 @@ class TEXT_HT_header(Header):
 
         TEXT_MT_editor_menus.draw_collapsible(context, layout)
 
+        layout.separator_spacer()
+
         if text and text.is_modified:
             row = layout.row(align=True)
             row.alert = True
-            row.operator("text.resolve_conflict", text="", icon='HELP')
-
-        layout.separator_spacer()
+            row.operator("text.resolve_conflict", text="", icon='QUESTION')
 
         row = layout.row(align=True)
         row.template_ID(st, "text", new="text.new",
@@ -129,18 +129,21 @@ class TEXT_PT_properties(Panel):
         layout.use_property_decorate = False
         st = context.space_data
 
-        flow = layout.column_flow()
         if not st.text:
-            flow.active = False
-        row = flow.row(align=True)
-        st = context.space_data
-        row.prop(st, "show_margin", text="Margin")
-        rowsub = row.row()
-        rowsub.active = st.show_margin
-        rowsub.prop(st, "margin_column", text="")
+            layout.active = False
 
-        flow.prop(st, "font_size")
-        flow.prop(st, "tab_width")
+        st = context.space_data
+
+        col = layout.column(align=False, heading="Margin")
+        row = col.row(align=True)
+        sub = row.row(align=True)
+        sub.prop(st, "show_margin", text="")
+        sub = sub.row(align=True)
+        sub.active = st.show_margin
+        sub.prop(st, "margin_column", text="")
+
+        layout.prop(st, "font_size")
+        layout.prop(st, "tab_width")
 
         text = st.text
         if text:
@@ -171,7 +174,10 @@ class TEXT_PT_find(Panel):
         row = col.row(align=True)
         row.prop(st, "replace_text", icon='DECORATE_OVERRIDE', text="")
         row.operator("text.replace_set_selected", text="", icon='EYEDROPPER')
-        col.operator("text.replace")
+
+        row = col.row(align=True)
+        row.operator("text.replace")
+        row.operator("text.replace", text="Replace All").all = True
 
         layout.separator()
 
@@ -278,7 +284,7 @@ class TEXT_MT_templates_py(Menu):
 
     def draw(self, _context):
         self.path_menu(
-            bpy.utils.script_paths("templates_py"),
+            bpy.utils.script_paths(subdir="templates_py"),
             "text.open",
             props_default={"internal": True},
             filter_ext=lambda ext: (ext.lower() == ".py")
@@ -290,7 +296,7 @@ class TEXT_MT_templates_osl(Menu):
 
     def draw(self, _context):
         self.path_menu(
-            bpy.utils.script_paths("templates_osl"),
+            bpy.utils.script_paths(subdir="templates_osl"),
             "text.open",
             props_default={"internal": True},
             filter_ext=lambda ext: (ext.lower() == ".osl")
@@ -356,7 +362,7 @@ class TEXT_MT_format(Menu):
 
 
 class TEXT_MT_edit_to3d(Menu):
-    bl_label = "Text To 3D Object"
+    bl_label = "Text to 3D Object"
 
     def draw(self, _context):
         layout = self.layout
@@ -397,7 +403,7 @@ class TEXT_MT_edit(Menu):
         layout.separator()
 
         layout.operator("text.start_find", text="Find & Replace...")
-        layout.operator("text.find_set_selected", text="Find Next")
+        layout.operator("text.find_set_selected")
         layout.operator("text.jump", text="Jump To...")
 
         layout.separator()

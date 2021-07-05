@@ -22,15 +22,15 @@
  * functions into (called via blenders generic BLI_cb api)
  */
 
-#include <Python.h>
 #include "BLI_utildefines.h"
+#include <Python.h>
 
 #include "BKE_callbacks.h"
 
-#include "RNA_types.h"
 #include "RNA_access.h"
-#include "bpy_rna.h"
+#include "RNA_types.h"
 #include "bpy_app_handlers.h"
+#include "bpy_rna.h"
 
 #include "../generic/python_utildefines.h"
 
@@ -43,9 +43,20 @@ void bpy_app_generic_callback(struct Main *main,
 
 static PyTypeObject BlenderAppCbType;
 
+/**
+ * See `BKE_callbacks.h` #eCbEvent declaration for the policy on naming.
+ */
 static PyStructSequence_Field app_cb_info_fields[] = {
-    {"frame_change_pre", "on frame change for playback and rendering (before)"},
-    {"frame_change_post", "on frame change for playback and rendering (after)"},
+    {"frame_change_pre",
+     "Called after frame change for playback and rendering, before any data is evaluated for the "
+     "new frame. This makes it possible to change data and relations (for example swap an object "
+     "to another mesh) for the new frame. Note that this handler is **not** to be used as 'before "
+     "the frame changes' event. The dependency graph is not available in this handler, as data "
+     "and relations may have been altered and the dependency graph has not yet been updated for "
+     "that."},
+    {"frame_change_post",
+     "Called after frame change for playback and rendering, after the data has been evaluated "
+     "for the new frame."},
     {"render_pre", "on render (before)"},
     {"render_post", "on render (after)"},
     {"render_write", "on writing a render frame (directly after the frame is written)"},
@@ -66,6 +77,7 @@ static PyStructSequence_Field app_cb_info_fields[] = {
     {"version_update", "on ending the versioning code"},
     {"load_factory_preferences_post", "on loading factory preferences (after)"},
     {"load_factory_startup_post", "on loading factory startup (after)"},
+    {"xr_session_start_pre", "on starting an xr session (before)"},
 
 /* sets the permanent tag */
 #define APP_CB_OTHER_FIELDS 1
@@ -110,22 +122,20 @@ static PyObject *bpy_app_handlers_persistent_new(PyTypeObject *UNUSED(type),
                       "get the dictionary from the function passed");
       return NULL;
     }
-    else {
-      /* set id */
-      if (*dict_ptr == NULL) {
-        *dict_ptr = PyDict_New();
-      }
 
-      PyDict_SetItemString(*dict_ptr, PERMINENT_CB_ID, Py_None);
+    /* set id */
+    if (*dict_ptr == NULL) {
+      *dict_ptr = PyDict_New();
     }
+
+    PyDict_SetItemString(*dict_ptr, PERMINENT_CB_ID, Py_None);
 
     Py_INCREF(value);
     return value;
   }
-  else {
-    PyErr_SetString(PyExc_ValueError, "bpy.app.handlers.persistent expected a function");
-    return NULL;
-  }
+
+  PyErr_SetString(PyExc_ValueError, "bpy.app.handlers.persistent expected a function");
+  return NULL;
 }
 
 /* dummy type because decorators can't be PyCFunctions */
@@ -226,7 +236,7 @@ PyObject *BPY_app_handlers_struct(void)
   BlenderAppCbType.tp_init = NULL;
   BlenderAppCbType.tp_new = NULL;
   BlenderAppCbType.tp_hash = (hashfunc)
-      _Py_HashPointer; /* without this we can't do set(sys.modules) [#29635] */
+      _Py_HashPointer; /* without this we can't do set(sys.modules) T29635. */
 
   /* assign the C callbacks */
   if (ret) {
@@ -280,7 +290,7 @@ void BPY_app_handlers_reset(const short do_all)
         }
         else {
           /* remove */
-          /* PySequence_DelItem(ls, i); */ /* more obvious buw slower */
+          /* PySequence_DelItem(ls, i); */ /* more obvious but slower */
           PyList_SetSlice(ls, i, i + 1, NULL);
         }
       }
@@ -312,7 +322,7 @@ void bpy_app_generic_callback(struct Main *UNUSED(main),
 {
   PyObject *cb_list = py_cb_array[POINTER_AS_INT(arg)];
   if (PyList_GET_SIZE(cb_list) > 0) {
-    PyGILState_STATE gilstate = PyGILState_Ensure();
+    const PyGILState_STATE gilstate = PyGILState_Ensure();
 
     const int num_arguments = 2;
     PyObject *args_all = PyTuple_New(num_arguments); /* save python creating each call */
@@ -337,7 +347,7 @@ void bpy_app_generic_callback(struct Main *UNUSED(main),
     }
 
     /* Iterate the list and run the callbacks
-     * note: don't store the list size since the scripts may remove themselves */
+     * NOTE: don't store the list size since the scripts may remove themselves. */
     for (pos = 0; pos < PyList_GET_SIZE(cb_list); pos++) {
       func = PyList_GET_ITEM(cb_list, pos);
       PyObject *args = choose_arguments(func, args_all, args_single);

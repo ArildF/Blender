@@ -27,17 +27,18 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
+#include "BLI_ghash.h"
 #include "BLI_math_vector.h"
 #include "BLI_string.h"
-#include "BLI_ghash.h"
+#include "BLI_utildefines.h"
 
+#include "DNA_customdata_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 #include "DNA_modifier_types.h"
 #include "DNA_particle_types.h"
-#include "DNA_customdata_types.h"
 
+#include "BKE_customdata.h"
 #include "BKE_mesh.h"
 #include "BKE_particle.h"
 #include "BKE_pointcache.h"
@@ -128,9 +129,8 @@ static bool particle_batch_cache_valid(ParticleSystem *psys)
   if (cache->is_dirty == false) {
     return true;
   }
-  else {
-    return false;
-  }
+
+  return false;
 
   return true;
 }
@@ -179,9 +179,9 @@ static void particle_batch_cache_clear_point(ParticlePointCache *point_cache)
   GPU_VERTBUF_DISCARD_SAFE(point_cache->pos);
 }
 
-static void particle_batch_cache_clear_hair(ParticleHairCache *hair_cache)
+void particle_batch_cache_clear_hair(ParticleHairCache *hair_cache)
 {
-  /* TODO more granular update tagging. */
+  /* TODO: more granular update tagging. */
   GPU_VERTBUF_DISCARD_SAFE(hair_cache->proc_point_buf);
   DRW_TEXTURE_FREE_SAFE(hair_cache->point_tex);
 
@@ -302,12 +302,12 @@ static void particle_calculate_parent_uvs(ParticleSystem *psys,
   }
   ParticleData *particle = &psys->particles[parent_index];
   int num = particle->num_dmcache;
-  if (num == DMCACHE_NOTFOUND || num == DMCACHE_ISCHILD) {
+  if (ELEM(num, DMCACHE_NOTFOUND, DMCACHE_ISCHILD)) {
     if (particle->num < psmd->mesh_final->totface) {
       num = particle->num;
     }
   }
-  if (num != DMCACHE_NOTFOUND && num != DMCACHE_ISCHILD) {
+  if (!ELEM(num, DMCACHE_NOTFOUND, DMCACHE_ISCHILD)) {
     MFace *mface = &psmd->mesh_final->mface[num];
     for (int j = 0; j < num_uv_layers; j++) {
       psys_interpolate_uvs(mtfaces[j] + num, mface->v4, particle->fuv, r_uv[j]);
@@ -331,15 +331,16 @@ static void particle_calculate_parent_mcol(ParticleSystem *psys,
   }
   ParticleData *particle = &psys->particles[parent_index];
   int num = particle->num_dmcache;
-  if (num == DMCACHE_NOTFOUND || num == DMCACHE_ISCHILD) {
+  if (ELEM(num, DMCACHE_NOTFOUND, DMCACHE_ISCHILD)) {
     if (particle->num < psmd->mesh_final->totface) {
       num = particle->num;
     }
   }
-  if (num != DMCACHE_NOTFOUND && num != DMCACHE_ISCHILD) {
+  if (!ELEM(num, DMCACHE_NOTFOUND, DMCACHE_ISCHILD)) {
     MFace *mface = &psmd->mesh_final->mface[num];
     for (int j = 0; j < num_col_layers; j++) {
-      psys_interpolate_mcol(mcols[j] + num, mface->v4, particle->fuv, &r_mcol[j]);
+      /* CustomDataLayer CD_MCOL has 4 structs per face. */
+      psys_interpolate_mcol(mcols[j] + num * 4, mface->v4, particle->fuv, &r_mcol[j]);
     }
   }
 }
@@ -388,6 +389,7 @@ static void particle_interpolate_children_mcol(ParticleSystem *psys,
   if (num != DMCACHE_NOTFOUND) {
     MFace *mface = &psmd->mesh_final->mface[num];
     for (int j = 0; j < num_col_layers; j++) {
+      /* CustomDataLayer CD_MCOL has 4 structs per face. */
       psys_interpolate_mcol(mcols[j] + num * 4, mface->v4, particle->fuv, &r_mcol[j]);
     }
   }
@@ -558,7 +560,7 @@ static int particle_batch_cache_fill_segments(ParticleSystem *psys,
               (is_simple && is_child) ? (*r_parent_uvs)[psys->child[i].parent][k] : uv[k]);
         }
         for (int k = 0; k < num_col_layers; k++) {
-          /* TODO Put the conversion outside the loop */
+          /* TODO: Put the conversion outside the loop. */
           ushort scol[4];
           particle_pack_mcol(
               (is_simple && is_child) ? &(*r_parent_mcol)[psys->child[i].parent][k] : &mcol[k],
@@ -585,7 +587,7 @@ static int particle_batch_cache_fill_segments(ParticleSystem *psys,
                                                        uv[k]);
       }
       for (int k = 0; k < num_col_layers; k++) {
-        /* TODO Put the conversion outside the loop */
+        /* TODO: Put the conversion outside the loop. */
         ushort scol[4];
         particle_pack_mcol((is_simple && is_child) ? &(*r_parent_mcol)[psys->child[i].parent][k] :
                                                      &mcol[k],
@@ -645,14 +647,13 @@ static float particle_key_weight(const ParticleData *particle, int strand, float
   if (t == 1.0) {
     return hkeys[part->totkey - 1].weight;
   }
-  else {
-    float interp = t / edit_key_seg_t;
-    int index = (int)interp;
-    interp -= floorf(interp); /* Time between 2 edit key */
-    float s1 = hkeys[index].weight;
-    float s2 = hkeys[index + 1].weight;
-    return s1 + interp * (s2 - s1);
-  }
+
+  float interp = t / edit_key_seg_t;
+  int index = (int)interp;
+  interp -= floorf(interp); /* Time between 2 edit key */
+  float s1 = hkeys[index].weight;
+  float s2 = hkeys[index + 1].weight;
+  return s1 + interp * (s2 - s1);
 }
 
 static int particle_batch_cache_fill_segments_edit(
@@ -809,7 +810,8 @@ static void particle_batch_cache_ensure_procedural_final_points(ParticleHairCach
   /* Create vbo immediately to bind to texture buffer. */
   GPU_vertbuf_use(cache->final[subdiv].proc_buf);
 
-  cache->final[subdiv].proc_tex = GPU_texture_create_from_vertbuf(cache->final[subdiv].proc_buf);
+  cache->final[subdiv].proc_tex = GPU_texture_create_from_vertbuf("part_proc",
+                                                                  cache->final[subdiv].proc_buf);
 }
 
 static void particle_batch_cache_ensure_procedural_strand_data(PTCacheEdit *edit,
@@ -877,9 +879,9 @@ static void particle_batch_cache_ensure_procedural_strand_data(PTCacheEdit *edit
     GPU_vertbuf_data_alloc(cache->proc_uv_buf[i], cache->strands_len);
     GPU_vertbuf_attr_get_raw_data(cache->proc_uv_buf[i], uv_id, &uv_step[i]);
 
-    char attr_safe_name[GPU_MAX_SAFE_ATTRIB_NAME];
+    char attr_safe_name[GPU_MAX_SAFE_ATTR_NAME];
     const char *name = CustomData_get_layer_name(&psmd->mesh_final->ldata, CD_MLOOPUV, i);
-    GPU_vertformat_safe_attrib_name(name, attr_safe_name, GPU_MAX_SAFE_ATTRIB_NAME);
+    GPU_vertformat_safe_attr_name(name, attr_safe_name, GPU_MAX_SAFE_ATTR_NAME);
 
     int n = 0;
     BLI_snprintf(cache->uv_layer_names[i][n++], MAX_LAYER_NAME_LEN, "u%s", attr_safe_name);
@@ -898,9 +900,9 @@ static void particle_batch_cache_ensure_procedural_strand_data(PTCacheEdit *edit
     GPU_vertbuf_data_alloc(cache->proc_col_buf[i], cache->strands_len);
     GPU_vertbuf_attr_get_raw_data(cache->proc_col_buf[i], col_id, &col_step[i]);
 
-    char attr_safe_name[GPU_MAX_SAFE_ATTRIB_NAME];
+    char attr_safe_name[GPU_MAX_SAFE_ATTR_NAME];
     const char *name = CustomData_get_layer_name(&psmd->mesh_final->ldata, CD_MLOOPCOL, i);
-    GPU_vertformat_safe_attrib_name(name, attr_safe_name, GPU_MAX_SAFE_ATTRIB_NAME);
+    GPU_vertformat_safe_attr_name(name, attr_safe_name, GPU_MAX_SAFE_ATTR_NAME);
 
     int n = 0;
     BLI_snprintf(cache->col_layer_names[i][n++], MAX_LAYER_NAME_LEN, "c%s", attr_safe_name);
@@ -1008,18 +1010,19 @@ static void particle_batch_cache_ensure_procedural_strand_data(PTCacheEdit *edit
 
   /* Create vbo immediately to bind to texture buffer. */
   GPU_vertbuf_use(cache->proc_strand_buf);
-  cache->strand_tex = GPU_texture_create_from_vertbuf(cache->proc_strand_buf);
+  cache->strand_tex = GPU_texture_create_from_vertbuf("part_strand", cache->proc_strand_buf);
 
   GPU_vertbuf_use(cache->proc_strand_seg_buf);
-  cache->strand_seg_tex = GPU_texture_create_from_vertbuf(cache->proc_strand_seg_buf);
+  cache->strand_seg_tex = GPU_texture_create_from_vertbuf("part_strand_seg",
+                                                          cache->proc_strand_seg_buf);
 
   for (int i = 0; i < cache->num_uv_layers; i++) {
     GPU_vertbuf_use(cache->proc_uv_buf[i]);
-    cache->uv_tex[i] = GPU_texture_create_from_vertbuf(cache->proc_uv_buf[i]);
+    cache->uv_tex[i] = GPU_texture_create_from_vertbuf("part_uv", cache->proc_uv_buf[i]);
   }
   for (int i = 0; i < cache->num_col_layers; i++) {
     GPU_vertbuf_use(cache->proc_col_buf[i]);
-    cache->col_tex[i] = GPU_texture_create_from_vertbuf(cache->proc_col_buf[i]);
+    cache->col_tex[i] = GPU_texture_create_from_vertbuf("part_col", cache->proc_col_buf[i]);
   }
 }
 
@@ -1109,7 +1112,7 @@ static void particle_batch_cache_ensure_procedural_pos(PTCacheEdit *edit,
   /* Create vbo immediately to bind to texture buffer. */
   GPU_vertbuf_use(cache->proc_point_buf);
 
-  cache->point_tex = GPU_texture_create_from_vertbuf(cache->proc_point_buf);
+  cache->point_tex = GPU_texture_create_from_vertbuf("part_point", cache->proc_point_buf);
 }
 
 static void particle_batch_cache_ensure_pos_and_seg(PTCacheEdit *edit,
@@ -1164,9 +1167,9 @@ static void particle_batch_cache_ensure_pos_and_seg(PTCacheEdit *edit,
 
     for (int i = 0; i < num_uv_layers; i++) {
 
-      char uuid[32], attr_safe_name[GPU_MAX_SAFE_ATTRIB_NAME];
+      char uuid[32], attr_safe_name[GPU_MAX_SAFE_ATTR_NAME];
       const char *name = CustomData_get_layer_name(&psmd->mesh_final->ldata, CD_MLOOPUV, i);
-      GPU_vertformat_safe_attrib_name(name, attr_safe_name, GPU_MAX_SAFE_ATTRIB_NAME);
+      GPU_vertformat_safe_attr_name(name, attr_safe_name, GPU_MAX_SAFE_ATTR_NAME);
 
       BLI_snprintf(uuid, sizeof(uuid), "u%s", attr_safe_name);
       uv_id[i] = GPU_vertformat_attr_add(&format, uuid, GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
@@ -1177,9 +1180,9 @@ static void particle_batch_cache_ensure_pos_and_seg(PTCacheEdit *edit,
     }
 
     for (int i = 0; i < num_col_layers; i++) {
-      char uuid[32], attr_safe_name[GPU_MAX_SAFE_ATTRIB_NAME];
+      char uuid[32], attr_safe_name[GPU_MAX_SAFE_ATTR_NAME];
       const char *name = CustomData_get_layer_name(&psmd->mesh_final->ldata, CD_MLOOPCOL, i);
-      GPU_vertformat_safe_attrib_name(name, attr_safe_name, GPU_MAX_SAFE_ATTRIB_NAME);
+      GPU_vertformat_safe_attr_name(name, attr_safe_name, GPU_MAX_SAFE_ATTR_NAME);
 
       BLI_snprintf(uuid, sizeof(uuid), "c%s", attr_safe_name);
       col_id[i] = GPU_vertformat_attr_add(&format, uuid, GPU_COMP_U16, 4, GPU_FETCH_FLOAT);

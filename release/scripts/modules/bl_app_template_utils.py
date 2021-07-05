@@ -68,13 +68,14 @@ def _enable(template_id, *, handle_error=None, ignore_not_found=False):
         # 1) try import
         try:
             mod = import_from_id(template_id, ignore_not_found=ignore_not_found)
-            if mod is None:
-                return None
-            mod.__template_enabled__ = False
-            _modules[template_id] = mod
         except Exception as ex:
             handle_error(ex)
             return None
+
+        _modules[template_id] = mod
+        if mod is None:
+            return None
+        mod.__template_enabled__ = False
 
         # 2) try run the modules register function
         try:
@@ -111,9 +112,12 @@ def _disable(template_id, *, handle_error=None):
             import traceback
             traceback.print_exc()
 
-    mod = _modules.get(template_id)
+    mod = _modules.get(template_id, False)
 
-    if mod and getattr(mod, "__template_enabled__", False) is not False:
+    if mod is None:
+        # Loaded but has no module, remove since there is no use in keeping it.
+        del _modules[template_id]
+    elif getattr(mod, "__template_enabled__", False) is not False:
         mod.__template_enabled__ = False
 
         try:
@@ -124,13 +128,13 @@ def _disable(template_id, *, handle_error=None):
             handle_error(ex)
     else:
         print("\tapp_template_utils.disable: %s not %s." %
-              (template_id, "disabled" if mod is None else "loaded"))
+              (template_id, "disabled" if mod is False else "loaded"))
 
     if _bpy.app.debug_python:
         print("\tapp_template_utils.disable", template_id)
 
 
-def import_from_path(path, ignore_not_found=False):
+def import_from_path(path, *, ignore_not_found=False):
     import os
     from importlib import import_module
     base_module, template_id = path.rsplit(os.sep, 2)[-2:]
@@ -144,9 +148,9 @@ def import_from_path(path, ignore_not_found=False):
         raise ex
 
 
-def import_from_id(template_id, ignore_not_found=False):
+def import_from_id(template_id, *, ignore_not_found=False):
     import os
-    path = next(iter(_bpy.utils.app_template_paths(template_id)), None)
+    path = next(iter(_bpy.utils.app_template_paths(path=template_id)), None)
     if path is None:
         if ignore_not_found:
             return None
@@ -159,7 +163,7 @@ def import_from_id(template_id, ignore_not_found=False):
         return import_from_path(path, ignore_not_found=ignore_not_found)
 
 
-def activate(template_id=None):
+def activate(*, template_id=None):
     template_id_prev = _app_template["id"]
 
     # not needed but may as well avoids redundant
@@ -169,10 +173,6 @@ def activate(template_id=None):
 
     if template_id_prev:
         _disable(template_id_prev)
-
-    # Disable all addons, afterwards caller must reset.
-    import addon_utils
-    addon_utils.disable_all()
 
     # ignore_not_found so modules that don't contain scripts don't raise errors
     _mod = _enable(template_id, ignore_not_found=True) if template_id else None
@@ -190,4 +190,4 @@ def reset(*, reload_scripts=False):
 
     # TODO reload_scripts
 
-    activate(template_id)
+    activate(template_id=template_id)

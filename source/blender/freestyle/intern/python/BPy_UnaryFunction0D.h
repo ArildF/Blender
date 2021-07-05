@@ -18,16 +18,13 @@
  * \ingroup freestyle
  */
 
-#ifndef __FREESTYLE_PYTHON_UNARYFUNCTION0D_H__
-#define __FREESTYLE_PYTHON_UNARYFUNCTION0D_H__
+#pragma once
 
 extern "C" {
 #include <Python.h>
 }
 
 #include "../view_map/Functions0D.h"
-
-using namespace Freestyle;
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,7 +39,8 @@ extern PyTypeObject UnaryFunction0D_Type;
 
 /*---------------------------Python BPy_UnaryFunction0D structure definition----------*/
 typedef struct {
-  PyObject_HEAD PyObject *py_uf0D;
+  PyObject_HEAD
+  PyObject *py_uf0D;
 } BPy_UnaryFunction0D;
 
 /*---------------------------Python BPy_UnaryFunction0D visible prototypes-----------*/
@@ -54,5 +52,3 @@ int UnaryFunction0D_Init(PyObject *module);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __FREESTYLE_PYTHON_UNARYFUNCTION0D_H__ */

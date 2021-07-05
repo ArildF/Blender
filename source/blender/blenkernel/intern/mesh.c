@@ -23,36 +23,351 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "DNA_object_types.h"
+/* Allow using deprecated functionality for .blend file I/O. */
+#define DNA_DEPRECATED_ALLOW
+
+#include "DNA_defaults.h"
 #include "DNA_key_types.h"
+#include "DNA_material_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
-#include "DNA_defaults.h"
+#include "DNA_object_types.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_bitmap.h"
-#include "BLI_math.h"
-#include "BLI_linklist.h"
-#include "BLI_memarena.h"
 #include "BLI_edgehash.h"
+#include "BLI_endian_switch.h"
+#include "BLI_ghash.h"
+#include "BLI_hash.h"
+#include "BLI_linklist.h"
+#include "BLI_math.h"
+#include "BLI_memarena.h"
 #include "BLI_string.h"
+#include "BLI_utildefines.h"
 
-#include "BKE_animsys.h"
-#include "BKE_idcode.h"
-#include "BKE_main.h"
+#include "BLT_translation.h"
+
+#include "BKE_anim_data.h"
+#include "BKE_deform.h"
+#include "BKE_editmesh.h"
 #include "BKE_global.h"
+#include "BKE_idtype.h"
 #include "BKE_key.h"
+#include "BKE_lib_id.h"
+#include "BKE_lib_query.h"
+#include "BKE_main.h"
+#include "BKE_material.h"
 #include "BKE_mesh.h"
 #include "BKE_mesh_runtime.h"
-#include "BKE_library.h"
-#include "BKE_material.h"
+#include "BKE_mesh_wrapper.h"
 #include "BKE_modifier.h"
 #include "BKE_multires.h"
 #include "BKE_object.h"
-#include "BKE_editmesh.h"
+
+#include "PIL_time.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
+
+#include "BLO_read_write.h"
+
+static void mesh_clear_geometry(Mesh *mesh);
+static void mesh_tessface_clear_intern(Mesh *mesh, int free_customdata);
+
+static void mesh_init_data(ID *id)
+{
+  Mesh *mesh = (Mesh *)id;
+
+  BLI_assert(MEMCMP_STRUCT_AFTER_IS_ZERO(mesh, id));
+
+  MEMCPY_STRUCT_AFTER(mesh, DNA_struct_default_get(Mesh), id);
+
+  CustomData_reset(&mesh->vdata);
+  CustomData_reset(&mesh->edata);
+  CustomData_reset(&mesh->fdata);
+  CustomData_reset(&mesh->pdata);
+  CustomData_reset(&mesh->ldata);
+
+  BKE_mesh_runtime_reset(mesh);
+
+  mesh->face_sets_color_seed = BLI_hash_int(PIL_check_seconds_timer_i() & UINT_MAX);
+}
+
+static void mesh_copy_data(Main *bmain, ID *id_dst, const ID *id_src, const int flag)
+{
+  Mesh *mesh_dst = (Mesh *)id_dst;
+  const Mesh *mesh_src = (const Mesh *)id_src;
+
+  BKE_mesh_runtime_reset_on_copy(mesh_dst, flag);
+  if ((mesh_src->id.tag & LIB_TAG_NO_MAIN) == 0) {
+    /* This is a direct copy of a main mesh, so for now it has the same topology. */
+    mesh_dst->runtime.deformed_only = true;
+  }
+  /* This option is set for run-time meshes that have been copied from the current objects mode.
+   * Currently this is used for edit-mesh although it could be used for sculpt or other
+   * kinds of data specific to an objects mode.
+   *
+   * The flag signals that the mesh hasn't been modified from the data that generated it,
+   * allowing us to use the object-mode data for drawing.
+   *
+   * While this could be the callers responsibility, keep here since it's
+   * highly unlikely we want to create a duplicate and not use it for drawing. */
+  mesh_dst->runtime.is_original = false;
+
+  /* Only do tessface if we have no polys. */
+  const bool do_tessface = ((mesh_src->totface != 0) && (mesh_src->totpoly == 0));
+
+  CustomData_MeshMasks mask = CD_MASK_MESH;
+
+  if (mesh_src->id.tag & LIB_TAG_NO_MAIN) {
+    /* For copies in depsgraph, keep data like origindex and orco. */
+    CustomData_MeshMasks_update(&mask, &CD_MASK_DERIVEDMESH);
+  }
+
+  mesh_dst->mat = MEM_dupallocN(mesh_src->mat);
+
+  const eCDAllocType alloc_type = (flag & LIB_ID_COPY_CD_REFERENCE) ? CD_REFERENCE : CD_DUPLICATE;
+  CustomData_copy(&mesh_src->vdata, &mesh_dst->vdata, mask.vmask, alloc_type, mesh_dst->totvert);
+  CustomData_copy(&mesh_src->edata, &mesh_dst->edata, mask.emask, alloc_type, mesh_dst->totedge);
+  CustomData_copy(&mesh_src->ldata, &mesh_dst->ldata, mask.lmask, alloc_type, mesh_dst->totloop);
+  CustomData_copy(&mesh_src->pdata, &mesh_dst->pdata, mask.pmask, alloc_type, mesh_dst->totpoly);
+  if (do_tessface) {
+    CustomData_copy(&mesh_src->fdata, &mesh_dst->fdata, mask.fmask, alloc_type, mesh_dst->totface);
+  }
+  else {
+    mesh_tessface_clear_intern(mesh_dst, false);
+  }
+
+  BKE_mesh_update_customdata_pointers(mesh_dst, do_tessface);
+
+  mesh_dst->edit_mesh = NULL;
+
+  mesh_dst->mselect = MEM_dupallocN(mesh_dst->mselect);
+
+  /* TODO: Do we want to add flag to prevent this? */
+  if (mesh_src->key && (flag & LIB_ID_COPY_SHAPEKEY)) {
+    BKE_id_copy_ex(bmain, &mesh_src->key->id, (ID **)&mesh_dst->key, flag);
+    /* XXX This is not nice, we need to make BKE_id_copy_ex fully re-entrant... */
+    mesh_dst->key->from = &mesh_dst->id;
+  }
+}
+
+static void mesh_free_data(ID *id)
+{
+  Mesh *mesh = (Mesh *)id;
+
+  BKE_mesh_runtime_clear_cache(mesh);
+  mesh_clear_geometry(mesh);
+  MEM_SAFE_FREE(mesh->mat);
+}
+
+static void mesh_foreach_id(ID *id, LibraryForeachIDData *data)
+{
+  Mesh *mesh = (Mesh *)id;
+  BKE_LIB_FOREACHID_PROCESS(data, mesh->texcomesh, IDWALK_CB_NEVER_SELF);
+  BKE_LIB_FOREACHID_PROCESS(data, mesh->key, IDWALK_CB_USER);
+  for (int i = 0; i < mesh->totcol; i++) {
+    BKE_LIB_FOREACHID_PROCESS(data, mesh->mat[i], IDWALK_CB_USER);
+  }
+}
+
+static void mesh_blend_write(BlendWriter *writer, ID *id, const void *id_address)
+{
+  Mesh *mesh = (Mesh *)id;
+  const bool is_undo = BLO_write_is_undo(writer);
+  if (mesh->id.us > 0 || is_undo) {
+    CustomDataLayer *vlayers = NULL, vlayers_buff[CD_TEMP_CHUNK_SIZE];
+    CustomDataLayer *elayers = NULL, elayers_buff[CD_TEMP_CHUNK_SIZE];
+    CustomDataLayer *flayers = NULL, flayers_buff[CD_TEMP_CHUNK_SIZE];
+    CustomDataLayer *llayers = NULL, llayers_buff[CD_TEMP_CHUNK_SIZE];
+    CustomDataLayer *players = NULL, players_buff[CD_TEMP_CHUNK_SIZE];
+
+    /* cache only - don't write */
+    mesh->mface = NULL;
+    mesh->totface = 0;
+    memset(&mesh->fdata, 0, sizeof(mesh->fdata));
+    memset(&mesh->runtime, 0, sizeof(mesh->runtime));
+    flayers = flayers_buff;
+
+    /* Do not store actual geometry data in case this is a library override ID. */
+    if (ID_IS_OVERRIDE_LIBRARY(mesh) && !is_undo) {
+      mesh->mvert = NULL;
+      mesh->totvert = 0;
+      memset(&mesh->vdata, 0, sizeof(mesh->vdata));
+      vlayers = vlayers_buff;
+
+      mesh->medge = NULL;
+      mesh->totedge = 0;
+      memset(&mesh->edata, 0, sizeof(mesh->edata));
+      elayers = elayers_buff;
+
+      mesh->mloop = NULL;
+      mesh->totloop = 0;
+      memset(&mesh->ldata, 0, sizeof(mesh->ldata));
+      llayers = llayers_buff;
+
+      mesh->mpoly = NULL;
+      mesh->totpoly = 0;
+      memset(&mesh->pdata, 0, sizeof(mesh->pdata));
+      players = players_buff;
+    }
+    else {
+      CustomData_blend_write_prepare(
+          &mesh->vdata, &vlayers, vlayers_buff, ARRAY_SIZE(vlayers_buff));
+      CustomData_blend_write_prepare(
+          &mesh->edata, &elayers, elayers_buff, ARRAY_SIZE(elayers_buff));
+      CustomData_blend_write_prepare(
+          &mesh->ldata, &llayers, llayers_buff, ARRAY_SIZE(llayers_buff));
+      CustomData_blend_write_prepare(
+          &mesh->pdata, &players, players_buff, ARRAY_SIZE(players_buff));
+    }
+
+    BLO_write_id_struct(writer, Mesh, id_address, &mesh->id);
+    BKE_id_blend_write(writer, &mesh->id);
+
+    /* direct data */
+    if (mesh->adt) {
+      BKE_animdata_blend_write(writer, mesh->adt);
+    }
+
+    BLO_write_pointer_array(writer, mesh->totcol, mesh->mat);
+    BLO_write_raw(writer, sizeof(MSelect) * mesh->totselect, mesh->mselect);
+
+    CustomData_blend_write(
+        writer, &mesh->vdata, vlayers, mesh->totvert, CD_MASK_MESH.vmask, &mesh->id);
+    CustomData_blend_write(
+        writer, &mesh->edata, elayers, mesh->totedge, CD_MASK_MESH.emask, &mesh->id);
+    /* fdata is really a dummy - written so slots align */
+    CustomData_blend_write(
+        writer, &mesh->fdata, flayers, mesh->totface, CD_MASK_MESH.fmask, &mesh->id);
+    CustomData_blend_write(
+        writer, &mesh->ldata, llayers, mesh->totloop, CD_MASK_MESH.lmask, &mesh->id);
+    CustomData_blend_write(
+        writer, &mesh->pdata, players, mesh->totpoly, CD_MASK_MESH.pmask, &mesh->id);
+
+    /* Free temporary data */
+
+/* Free custom-data layers, when not assigned a buffer value. */
+#define CD_LAYERS_FREE(id) \
+  if (id && id != id##_buff) { \
+    MEM_freeN(id); \
+  } \
+  ((void)0)
+
+    CD_LAYERS_FREE(vlayers);
+    CD_LAYERS_FREE(elayers);
+    /* CD_LAYER_FREE(flayers); */ /* Never allocated. */
+    CD_LAYERS_FREE(llayers);
+    CD_LAYERS_FREE(players);
+
+#undef CD_LAYERS_FREE
+  }
+}
+
+static void mesh_blend_read_data(BlendDataReader *reader, ID *id)
+{
+  Mesh *mesh = (Mesh *)id;
+  BLO_read_pointer_array(reader, (void **)&mesh->mat);
+
+  BLO_read_data_address(reader, &mesh->mvert);
+  BLO_read_data_address(reader, &mesh->medge);
+  BLO_read_data_address(reader, &mesh->mface);
+  BLO_read_data_address(reader, &mesh->mloop);
+  BLO_read_data_address(reader, &mesh->mpoly);
+  BLO_read_data_address(reader, &mesh->tface);
+  BLO_read_data_address(reader, &mesh->mtface);
+  BLO_read_data_address(reader, &mesh->mcol);
+  BLO_read_data_address(reader, &mesh->dvert);
+  BLO_read_data_address(reader, &mesh->mloopcol);
+  BLO_read_data_address(reader, &mesh->mloopuv);
+  BLO_read_data_address(reader, &mesh->mselect);
+
+  /* animdata */
+  BLO_read_data_address(reader, &mesh->adt);
+  BKE_animdata_blend_read_data(reader, mesh->adt);
+
+  /* Normally BKE_defvert_blend_read should be called in CustomData_blend_read,
+   * but for backwards compatibility in do_versions to work we do it here. */
+  BKE_defvert_blend_read(reader, mesh->totvert, mesh->dvert);
+
+  CustomData_blend_read(reader, &mesh->vdata, mesh->totvert);
+  CustomData_blend_read(reader, &mesh->edata, mesh->totedge);
+  CustomData_blend_read(reader, &mesh->fdata, mesh->totface);
+  CustomData_blend_read(reader, &mesh->ldata, mesh->totloop);
+  CustomData_blend_read(reader, &mesh->pdata, mesh->totpoly);
+
+  mesh->texflag &= ~ME_AUTOSPACE_EVALUATED;
+  mesh->edit_mesh = NULL;
+  BKE_mesh_runtime_reset(mesh);
+
+  /* happens with old files */
+  if (mesh->mselect == NULL) {
+    mesh->totselect = 0;
+  }
+
+  if ((BLO_read_requires_endian_switch(reader)) && mesh->tface) {
+    TFace *tf = mesh->tface;
+    for (int i = 0; i < mesh->totface; i++, tf++) {
+      BLI_endian_switch_uint32_array(tf->col, 4);
+    }
+  }
+}
+
+static void mesh_blend_read_lib(BlendLibReader *reader, ID *id)
+{
+  Mesh *me = (Mesh *)id;
+  /* this check added for python created meshes */
+  if (me->mat) {
+    for (int i = 0; i < me->totcol; i++) {
+      BLO_read_id_address(reader, me->id.lib, &me->mat[i]);
+    }
+  }
+  else {
+    me->totcol = 0;
+  }
+
+  BLO_read_id_address(reader, me->id.lib, &me->ipo);  // XXX: deprecated: old anim sys
+  BLO_read_id_address(reader, me->id.lib, &me->key);
+  BLO_read_id_address(reader, me->id.lib, &me->texcomesh);
+}
+
+static void mesh_read_expand(BlendExpander *expander, ID *id)
+{
+  Mesh *me = (Mesh *)id;
+  for (int a = 0; a < me->totcol; a++) {
+    BLO_expand(expander, me->mat[a]);
+  }
+
+  BLO_expand(expander, me->key);
+  BLO_expand(expander, me->texcomesh);
+}
+
+IDTypeInfo IDType_ID_ME = {
+    .id_code = ID_ME,
+    .id_filter = FILTER_ID_ME,
+    .main_listbase_index = INDEX_ID_ME,
+    .struct_size = sizeof(Mesh),
+    .name = "Mesh",
+    .name_plural = "meshes",
+    .translation_context = BLT_I18NCONTEXT_ID_MESH,
+    .flags = 0,
+
+    .init_data = mesh_init_data,
+    .copy_data = mesh_copy_data,
+    .free_data = mesh_free_data,
+    .make_local = NULL,
+    .foreach_id = mesh_foreach_id,
+    .foreach_cache = NULL,
+    .owner_get = NULL,
+
+    .blend_write = mesh_blend_write,
+    .blend_read_data = mesh_blend_read_data,
+    .blend_read_lib = mesh_blend_read_lib,
+    .blend_read_expand = mesh_read_expand,
+
+    .blend_read_undo_preserve = NULL,
+
+    .lib_override_apply_post = NULL,
+};
 
 enum {
   MESHCMP_DVERT_WEIGHTMISMATCH = 1,
@@ -98,8 +413,7 @@ static const char *cmpcode_to_str(int code)
   }
 }
 
-/* thresh is threshold for comparing vertices, uvs, vertex colors,
- * weights, etc.*/
+/** Thresh is threshold for comparing vertices, UV's, vertex colors, weights, etc. */
 static int customdata_compare(
     CustomData *c1, CustomData *c2, Mesh *m1, Mesh *m2, const float thresh)
 {
@@ -164,11 +478,11 @@ static int customdata_compare(
         if (len_squared_v3v3(v1->co, v2->co) > thresh_sq) {
           return MESHCMP_VERTCOMISMATCH;
         }
-        /* I don't care about normals, let's just do coordinates */
+        /* I don't care about normals, let's just do coordinates. */
       }
     }
 
-    /*we're order-agnostic for edges here*/
+    /* We're order-agnostic for edges here. */
     if (l1->type == CD_MEDGE) {
       MEdge *e1 = l1->data;
       MEdge *e2 = l2->data;
@@ -239,8 +553,8 @@ static int customdata_compare(
       int ltot = m1->totloop;
 
       for (j = 0; j < ltot; j++, lp1++, lp2++) {
-        if (ABS(lp1->r - lp2->r) > thresh || ABS(lp1->g - lp2->g) > thresh ||
-            ABS(lp1->b - lp2->b) > thresh || ABS(lp1->a - lp2->a) > thresh) {
+        if (abs(lp1->r - lp2->r) > thresh || abs(lp1->g - lp2->g) > thresh ||
+            abs(lp1->b - lp2->b) > thresh || abs(lp1->a - lp2->a) > thresh) {
           return MESHCMP_LOOPCOLMISMATCH;
         }
       }
@@ -327,7 +641,7 @@ static void mesh_ensure_tessellation_customdata(Mesh *me)
 {
   if (UNLIKELY((me->totface != 0) && (me->totpoly == 0))) {
     /* Pass, otherwise this function  clears 'mface' before
-     * versioning 'mface -> mpoly' code kicks in [#30583]
+     * versioning 'mface -> mpoly' code kicks in T30583.
      *
      * Callers could also check but safer to do here - campbell */
   }
@@ -343,12 +657,12 @@ static void mesh_ensure_tessellation_customdata(Mesh *me)
 
       CustomData_from_bmeshpoly(&me->fdata, &me->ldata, me->totface);
 
-      /* TODO - add some --debug-mesh option */
+      /* TODO: add some `--debug-mesh` option. */
       if (G.debug & G_DEBUG) {
-        /* note: this warning may be un-called for if we are initializing the mesh for the
-         * first time from bmesh, rather then giving a warning about this we could be smarter
+        /* NOTE(campbell): this warning may be un-called for if we are initializing the mesh for
+         * the first time from #BMesh, rather than giving a warning about this we could be smarter
          * and check if there was any data to begin with, for now just print the warning with
-         * some info to help troubleshoot what's going on - campbell */
+         * some info to help troubleshoot what's going on. */
         printf(
             "%s: warning! Tessellation uvs or vcol data got out of sync, "
             "had to reset!\n    CD_MTFACE: %d != CD_MLOOPUV: %d || CD_MCOL: %d != CD_MLOOPCOL: "
@@ -433,12 +747,14 @@ bool BKE_mesh_clear_facemap_customdata(struct Mesh *me)
   return changed;
 }
 
-/* this ensures grouped customdata (e.g. mtexpoly and mloopuv and mtface, or
+/**
+ * This ensures grouped customdata (e.g. mtexpoly and mloopuv and mtface, or
  * mloopcol and mcol) have the same relative active/render/clone/mask indices.
  *
- * note that for undo mesh data we want to skip 'ensure_tess_cd' call since
+ * NOTE(campbell): that for undo mesh data we want to skip 'ensure_tess_cd' call since
  * we don't want to store memory for tessface when its only used for older
- * versions of the mesh. - campbell*/
+ * Versions of the mesh.
+ */
 static void mesh_update_linked_customdata(Mesh *me, const bool do_ensure_tess_cd)
 {
   if (do_ensure_tess_cd) {
@@ -473,23 +789,18 @@ bool BKE_mesh_has_custom_loop_normals(Mesh *me)
   if (me->edit_mesh) {
     return CustomData_has_layer(&me->edit_mesh->bm->ldata, CD_CUSTOMLOOPNORMAL);
   }
-  else {
-    return CustomData_has_layer(&me->ldata, CD_CUSTOMLOOPNORMAL);
-  }
+
+  return CustomData_has_layer(&me->ldata, CD_CUSTOMLOOPNORMAL);
 }
 
 /** Free (or release) any data used by this mesh (does not free the mesh itself). */
 void BKE_mesh_free(Mesh *me)
 {
-  BKE_mesh_clear_geometry(me);
-  MEM_SAFE_FREE(me->mat);
+  mesh_free_data(&me->id);
 }
 
-void BKE_mesh_clear_geometry(Mesh *mesh)
+static void mesh_clear_geometry(Mesh *mesh)
 {
-  BKE_animdata_free(&mesh->id, false);
-  BKE_mesh_runtime_clear_cache(mesh);
-
   CustomData_free(&mesh->vdata, mesh->totvert);
   CustomData_free(&mesh->edata, mesh->totedge);
   CustomData_free(&mesh->fdata, mesh->totface);
@@ -501,7 +812,7 @@ void BKE_mesh_clear_geometry(Mesh *mesh)
 
   /* Note that materials and shape keys are not freed here. This is intentional, as freeing
    * shape keys requires tagging the depsgraph for updated relations, which is expensive.
-   * Material slots should be kept in sync with the object.*/
+   * Material slots should be kept in sync with the object. */
 
   mesh->totvert = 0;
   mesh->totedge = 0;
@@ -512,6 +823,13 @@ void BKE_mesh_clear_geometry(Mesh *mesh)
   mesh->totselect = 0;
 
   BKE_mesh_update_customdata_pointers(mesh, false);
+}
+
+void BKE_mesh_clear_geometry(Mesh *mesh)
+{
+  BKE_animdata_free(&mesh->id, false);
+  BKE_mesh_runtime_clear_cache(mesh);
+  mesh_clear_geometry(mesh);
 }
 
 static void mesh_tessface_clear_intern(Mesh *mesh, int free_customdata)
@@ -529,86 +847,11 @@ static void mesh_tessface_clear_intern(Mesh *mesh, int free_customdata)
   mesh->totface = 0;
 }
 
-void BKE_mesh_init(Mesh *me)
-{
-  BLI_assert(MEMCMP_STRUCT_AFTER_IS_ZERO(me, id));
-
-  MEMCPY_STRUCT_AFTER(me, DNA_struct_default_get(Mesh), id);
-
-  CustomData_reset(&me->vdata);
-  CustomData_reset(&me->edata);
-  CustomData_reset(&me->fdata);
-  CustomData_reset(&me->pdata);
-  CustomData_reset(&me->ldata);
-
-  BKE_mesh_runtime_reset(me);
-}
-
 Mesh *BKE_mesh_add(Main *bmain, const char *name)
 {
-  Mesh *me;
-
-  me = BKE_libblock_alloc(bmain, ID_ME, name, 0);
-
-  BKE_mesh_init(me);
+  Mesh *me = BKE_id_new(bmain, ID_ME, name);
 
   return me;
-}
-
-/**
- * Only copy internal data of Mesh ID from source
- * to already allocated/initialized destination.
- * You probably never want to use that directly,
- * use #BKE_id_copy or #BKE_id_copy_ex for typical needs.
- *
- * WARNING! This function will not handle ID user count!
- *
- * \param flag: Copying options (see BKE_library.h's LIB_ID_COPY_... flags for more).
- */
-void BKE_mesh_copy_data(Main *bmain, Mesh *me_dst, const Mesh *me_src, const int flag)
-{
-  BKE_mesh_runtime_reset_on_copy(me_dst, flag);
-  if ((me_src->id.tag & LIB_TAG_NO_MAIN) == 0) {
-    /* This is a direct copy of a main mesh, so for now it has the same topology. */
-    me_dst->runtime.deformed_only = true;
-  }
-  /* XXX WHAT? Why? Comment, please! And pretty sure this is not valid for regular Mesh copying? */
-  me_dst->runtime.is_original = false;
-
-  /* Only do tessface if we have no polys. */
-  const bool do_tessface = ((me_src->totface != 0) && (me_src->totpoly == 0));
-
-  CustomData_MeshMasks mask = CD_MASK_MESH;
-
-  if (me_src->id.tag & LIB_TAG_NO_MAIN) {
-    /* For copies in depsgraph, keep data like origindex and orco. */
-    CustomData_MeshMasks_update(&mask, &CD_MASK_DERIVEDMESH);
-  }
-
-  me_dst->mat = MEM_dupallocN(me_src->mat);
-
-  const eCDAllocType alloc_type = (flag & LIB_ID_COPY_CD_REFERENCE) ? CD_REFERENCE : CD_DUPLICATE;
-  CustomData_copy(&me_src->vdata, &me_dst->vdata, mask.vmask, alloc_type, me_dst->totvert);
-  CustomData_copy(&me_src->edata, &me_dst->edata, mask.emask, alloc_type, me_dst->totedge);
-  CustomData_copy(&me_src->ldata, &me_dst->ldata, mask.lmask, alloc_type, me_dst->totloop);
-  CustomData_copy(&me_src->pdata, &me_dst->pdata, mask.pmask, alloc_type, me_dst->totpoly);
-  if (do_tessface) {
-    CustomData_copy(&me_src->fdata, &me_dst->fdata, mask.fmask, alloc_type, me_dst->totface);
-  }
-  else {
-    mesh_tessface_clear_intern(me_dst, false);
-  }
-
-  BKE_mesh_update_customdata_pointers(me_dst, do_tessface);
-
-  me_dst->edit_mesh = NULL;
-
-  me_dst->mselect = MEM_dupallocN(me_dst->mselect);
-
-  /* TODO Do we want to add flag to prevent this? */
-  if (me_src->key && (flag & LIB_ID_COPY_SHAPEKEY)) {
-    BKE_id_copy_ex(bmain, &me_src->key->id, (ID **)&me_dst->key, flag);
-  }
 }
 
 /* Custom data layer functions; those assume that totXXX are set correctly. */
@@ -635,10 +878,11 @@ static void mesh_ensure_cdlayers_primary(Mesh *mesh, bool do_tessface)
 Mesh *BKE_mesh_new_nomain(
     int verts_len, int edges_len, int tessface_len, int loops_len, int polys_len)
 {
-  Mesh *mesh = BKE_libblock_alloc(NULL, ID_ME, BKE_idcode_to_name(ID_ME), LIB_ID_COPY_LOCALIZE);
+  Mesh *mesh = BKE_libblock_alloc(
+      NULL, ID_ME, BKE_idtype_idcode_to_name(ID_ME), LIB_ID_CREATE_LOCALIZE);
   BKE_libblock_init_empty(&mesh->id);
 
-  /* don't use CustomData_reset(...); because we dont want to touch customdata */
+  /* Don't use CustomData_reset(...); because we don't want to touch custom-data. */
   copy_vn_i(mesh->vdata.typemap, CD_NUMTYPES, -1);
   copy_vn_i(mesh->edata.typemap, CD_NUMTYPES, -1);
   copy_vn_i(mesh->fdata.typemap, CD_NUMTYPES, -1);
@@ -657,9 +901,11 @@ Mesh *BKE_mesh_new_nomain(
   return mesh;
 }
 
-/* Copy user editable settings that we want to preserve through the modifier stack
- * or operations where a mesh with new topology is created based on another mesh. */
-void BKE_mesh_copy_settings(Mesh *me_dst, const Mesh *me_src)
+/**
+ * Copy user editable settings that we want to preserve
+ * when a new mesh is based on an existing mesh.
+ */
+void BKE_mesh_copy_parameters(Mesh *me_dst, const Mesh *me_src)
 {
   /* Copy general settings. */
   me_dst->editflag = me_src->editflag;
@@ -668,11 +914,29 @@ void BKE_mesh_copy_settings(Mesh *me_dst, const Mesh *me_src)
   me_dst->remesh_voxel_size = me_src->remesh_voxel_size;
   me_dst->remesh_voxel_adaptivity = me_src->remesh_voxel_adaptivity;
   me_dst->remesh_mode = me_src->remesh_mode;
+  me_dst->symmetry = me_src->symmetry;
+
+  me_dst->face_sets_color_seed = me_src->face_sets_color_seed;
+  me_dst->face_sets_color_default = me_src->face_sets_color_default;
 
   /* Copy texture space. */
   me_dst->texflag = me_src->texflag;
   copy_v3_v3(me_dst->loc, me_src->loc);
   copy_v3_v3(me_dst->size, me_src->size);
+}
+
+/**
+ * A version of #BKE_mesh_copy_parameters that is intended for evaluated output
+ * (the modifier stack for example).
+ *
+ * \warning User counts are not handled for ID's.
+ */
+void BKE_mesh_copy_parameters_for_eval(Mesh *me_dst, const Mesh *me_src)
+{
+  /* User counts aren't handled, don't copy into a mesh from #G_MAIN. */
+  BLI_assert(me_dst->id.tag & (LIB_TAG_NO_MAIN | LIB_TAG_COPIED_ON_WRITE));
+
+  BKE_mesh_copy_parameters(me_dst, me_src);
 
   /* Copy materials. */
   if (me_dst->mat != NULL) {
@@ -695,7 +959,7 @@ Mesh *BKE_mesh_new_nomain_from_template_ex(const Mesh *me_src,
 
   Mesh *me_dst = BKE_id_new_nomain(ID_ME, NULL);
 
-  me_dst->mselect = MEM_dupallocN(me_dst->mselect);
+  me_dst->mselect = MEM_dupallocN(me_src->mselect);
 
   me_dst->totvert = verts_len;
   me_dst->totedge = edges_len;
@@ -704,7 +968,7 @@ Mesh *BKE_mesh_new_nomain_from_template_ex(const Mesh *me_src,
   me_dst->totpoly = polys_len;
 
   me_dst->cd_flag = me_src->cd_flag;
-  BKE_mesh_copy_settings(me_dst, me_src);
+  BKE_mesh_copy_parameters_for_eval(me_dst, me_src);
 
   CustomData_copy(&me_src->vdata, &me_dst->vdata, mask.vmask, CD_CALLOC, verts_len);
   CustomData_copy(&me_src->edata, &me_dst->edata, mask.emask, CD_CALLOC, edges_len);
@@ -753,26 +1017,17 @@ Mesh *BKE_mesh_copy_for_eval(struct Mesh *source, bool reference)
     flags |= LIB_ID_COPY_CD_REFERENCE;
   }
 
-  Mesh *result;
-  BKE_id_copy_ex(NULL, &source->id, (ID **)&result, flags);
+  Mesh *result = (Mesh *)BKE_id_copy_ex(NULL, &source->id, NULL, flags);
   return result;
-}
-
-Mesh *BKE_mesh_copy(Main *bmain, const Mesh *me)
-{
-  Mesh *me_copy;
-  BKE_id_copy(bmain, &me->id, (ID **)&me_copy);
-  return me_copy;
 }
 
 BMesh *BKE_mesh_to_bmesh_ex(const Mesh *me,
                             const struct BMeshCreateParams *create_params,
                             const struct BMeshFromMeshParams *convert_params)
 {
-  BMesh *bm;
   const BMAllocTemplate allocsize = BMALLOC_TEMPLATE_FROM_ME(me);
 
-  bm = BM_mesh_create(&allocsize, create_params);
+  BMesh *bm = BM_mesh_create(&allocsize, create_params);
   BM_mesh_bm_from_me(bm, me, convert_params);
 
   return bm;
@@ -800,7 +1055,7 @@ Mesh *BKE_mesh_from_bmesh_nomain(BMesh *bm,
   BLI_assert(params->calc_object_remap == false);
   Mesh *mesh = BKE_id_new_nomain(ID_ME, NULL);
   BM_mesh_bm_to_me(NULL, bm, mesh, params);
-  BKE_mesh_copy_settings(mesh, me_settings);
+  BKE_mesh_copy_parameters_for_eval(mesh, me_settings);
   return mesh;
 }
 
@@ -810,33 +1065,8 @@ Mesh *BKE_mesh_from_bmesh_for_eval_nomain(BMesh *bm,
 {
   Mesh *mesh = BKE_id_new_nomain(ID_ME, NULL);
   BM_mesh_bm_to_me_for_eval(bm, mesh, cd_mask_extra);
-  BKE_mesh_copy_settings(mesh, me_settings);
+  BKE_mesh_copy_parameters_for_eval(mesh, me_settings);
   return mesh;
-}
-
-/**
- * TODO(campbell): support mesh with only an edit-mesh which is lazy initialized.
- */
-Mesh *BKE_mesh_from_editmesh_with_coords_thin_wrap(BMEditMesh *em,
-                                                   const CustomData_MeshMasks *data_mask,
-                                                   float (*vertexCos)[3],
-                                                   const Mesh *me_settings)
-{
-  Mesh *me = BKE_mesh_from_bmesh_for_eval_nomain(em->bm, data_mask, me_settings);
-  /* Use editmesh directly where possible. */
-  me->runtime.is_original = true;
-  if (vertexCos) {
-    /* We will own this array in the future. */
-    BKE_mesh_vert_coords_apply(me, vertexCos);
-    MEM_freeN(vertexCos);
-    me->runtime.is_original = false;
-  }
-  return me;
-}
-
-void BKE_mesh_make_local(Main *bmain, Mesh *me, const bool lib_local)
-{
-  BKE_id_make_local_generic(bmain, &me->id, true, lib_local);
 }
 
 BoundBox *BKE_mesh_boundbox_get(Object *ob)
@@ -848,7 +1078,7 @@ BoundBox *BKE_mesh_boundbox_get(Object *ob)
     float min[3], max[3];
 
     INIT_MINMAX(min, max);
-    if (!BKE_mesh_minmax(me, min, max)) {
+    if (!BKE_mesh_wrapper_minmax(me, min, max)) {
       min[0] = min[1] = min[2] = -1.0f;
       max[0] = max[1] = max[2] = 1.0f;
     }
@@ -869,7 +1099,7 @@ void BKE_mesh_texspace_calc(Mesh *me)
     float min[3], max[3];
 
     INIT_MINMAX(min, max);
-    if (!BKE_mesh_minmax(me, min, max)) {
+    if (!BKE_mesh_wrapper_minmax(me, min, max)) {
       min[0] = min[1] = min[2] = -1.0f;
       max[0] = max[1] = max[2] = 1.0f;
     }
@@ -949,17 +1179,14 @@ void BKE_mesh_texspace_copy_from_object(Mesh *me, Object *ob)
 float (*BKE_mesh_orco_verts_get(Object *ob))[3]
 {
   Mesh *me = ob->data;
-  MVert *mvert = NULL;
   Mesh *tme = me->texcomesh ? me->texcomesh : me;
-  int a, totvert;
-  float(*vcos)[3] = NULL;
 
   /* Get appropriate vertex coordinates */
-  vcos = MEM_calloc_arrayN(me->totvert, sizeof(*vcos), "orco mesh");
-  mvert = tme->mvert;
-  totvert = min_ii(tme->totvert, me->totvert);
+  float(*vcos)[3] = MEM_calloc_arrayN(me->totvert, sizeof(*vcos), "orco mesh");
+  MVert *mvert = tme->mvert;
+  int totvert = min_ii(tme->totvert, me->totvert);
 
-  for (a = 0; a < totvert; a++, mvert++) {
+  for (int a = 0; a < totvert; a++, mvert++) {
     copy_v3_v3(vcos[a], mvert->co);
   }
 
@@ -969,18 +1196,17 @@ float (*BKE_mesh_orco_verts_get(Object *ob))[3]
 void BKE_mesh_orco_verts_transform(Mesh *me, float (*orco)[3], int totvert, int invert)
 {
   float loc[3], size[3];
-  int a;
 
   BKE_mesh_texspace_get(me->texcomesh ? me->texcomesh : me, loc, size);
 
   if (invert) {
-    for (a = 0; a < totvert; a++) {
+    for (int a = 0; a < totvert; a++) {
       float *co = orco[a];
       madd_v3_v3v3v3(co, loc, co, size);
     }
   }
   else {
-    for (a = 0; a < totvert; a++) {
+    for (int a = 0; a < totvert; a++) {
       float *co = orco[a];
       co[0] = (co[0] - loc[0]) / size[0];
       co[1] = (co[1] - loc[1]) / size[1];
@@ -989,9 +1215,11 @@ void BKE_mesh_orco_verts_transform(Mesh *me, float (*orco)[3], int totvert, int 
   }
 }
 
-/* rotates the vertices of a face in case v[2] or v[3] (vertex index) is = 0.
- * this is necessary to make the if (mface->v4) check for quads work */
-int test_index_face(MFace *mface, CustomData *fdata, int mfindex, int nr)
+/**
+ * Rotates the vertices of a face in case v[2] or v[3] (vertex index) is = 0.
+ * this is necessary to make the if #MFace.v4 check for quads work.
+ */
+int BKE_mesh_mface_index_validate(MFace *mface, CustomData *fdata, int mfindex, int nr)
 {
   /* first test if the face is legal */
   if ((mface->v3 || nr == 4) && mface->v3 == mface->v4) {
@@ -1011,7 +1239,7 @@ int test_index_face(MFace *mface, CustomData *fdata, int mfindex, int nr)
   }
 
   /* Check corrupt cases, bow-tie geometry,
-   * cant handle these because edge data wont exist so just return 0. */
+   * can't handle these because edge data won't exist so just return 0. */
   if (nr == 3) {
     if (
         /* real edges */
@@ -1035,8 +1263,8 @@ int test_index_face(MFace *mface, CustomData *fdata, int mfindex, int nr)
     if (mface->v3 == 0) {
       static int corner_indices[4] = {1, 2, 0, 3};
 
-      SWAP(unsigned int, mface->v1, mface->v2);
-      SWAP(unsigned int, mface->v2, mface->v3);
+      SWAP(uint, mface->v1, mface->v2);
+      SWAP(uint, mface->v2, mface->v3);
 
       if (fdata) {
         CustomData_swap_corners(fdata, mfindex, corner_indices);
@@ -1047,8 +1275,8 @@ int test_index_face(MFace *mface, CustomData *fdata, int mfindex, int nr)
     if (mface->v3 == 0 || mface->v4 == 0) {
       static int corner_indices[4] = {2, 3, 0, 1};
 
-      SWAP(unsigned int, mface->v1, mface->v3);
-      SWAP(unsigned int, mface->v2, mface->v4);
+      SWAP(uint, mface->v1, mface->v3);
+      SWAP(uint, mface->v2, mface->v4);
 
       if (fdata) {
         CustomData_swap_corners(fdata, mfindex, corner_indices);
@@ -1061,16 +1289,14 @@ int test_index_face(MFace *mface, CustomData *fdata, int mfindex, int nr)
 
 Mesh *BKE_mesh_from_object(Object *ob)
 {
-
   if (ob == NULL) {
     return NULL;
   }
   if (ob->type == OB_MESH) {
     return ob->data;
   }
-  else {
-    return NULL;
-  }
+
+  return NULL;
 }
 
 void BKE_mesh_assign_object(Main *bmain, Object *ob, Mesh *me)
@@ -1094,7 +1320,7 @@ void BKE_mesh_assign_object(Main *bmain, Object *ob, Mesh *me)
 
   BKE_object_materials_test(bmain, ob, (ID *)me);
 
-  test_object_modifiers(ob);
+  BKE_modifiers_test_object(ob);
 }
 
 void BKE_mesh_material_index_remove(Mesh *me, short index)
@@ -1152,7 +1378,7 @@ void BKE_mesh_material_index_clear(Mesh *me)
   }
 }
 
-void BKE_mesh_material_remap(Mesh *me, const unsigned int *remap, unsigned int remap_len)
+void BKE_mesh_material_remap(Mesh *me, const uint *remap, uint remap_len)
 {
   const short remap_len_short = (short)remap_len;
 
@@ -1202,8 +1428,7 @@ void BKE_mesh_smooth_flag_set(Mesh *me, const bool use_smooth)
  */
 int poly_find_loop_from_vert(const MPoly *poly, const MLoop *loopstart, uint vert)
 {
-  int j;
-  for (j = 0; j < poly->totloop; j++, loopstart++) {
+  for (int j = 0; j < poly->totloop; j++, loopstart++) {
     if (loopstart->v == vert) {
       return j;
     }
@@ -1217,10 +1442,7 @@ int poly_find_loop_from_vert(const MPoly *poly, const MLoop *loopstart, uint ver
  * vertex. Returns the index of the loop matching vertex, or -1 if the
  * vertex is not in \a poly
  */
-int poly_get_adj_loops_from_vert(const MPoly *poly,
-                                 const MLoop *mloop,
-                                 unsigned int vert,
-                                 unsigned int r_adj[2])
+int poly_get_adj_loops_from_vert(const MPoly *poly, const MLoop *mloop, uint vert, uint r_adj[2])
 {
   int corner = poly_find_loop_from_vert(poly, &mloop[poly->loopstart], vert);
 
@@ -1242,12 +1464,11 @@ int BKE_mesh_edge_other_vert(const MEdge *e, int v)
   if (e->v1 == v) {
     return e->v2;
   }
-  else if (e->v2 == v) {
+  if (e->v2 == v) {
     return e->v1;
   }
-  else {
-    return -1;
-  }
+
+  return -1;
 }
 
 /**
@@ -1277,11 +1498,14 @@ bool BKE_mesh_minmax(const Mesh *me, float r_min[3], float r_max[3])
   return (me->totvert != 0);
 }
 
-void BKE_mesh_transform(Mesh *me, float mat[4][4], bool do_keys)
+void BKE_mesh_transform(Mesh *me, const float mat[4][4], bool do_keys)
 {
   int i;
-  MVert *mvert = me->mvert;
-  float(*lnors)[3] = CustomData_get_layer(&me->ldata, CD_NORMAL);
+  MVert *mvert = CustomData_duplicate_referenced_layer(&me->vdata, CD_MVERT, me->totvert);
+  float(*lnors)[3] = CustomData_duplicate_referenced_layer(&me->ldata, CD_NORMAL, me->totloop);
+
+  /* If the referenced l;ayer has been re-allocated need to update pointers stored in the mesh. */
+  BKE_mesh_update_customdata_pointers(me, false);
 
   for (i = 0; i < me->totvert; i++, mvert++) {
     mul_m4_v3(mat, mvert->co);
@@ -1313,9 +1537,12 @@ void BKE_mesh_transform(Mesh *me, float mat[4][4], bool do_keys)
 
 void BKE_mesh_translate(Mesh *me, const float offset[3], const bool do_keys)
 {
+  CustomData_duplicate_referenced_layer(&me->vdata, CD_MVERT, me->totvert);
+  /* If the referenced layer has been re-allocated need to update pointers stored in the mesh. */
+  BKE_mesh_update_customdata_pointers(me, false);
+
   int i = me->totvert;
-  MVert *mvert;
-  for (mvert = me->mvert; i--; mvert++) {
+  for (MVert *mvert = me->mvert; i--; mvert++) {
     add_v3_v3(mvert->co, offset);
   }
 
@@ -1328,37 +1555,6 @@ void BKE_mesh_translate(Mesh *me, const float offset[3], const bool do_keys)
       }
     }
   }
-}
-
-void BKE_mesh_ensure_navmesh(Mesh *me)
-{
-  if (!CustomData_has_layer(&me->pdata, CD_RECAST)) {
-    int i;
-    int polys_len = me->totpoly;
-    int *recastData;
-    recastData = (int *)MEM_malloc_arrayN(polys_len, sizeof(int), __func__);
-    for (i = 0; i < polys_len; i++) {
-      recastData[i] = i + 1;
-    }
-    CustomData_add_layer_named(
-        &me->pdata, CD_RECAST, CD_ASSIGN, recastData, polys_len, "recastData");
-  }
-}
-
-void BKE_mesh_tessface_calc(Mesh *mesh)
-{
-  mesh->totface = BKE_mesh_tessface_calc_ex(
-      &mesh->fdata,
-      &mesh->ldata,
-      &mesh->pdata,
-      mesh->mvert,
-      mesh->totface,
-      mesh->totloop,
-      mesh->totpoly,
-      /* calc normals right after, don't copy from polys here */
-      false);
-
-  BKE_mesh_update_customdata_pointers(mesh, true);
 }
 
 void BKE_mesh_tessface_ensure(Mesh *mesh)
@@ -1378,30 +1574,29 @@ void BKE_mesh_do_versions_cd_flag_init(Mesh *mesh)
   if (UNLIKELY(mesh->cd_flag)) {
     return;
   }
-  else {
-    MVert *mv;
-    MEdge *med;
-    int i;
 
-    for (mv = mesh->mvert, i = 0; i < mesh->totvert; mv++, i++) {
-      if (mv->bweight != 0) {
-        mesh->cd_flag |= ME_CDFLAG_VERT_BWEIGHT;
+  MVert *mv;
+  MEdge *med;
+  int i;
+
+  for (mv = mesh->mvert, i = 0; i < mesh->totvert; mv++, i++) {
+    if (mv->bweight != 0) {
+      mesh->cd_flag |= ME_CDFLAG_VERT_BWEIGHT;
+      break;
+    }
+  }
+
+  for (med = mesh->medge, i = 0; i < mesh->totedge; med++, i++) {
+    if (med->bweight != 0) {
+      mesh->cd_flag |= ME_CDFLAG_EDGE_BWEIGHT;
+      if (mesh->cd_flag & ME_CDFLAG_EDGE_CREASE) {
         break;
       }
     }
-
-    for (med = mesh->medge, i = 0; i < mesh->totedge; med++, i++) {
-      if (med->bweight != 0) {
-        mesh->cd_flag |= ME_CDFLAG_EDGE_BWEIGHT;
-        if (mesh->cd_flag & ME_CDFLAG_EDGE_CREASE) {
-          break;
-        }
-      }
-      if (med->crease != 0) {
-        mesh->cd_flag |= ME_CDFLAG_EDGE_CREASE;
-        if (mesh->cd_flag & ME_CDFLAG_EDGE_BWEIGHT) {
-          break;
-        }
+    if (med->crease != 0) {
+      mesh->cd_flag |= ME_CDFLAG_EDGE_CREASE;
+      if (mesh->cd_flag & ME_CDFLAG_EDGE_BWEIGHT) {
+        break;
       }
     }
   }
@@ -1481,11 +1676,9 @@ void BKE_mesh_mselect_validate(Mesh *me)
  */
 int BKE_mesh_mselect_find(Mesh *me, int index, int type)
 {
-  int i;
-
   BLI_assert(ELEM(type, ME_VSEL, ME_ESEL, ME_FSEL));
 
-  for (i = 0; i < me->totselect; i++) {
+  for (int i = 0; i < me->totselect; i++) {
     if ((me->mselect[i].index == index) && (me->mselect[i].type == type)) {
       return i;
     }
@@ -1895,6 +2088,14 @@ void BKE_mesh_split_faces(Mesh *mesh, bool free_loop_normals)
   SplitFaceNewVert *new_verts = NULL;
   SplitFaceNewEdge *new_edges = NULL;
 
+  /* Ensure we own the layers, we need to do this before split_faces_prepare_new_verts as it will
+   * directly assign new indices to existing edges and loops. */
+  CustomData_duplicate_referenced_layers(&mesh->vdata, mesh->totvert);
+  CustomData_duplicate_referenced_layers(&mesh->edata, mesh->totedge);
+  CustomData_duplicate_referenced_layers(&mesh->ldata, mesh->totloop);
+  /* Update pointers in case we duplicated referenced layers. */
+  BKE_mesh_update_customdata_pointers(mesh, false);
+
   /* Detect loop normal spaces (a.k.a. smooth fans) that will need a new vert. */
   const int num_new_verts = split_faces_prepare_new_verts(
       mesh, &lnors_spacearr, &new_verts, memarena);
@@ -1925,7 +2126,7 @@ void BKE_mesh_split_faces(Mesh *mesh, bool free_loop_normals)
     }
   }
 
-  /* Note: after this point mesh is expected to be valid again. */
+  /* NOTE: after this point mesh is expected to be valid again. */
 
   /* CD_NORMAL is expected to be temporary only. */
   if (free_loop_normals) {

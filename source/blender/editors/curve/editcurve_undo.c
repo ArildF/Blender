@@ -22,29 +22,30 @@
 
 #include "CLG_log.h"
 
+#include "DNA_anim_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
-#include "DNA_anim_types.h"
 
+#include "BLI_array_utils.h"
 #include "BLI_blenlib.h"
 #include "BLI_ghash.h"
-#include "BLI_array_utils.h"
 
-#include "BKE_animsys.h"
+#include "BKE_anim_data.h"
 #include "BKE_context.h"
 #include "BKE_curve.h"
 #include "BKE_fcurve.h"
 #include "BKE_layer.h"
 #include "BKE_main.h"
+#include "BKE_object.h"
 #include "BKE_undo_system.h"
 
 #include "DEG_depsgraph.h"
 
-#include "ED_undo.h"
 #include "ED_curve.h"
+#include "ED_undo.h"
 
-#include "WM_types.h"
 #include "WM_api.h"
+#include "WM_types.h"
 
 #include "curve_intern.h"
 
@@ -88,15 +89,15 @@ static void undocurve_to_editcurve(Main *bmain, UndoCurve *ucu, Curve *cu, short
 
   if (ad) {
     if (ad->action) {
-      free_fcurves(&ad->action->curves);
-      copy_fcurves(&ad->action->curves, &ucu->fcurves);
+      BKE_fcurves_free(&ad->action->curves);
+      BKE_fcurves_copy(&ad->action->curves, &ucu->fcurves);
     }
 
-    free_fcurves(&ad->drivers);
-    copy_fcurves(&ad->drivers, &ucu->drivers);
+    BKE_fcurves_free(&ad->drivers);
+    BKE_fcurves_copy(&ad->drivers, &ucu->drivers);
   }
 
-  /* copy  */
+  /* Copy. */
   for (nu = undobase->first; nu; nu = nu->next) {
     newnu = BKE_nurb_duplicate(nu);
 
@@ -132,13 +133,13 @@ static void undocurve_from_editcurve(UndoCurve *ucu, Curve *cu, const short shap
 
   if (ad) {
     if (ad->action) {
-      copy_fcurves(&ucu->fcurves, &ad->action->curves);
+      BKE_fcurves_copy(&ucu->fcurves, &ad->action->curves);
     }
 
-    copy_fcurves(&ucu->drivers, &ad->drivers);
+    BKE_fcurves_copy(&ucu->drivers, &ad->drivers);
   }
 
-  /* copy  */
+  /* Copy. */
   for (nu = nubase->first; nu; nu = nu->next) {
     newnu = BKE_nurb_duplicate(nu);
 
@@ -167,13 +168,14 @@ static void undocurve_free_data(UndoCurve *uc)
 
   BKE_curve_editNurb_keyIndex_free(&uc->undoIndex);
 
-  free_fcurves(&uc->fcurves);
-  free_fcurves(&uc->drivers);
+  BKE_fcurves_free(&uc->fcurves);
+  BKE_fcurves_free(&uc->drivers);
 }
 
 static Object *editcurve_object_from_context(bContext *C)
 {
-  Object *obedit = CTX_data_edit_object(C);
+  ViewLayer *view_layer = CTX_data_view_layer(C);
+  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
   if (obedit && ELEM(obedit->type, OB_CURVE, OB_SURF)) {
     Curve *cu = obedit->data;
     if (BKE_curve_editNurbs_get(cu) != NULL) {
@@ -238,16 +240,18 @@ static bool curve_undosys_step_encode(struct bContext *C, struct Main *bmain, Un
   return true;
 }
 
-static void curve_undosys_step_decode(
-    struct bContext *C, struct Main *bmain, UndoStep *us_p, int UNUSED(dir), bool UNUSED(is_final))
+static void curve_undosys_step_decode(struct bContext *C,
+                                      struct Main *bmain,
+                                      UndoStep *us_p,
+                                      const eUndoStepDir UNUSED(dir),
+                                      bool UNUSED(is_final))
 {
   CurveUndoStep *us = (CurveUndoStep *)us_p;
 
-  /* Load all our objects  into edit-mode, clear everything else. */
   ED_undo_object_editmode_restore_helper(
       C, &us->elems[0].obedit_ref.ptr, us->elems_len, sizeof(*us->elems));
 
-  BLI_assert(curve_undosys_poll(C));
+  BLI_assert(BKE_object_is_in_editmode(us->elems[0].obedit_ref.ptr));
 
   for (uint i = 0; i < us->elems_len; i++) {
     CurveUndoStep_Elem *elem = &us->elems[i];
@@ -268,7 +272,10 @@ static void curve_undosys_step_decode(
 
   /* The first element is always active */
   ED_undo_object_set_active_or_warn(
-      CTX_data_view_layer(C), us->elems[0].obedit_ref.ptr, us_p->name, &LOG);
+      CTX_data_scene(C), CTX_data_view_layer(C), us->elems[0].obedit_ref.ptr, us_p->name, &LOG);
+
+  /* Check after setting active. */
+  BLI_assert(curve_undosys_poll(C));
 
   bmain->is_memfile_undo_flush_needed = true;
 
@@ -309,7 +316,7 @@ void ED_curve_undosys_type(UndoType *ut)
 
   ut->step_foreach_ID_ref = curve_undosys_foreach_ID_ref;
 
-  ut->use_context = true;
+  ut->flags = UNDOTYPE_FLAG_NEED_CONTEXT_FOR_ENCODE;
 
   ut->step_size = sizeof(CurveUndoStep);
 }

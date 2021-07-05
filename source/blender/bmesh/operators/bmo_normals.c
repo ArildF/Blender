@@ -22,14 +22,14 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_linklist_stack.h"
+#include "BLI_math.h"
 
 #include "bmesh.h"
 
 #include "intern/bmesh_operators_private.h" /* own include */
 
-/********* righthand faces implementation ****** */
+/********* Right-hand faces implementation ****** */
 
 #define FACE_FLAG (1 << 0)
 #define FACE_FLIP (1 << 1)
@@ -138,7 +138,7 @@ static int recalc_face_normals_find_index(BMesh *bm,
    * then the outer-most loop attached to that vertex.
    *
    * Important this is correctly detected,
-   * where casting a ray from the center wont hit any loops past this one.
+   * where casting a ray from the center won't hit any loops past this one.
    * Otherwise the result may be incorrect.
    */
   for (i = 0; i < faces_len; i++) {
@@ -272,7 +272,7 @@ void bmo_recalc_face_normals_exec(BMesh *bm, BMOperator *op)
 
   int(*group_index)[2];
   const int group_tot = BM_mesh_calc_face_groups(
-      bm, groups_array, &group_index, bmo_recalc_normal_loop_filter_cb, NULL, 0, BM_EDGE);
+      bm, groups_array, &group_index, bmo_recalc_normal_loop_filter_cb, NULL, NULL, 0, BM_EDGE);
   int i;
 
   BMO_slot_buffer_flag_enable(bm, op->slots_in, "faces", BM_FACE, FACE_FLAG);

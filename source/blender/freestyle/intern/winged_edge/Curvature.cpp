@@ -19,7 +19,7 @@
  * and:
  *     OGF/Graphite: Geometry and Graphics Programming Library + Utilities
  *     Copyright (C) 2000-2003 Bruno Levy
- *     Contact: Bruno Levy levy@loria.fr
+ *     Contact: Bruno Levy <levy@loria.fr>
  *         ISA Project
  *         LORIA, INRIA Lorraine,
  *         Campus Scientifique, BP 239
@@ -33,7 +33,7 @@
  * \brief OGF/Graphite: Geometry and Graphics Programming Library + Utilities
  */
 
-#include <assert.h>
+#include <cassert>
 #include <cstdlib>  // for malloc and free
 #include <set>
 #include <stack>
@@ -59,7 +59,7 @@ static bool angle_obtuse(WVertex *v, WFace *f)
 
 // FIXME
 // WVvertex is useless but kept for history reasons
-static bool triangle_obtuse(WVertex *, WFace *f)
+static bool triangle_obtuse(WVertex *UNUSED(v), WFace *f)
 {
   bool b = false;
   for (int i = 0; i < 3; i++) {
@@ -98,23 +98,23 @@ static real angle_from_cotan(WVertex *vo, WVertex *v1, WVertex *v2)
   udotv = u * v;
   denom = sqrt(u.squareNorm() * v.squareNorm() - udotv * udotv);
 
-  /* Note: I assume this is what they mean by using atan2(). -Ray Jones */
+  /* NOTE(Ray Jones): I assume this is what they mean by using #atan2. */
 
   /* tan = denom/udotv = y/x (see man page for atan2) */
   return (fabs(atan2(denom, udotv)));
 }
 
-/*! gts_vertex_mean_curvature_normal:
- *  @v: a #WVertex.
- *  @s: a #GtsSurface.
- *  @Kh: the Mean Curvature Normal at @v.
+/** gts_vertex_mean_curvature_normal:
+ *  \param v: a #WVertex.
+ *  \param s: a #GtsSurface.
+ *  \param Kh: the Mean Curvature Normal at \a v.
  *
- *  Computes the Discrete Mean Curvature Normal approximation at @v.
- *  The mean curvature at @v is half the magnitude of the vector @Kh.
+ *  Computes the Discrete Mean Curvature Normal approximation at \a v.
+ *  The mean curvature at \a v is half the magnitude of the vector \a Kh.
  *
- *  Note: the normal computed is not unit length, and may point either into or out of the surface,
- * depending on the curvature at @v. It is the responsibility of the caller of the function to use
- * the mean curvature normal appropriately.
+ *  NOTE: the normal computed is not unit length, and may point either into or out of the surface,
+ * depending on the curvature at \a v. It is the responsibility of the caller of the function to
+ * use the mean curvature normal appropriately.
  *
  *  This approximation is from the paper:
  *      Discrete Differential-Geometry Operators for Triangulated 2-Manifolds
@@ -175,12 +175,12 @@ bool gts_vertex_mean_curvature_normal(WVertex *v, Vec3r &Kh)
   return true;
 }
 
-/*! gts_vertex_gaussian_curvature:
- *  @v: a #WVertex.
- *  @s: a #GtsSurface.
- *  @Kg: the Discrete Gaussian Curvature approximation at @v.
+/** gts_vertex_gaussian_curvature:
+ *  \param v: a #WVertex.
+ *  \param s: a #GtsSurface.
+ *  \param Kg: the Discrete Gaussian Curvature approximation at \a v.
  *
- *  Computes the Discrete Gaussian Curvature approximation at @v.
+ *  Computes the Discrete Gaussian Curvature approximation at \a v.
  *
  *  This approximation is from the paper:
  *      Discrete Differential-Geometry Operators for Triangulated 2-Manifolds
@@ -226,7 +226,7 @@ bool gts_vertex_gaussian_curvature(WVertex *v, real *Kg)
   return true;
 }
 
-/*! gts_vertex_principal_curvatures:
+/** gts_vertex_principal_curvatures:
  *  @Kh: mean curvature.
  *  @Kg: Gaussian curvature.
  *  @K1: first principal curvature.
@@ -279,17 +279,17 @@ static void eigenvector(real a, real b, real c, Vec3r e)
   e[2] = 0.0;
 }
 
-/*! gts_vertex_principal_directions:
- *  @v: a #WVertex.
- *  @s: a #GtsSurface.
- *  @Kh: mean curvature normal (a #Vec3r).
- *  @Kg: Gaussian curvature (a real).
- *  @e1: first principal curvature direction (direction of largest curvature).
- *  @e2: second principal curvature direction.
+/** gts_vertex_principal_directions:
+ *  \param v: a #WVertex.
+ *  \param s: a #GtsSurface.
+ *  \param Kh: mean curvature normal (a #Vec3r).
+ *  \param Kg: Gaussian curvature (a real).
+ *  \param e1: first principal curvature direction (direction of largest curvature).
+ *  \param e2: second principal curvature direction.
  *
- *  Computes the principal curvature directions at a point given @Kh and @Kg, the mean curvature
- * normal and Gaussian curvatures at that point, computed with gts_vertex_mean_curvature_normal()
- * and gts_vertex_gaussian_curvature(), respectively.
+ *  Computes the principal curvature directions at a point given \a Kh and \a Kg,
+ *  the mean curvature normal and Gaussian curvatures at that point, computed with
+ *  gts_vertex_mean_curvature_normal() and gts_vertex_gaussian_curvature(), respectively.
  *
  *  Note that this computation is very approximate and tends to be unstable. Smoothing of the
  * surface or the principal directions may be necessary to achieve reasonable results.

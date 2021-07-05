@@ -22,16 +22,16 @@
 
 #include <stdlib.h>
 
+#include "BLI_dlrbTree.h"
 #include "BLI_listbase.h"
 #include "BLI_math.h"
-#include "BLI_dlrbTree.h"
 
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
 #include "DNA_scene_types.h"
 
-#include "BKE_animsys.h"
 #include "BKE_action.h"
+#include "BKE_anim_data.h"
 #include "BKE_main.h"
 #include "BKE_scene.h"
 
@@ -69,9 +69,9 @@ typedef struct MPathTarget {
 /* ........ */
 
 /* update scene for current frame */
-static void motionpaths_calc_update_scene(Main *bmain, struct Depsgraph *depsgraph)
+static void motionpaths_calc_update_scene(struct Depsgraph *depsgraph)
 {
-  BKE_scene_graph_update_for_newframe(depsgraph, bmain);
+  BKE_scene_graph_update_for_newframe(depsgraph);
 }
 
 Depsgraph *animviz_depsgraph_build(Main *bmain,
@@ -91,11 +91,11 @@ Depsgraph *animviz_depsgraph_build(Main *bmain,
   }
 
   /* Build graph from all requested IDs. */
-  DEG_graph_build_from_ids(depsgraph, bmain, scene, view_layer, ids, num_ids);
+  DEG_graph_build_from_ids(depsgraph, ids, num_ids);
   MEM_freeN(ids);
 
   /* Update once so we can access pointers of evaluated animation data. */
-  motionpaths_calc_update_scene(bmain, depsgraph);
+  motionpaths_calc_update_scene(depsgraph);
   return depsgraph;
 }
 
@@ -228,7 +228,7 @@ static void motionpath_get_global_framerange(ListBase *targets, int *r_sfra, int
 {
   *r_sfra = INT_MAX;
   *r_efra = INT_MIN;
-  for (MPathTarget *mpt = targets->first; mpt; mpt = mpt->next) {
+  LISTBASE_FOREACH (MPathTarget *, mpt, targets) {
     *r_sfra = min_ii(*r_sfra, mpt->mpath->start_frame);
     *r_efra = max_ii(*r_efra, mpt->mpath->end_frame);
   }
@@ -331,7 +331,7 @@ static void motionpath_calculate_update_range(MPathTarget *mpt,
     int fcu_sfra = motionpath_get_prev_prev_keyframe(mpt, &fcu_keys, current_frame);
     int fcu_efra = motionpath_get_next_next_keyframe(mpt, &fcu_keys, current_frame);
 
-    /* Extend range furher, since accelleration compensation propagates even further away. */
+    /* Extend range further, since acceleration compensation propagates even further away. */
     if (fcu->auto_smoothing != FCURVE_SMOOTH_NONE) {
       fcu_sfra = motionpath_get_prev_prev_keyframe(mpt, &fcu_keys, fcu_sfra);
       fcu_efra = motionpath_get_next_next_keyframe(mpt, &fcu_keys, fcu_efra);
@@ -348,14 +348,14 @@ static void motionpath_calculate_update_range(MPathTarget *mpt,
 
 static void motionpath_free_free_tree_data(ListBase *targets)
 {
-  for (MPathTarget *mpt = targets->first; mpt; mpt = mpt->next) {
+  LISTBASE_FOREACH (MPathTarget *, mpt, targets) {
     BLI_dlrbTree_free(&mpt->keys);
   }
 }
 
 /* Perform baking of the given object's and/or its bones' transforms to motion paths
  * - scene: current scene
- * - ob: object whose flagged motionpaths should get calculated
+ * - ob: object whose flagged motion-paths should get calculated
  * - recalc: whether we need to
  */
 /* TODO: include reports pointer? */
@@ -402,7 +402,7 @@ void animviz_calc_motionpaths(Depsgraph *depsgraph,
   /* TODO: Create a copy of background depsgraph that only contain these entities,
    * and only evaluates them.
    *
-   * For until that is done we force dependency graph to not be active, so we don't loose unkeyed
+   * For until that is done we force dependency graph to not be active, so we don't lose unkeyed
    * changes during updating the motion path.
    * This still doesn't include unkeyed changes to the path itself, but allows to have updates in
    * an environment when auto-keying and pose paste is used. */
@@ -412,7 +412,7 @@ void animviz_calc_motionpaths(Depsgraph *depsgraph,
     DEG_make_inactive(depsgraph);
   }
 
-  for (MPathTarget *mpt = targets->first; mpt; mpt = mpt->next) {
+  LISTBASE_FOREACH (MPathTarget *, mpt, targets) {
     mpt->ob_eval = DEG_get_evaluated_object(depsgraph, mpt->ob);
 
     AnimData *adt = BKE_animdata_from_id(&mpt->ob_eval->id);
@@ -471,7 +471,7 @@ void animviz_calc_motionpaths(Depsgraph *depsgraph,
     }
     else {
       /* Update relevant data for new frame. */
-      motionpaths_calc_update_scene(bmain, depsgraph);
+      motionpaths_calc_update_scene(depsgraph);
     }
 
     /* perform baking for targets */
@@ -484,7 +484,7 @@ void animviz_calc_motionpaths(Depsgraph *depsgraph,
    * We always have to restore the current frame though. */
   CFRA = cfra;
   if (range != ANIMVIZ_CALC_RANGE_CURRENT_FRAME && restore) {
-    motionpaths_calc_update_scene(bmain, depsgraph);
+    motionpaths_calc_update_scene(depsgraph);
   }
 
   if (is_active_depsgraph) {
@@ -492,7 +492,7 @@ void animviz_calc_motionpaths(Depsgraph *depsgraph,
   }
 
   /* clear recalc flags from targets */
-  for (MPathTarget *mpt = targets->first; mpt; mpt = mpt->next) {
+  LISTBASE_FOREACH (MPathTarget *, mpt, targets) {
     bMotionPath *mpath = mpt->mpath;
 
     /* get pointer to animviz settings for each target */

@@ -28,12 +28,12 @@
 #include "DNA_screen_types.h"
 #include "DNA_space_types.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_string.h"
+#include "BLI_utildefines.h"
 
 #include "BKE_context.h"
 #include "BKE_global.h"
-#include "BKE_library.h"
+#include "BKE_lib_id.h"
 #include "BKE_movieclip.h"
 #include "BKE_report.h"
 #include "BKE_tracking.h"
@@ -144,8 +144,8 @@ static void solve_camera_freejob(void *scv)
   else {
     BKE_reportf(scj->reports,
                 RPT_INFO,
-                "Average re-projection error: %.3f",
-                tracking->reconstruction.error);
+                "Average re-projection error: %.2f px",
+                BKE_tracking_get_active_reconstruction(tracking)->error);
   }
 
   /* Set currently solved clip as active for scene. */
@@ -244,7 +244,7 @@ static int solve_camera_invoke(bContext *C, wmOperator *op, const wmEvent *UNUSE
   G.is_break = false;
 
   WM_jobs_start(CTX_wm_manager(C), wm_job);
-  WM_cursor_wait(0);
+  WM_cursor_wait(false);
 
   /* add modal handler for ESC */
   WM_event_add_modal_handler(C, op);
@@ -261,7 +261,7 @@ static int solve_camera_modal(bContext *C, wmOperator *UNUSED(op), const wmEvent
 
   /* Running solver. */
   switch (event->type) {
-    case ESCKEY:
+    case EVT_ESCKEY:
       return OPERATOR_RUNNING_MODAL;
   }
 

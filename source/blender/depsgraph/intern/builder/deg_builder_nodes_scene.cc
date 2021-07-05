@@ -25,7 +25,7 @@
 
 #include "DNA_scene_types.h"
 
-namespace DEG {
+namespace blender::deg {
 
 void DepsgraphNodeBuilder::build_scene_render(Scene *scene, ViewLayer *view_layer)
 {
@@ -57,6 +57,7 @@ void DepsgraphNodeBuilder::build_scene_parameters(Scene *scene)
     return;
   }
   build_parameters(&scene->id);
+  build_idproperties(scene->id.properties);
   add_operation_node(&scene->id, NodeType::PARAMETERS, OperationCode::SCENE_EVAL);
   /* NOTE: This is a bit overkill and can potentially pull a bit too much into the graph, but:
    *
@@ -67,8 +68,12 @@ void DepsgraphNodeBuilder::build_scene_parameters(Scene *scene)
    *
    * Would be nice to find some reliable way of ignoring compositor here, but it's already pulled
    * in when building scene from view layer, so this particular case does not make things
-   * marginally worse.  */
+   * marginally worse. */
   build_scene_compositor(scene);
+
+  LISTBASE_FOREACH (TimeMarker *, marker, &scene->markers) {
+    build_idproperties(marker->prop);
+  }
 }
 
 void DepsgraphNodeBuilder::build_scene_compositor(Scene *scene)
@@ -82,4 +87,4 @@ void DepsgraphNodeBuilder::build_scene_compositor(Scene *scene)
   build_nodetree(scene->nodetree);
 }
 
-}  // namespace DEG
+}  // namespace blender::deg

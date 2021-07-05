@@ -33,14 +33,13 @@
 #include "BKE_boids.h"
 #include "BKE_context.h"
 #include "BKE_main.h"
-#include "BKE_particle.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_build.h"
 
 #include "RNA_access.h"
-#include "RNA_enum_types.h"
 #include "RNA_define.h"
+#include "RNA_enum_types.h"
 
 #include "WM_api.h"
 #include "WM_types.h"

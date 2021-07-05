@@ -20,8 +20,7 @@
  * BMesh inline iterator functions.
  */
 
-#ifndef __BMESH_ITERATORS_INLINE_H__
-#define __BMESH_ITERATORS_INLINE_H__
+#pragma once
 
 /* inline here optimizes out the switch statement when called with
  * constant values (which is very common), nicer for loop-in-loop situations */
@@ -189,18 +188,18 @@ BLI_INLINE void BM_iter_parallel(BMesh *bm,
                                  const char itype,
                                  TaskParallelMempoolFunc func,
                                  void *userdata,
-                                 const bool use_threading)
+                                 const TaskParallelSettings *settings)
 {
   /* inlining optimizes out this switch when called with the defined type */
   switch ((BMIterType)itype) {
     case BM_VERTS_OF_MESH:
-      BLI_task_parallel_mempool(bm->vpool, userdata, func, use_threading);
+      BLI_task_parallel_mempool(bm->vpool, userdata, func, settings);
       break;
     case BM_EDGES_OF_MESH:
-      BLI_task_parallel_mempool(bm->epool, userdata, func, use_threading);
+      BLI_task_parallel_mempool(bm->epool, userdata, func, settings);
       break;
     case BM_FACES_OF_MESH:
-      BLI_task_parallel_mempool(bm->fpool, userdata, func, use_threading);
+      BLI_task_parallel_mempool(bm->fpool, userdata, func, settings);
       break;
     default:
       /* should never happen */
@@ -210,5 +209,3 @@ BLI_INLINE void BM_iter_parallel(BMesh *bm,
 }
 
 #endif /* __BLI_TASK_H__ */
-
-#endif /* __BMESH_ITERATORS_INLINE_H__ */

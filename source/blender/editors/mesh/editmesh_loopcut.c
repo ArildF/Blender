@@ -25,27 +25,27 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_string.h"
 #include "BLI_math.h"
+#include "BLI_string.h"
 
 #include "BLT_translation.h"
 
 #include "DNA_mesh_types.h"
 
 #include "BKE_context.h"
+#include "BKE_editmesh.h"
+#include "BKE_layer.h"
 #include "BKE_modifier.h"
 #include "BKE_report.h"
-#include "BKE_editmesh.h"
 #include "BKE_unit.h"
-#include "BKE_layer.h"
 
 #include "UI_interface.h"
 
+#include "ED_mesh.h"
+#include "ED_numinput.h"
 #include "ED_screen.h"
 #include "ED_space_api.h"
 #include "ED_view3d.h"
-#include "ED_mesh.h"
-#include "ED_numinput.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -64,9 +64,14 @@
 
 /* ringsel operator */
 
+struct MeshCoordsCache {
+  bool is_init, is_alloc;
+  const float (*coords)[3];
+};
+
 /* struct for properties used while drawing */
 typedef struct RingSelOpData {
-  ARegion *ar;       /* region that ringsel was activated in */
+  ARegion *region;   /* region that ringsel was activated in */
   void *draw_handle; /* for drawing preview loop */
 
   struct EditMesh_PreSelEdgeRing *presel_edgering;
@@ -77,6 +82,8 @@ typedef struct RingSelOpData {
 
   Base **bases;
   uint bases_len;
+
+  struct MeshCoordsCache *geom_cache;
 
   /* These values switch objects based on the object under the cursor. */
   uint base_index;
@@ -94,7 +101,7 @@ typedef struct RingSelOpData {
 } RingSelOpData;
 
 /* modal loop selection drawing callback */
-static void ringsel_draw(const bContext *UNUSED(C), ARegion *UNUSED(ar), void *arg)
+static void ringsel_draw(const bContext *UNUSED(C), ARegion *UNUSED(region), void *arg)
 {
   RingSelOpData *lcd = arg;
   EDBM_preselect_edgering_draw(lcd->presel_edgering, lcd->ob->obmat);
@@ -138,15 +145,18 @@ static void edgering_select(RingSelOpData *lcd)
 static void ringsel_find_edge(RingSelOpData *lcd, const int previewlines)
 {
   if (lcd->eed) {
-    const float(*coords)[3] = NULL;
-    {
-      Mesh *me_eval = (Mesh *)DEG_get_evaluated_id(lcd->depsgraph, lcd->ob->data);
-      if (me_eval->runtime.edit_data) {
-        coords = me_eval->runtime.edit_data->vertexCos;
-      }
+    struct MeshCoordsCache *gcache = &lcd->geom_cache[lcd->base_index];
+    if (gcache->is_init == false) {
+      Scene *scene_eval = (Scene *)DEG_get_evaluated_id(lcd->vc.depsgraph, &lcd->vc.scene->id);
+      Object *ob_eval = DEG_get_evaluated_object(lcd->vc.depsgraph, lcd->ob);
+      BMEditMesh *em_eval = BKE_editmesh_from_object(ob_eval);
+      gcache->coords = BKE_editmesh_vert_coords_when_deformed(
+          lcd->vc.depsgraph, em_eval, scene_eval, ob_eval, NULL, &gcache->is_alloc);
+      gcache->is_init = true;
     }
+
     EDBM_preselect_edgering_update_from_edge(
-        lcd->presel_edgering, lcd->em->bm, lcd->eed, previewlines, coords);
+        lcd->presel_edgering, lcd->em->bm, lcd->eed, previewlines, gcache->coords);
   }
   else {
     EDBM_preselect_edgering_clear(lcd->presel_edgering);
@@ -174,12 +184,14 @@ static void ringsel_finish(bContext *C, wmOperator *op)
     if (lcd->do_cut) {
       const bool is_macro = (op->opm != NULL);
       /* a single edge (rare, but better support) */
-      const bool is_single = (BM_edge_is_wire(lcd->eed));
-      const int seltype = is_single ? SUBDIV_SELECT_INNER : SUBDIV_SELECT_LOOPCUT;
+      const bool is_edge_wire = BM_edge_is_wire(lcd->eed);
+      const bool is_single = is_edge_wire || !BM_edge_is_any_face_len_test(lcd->eed, 4);
+      const int seltype = is_edge_wire ? SUBDIV_SELECT_INNER :
+                                         is_single ? SUBDIV_SELECT_NONE : SUBDIV_SELECT_LOOPCUT;
 
-      /* Enable gridfill, so that intersecting loopcut works as one would expect.
-       * Note though that it will break edgeslide in this specific case.
-       * See [#31939]. */
+      /* Enable grid-fill, so that intersecting loop-cut works as one would expect.
+       * Note though that it will break edge-slide in this specific case.
+       * See T31939. */
       BM_mesh_esubdivide(em->bm,
                          BM_ELEM_SELECT,
                          smoothness,
@@ -197,7 +209,12 @@ static void ringsel_finish(bContext *C, wmOperator *op)
 
       /* when used in a macro the tessfaces will be recalculated anyway,
        * this is needed here because modifiers depend on updated tessellation, see T45920 */
-      EDBM_update_generic(lcd->ob->data, true, true);
+      EDBM_update(lcd->ob->data,
+                  &(const struct EDBMUpdate_Params){
+                      .calc_looptri = true,
+                      .calc_normals = false,
+                      .is_destructive = true,
+                  });
 
       if (is_single) {
         /* de-select endpoints */
@@ -206,11 +223,11 @@ static void ringsel_finish(bContext *C, wmOperator *op)
 
         EDBM_selectmode_flush_ex(lcd->em, SCE_SELECT_VERTEX);
       }
-      /* we cant slide multiple edges in vertex select mode */
+      /* we can't slide multiple edges in vertex select mode */
       else if (is_macro && (cuts > 1) && (em->selectmode & SCE_SELECT_VERTEX)) {
         EDBM_selectmode_disable(lcd->vc.scene, em, SCE_SELECT_VERTEX, SCE_SELECT_EDGE);
       }
-      /* force edge slide to edge select mode in in face select mode */
+      /* Force edge slide to edge select mode in face select mode. */
       else if (EDBM_selectmode_disable(lcd->vc.scene, em, SCE_SELECT_FACE, SCE_SELECT_EDGE)) {
         /* pass, the change will flush selection */
       }
@@ -224,7 +241,7 @@ static void ringsel_finish(bContext *C, wmOperator *op)
        *     in editmesh_select.c (around line 1000)... */
       /* sets as active, useful for other tools */
       if (em->selectmode & SCE_SELECT_VERTEX) {
-        /* low priority TODO, get vertrex close to mouse */
+        /* low priority TODO: get vertrex close to mouse. */
         BM_select_history_store(em->bm, lcd->eed->v1);
       }
       if (em->selectmode & SCE_SELECT_EDGE) {
@@ -244,13 +261,21 @@ static void ringsel_exit(bContext *UNUSED(C), wmOperator *op)
   RingSelOpData *lcd = op->customdata;
 
   /* deactivate the extra drawing stuff in 3D-View */
-  ED_region_draw_cb_exit(lcd->ar->type, lcd->draw_handle);
+  ED_region_draw_cb_exit(lcd->region->type, lcd->draw_handle);
 
   EDBM_preselect_edgering_destroy(lcd->presel_edgering);
 
+  for (uint i = 0; i < lcd->bases_len; i++) {
+    struct MeshCoordsCache *gcache = &lcd->geom_cache[i];
+    if (gcache->is_alloc) {
+      MEM_freeN((void *)gcache->coords);
+    }
+  }
+  MEM_freeN(lcd->geom_cache);
+
   MEM_freeN(lcd->bases);
 
-  ED_region_tag_redraw(lcd->ar);
+  ED_region_tag_redraw(lcd->region);
 
   /* free the custom data */
   MEM_freeN(lcd);
@@ -271,9 +296,9 @@ static int ringsel_init(bContext *C, wmOperator *op, bool do_cut)
   lcd->depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
 
   /* assign the drawing handle for drawing preview line... */
-  lcd->ar = CTX_wm_region(C);
+  lcd->region = CTX_wm_region(C);
   lcd->draw_handle = ED_region_draw_cb_activate(
-      lcd->ar->type, ringsel_draw, lcd, REGION_DRAW_POST_VIEW);
+      lcd->region->type, ringsel_draw, lcd, REGION_DRAW_POST_VIEW);
   lcd->presel_edgering = EDBM_preselect_edgering_create();
   /* Initialize once the cursor is over a mesh. */
   lcd->ob = NULL;
@@ -291,7 +316,7 @@ static int ringsel_init(bContext *C, wmOperator *op, bool do_cut)
   lcd->num.unit_type[0] = B_UNIT_NONE;
   lcd->num.unit_type[1] = B_UNIT_NONE;
 
-  ED_region_tag_redraw(lcd->ar);
+  ED_region_tag_redraw(lcd->region);
 
   return 1;
 }
@@ -372,7 +397,8 @@ static int loopcut_init(bContext *C, wmOperator *op, const wmEvent *event)
   if (is_interactive) {
     for (uint base_index = 0; base_index < bases_len; base_index++) {
       Object *ob_iter = bases[base_index]->object;
-      if (modifiers_isDeformedByLattice(ob_iter) || modifiers_isDeformedByArmature(ob_iter)) {
+      if (BKE_modifiers_is_deformed_by_lattice(ob_iter) ||
+          BKE_modifiers_is_deformed_by_armature(ob_iter)) {
         BKE_report(
             op->reports, RPT_WARNING, "Loop cut does not work well on deformed edit mesh display");
         break;
@@ -412,6 +438,7 @@ static int loopcut_init(bContext *C, wmOperator *op, const wmEvent *event)
 
   lcd->bases = bases;
   lcd->bases_len = bases_len;
+  lcd->geom_cache = MEM_callocN(sizeof(*lcd->geom_cache) * bases_len, __func__);
 
   if (is_interactive) {
     copy_v2_v2_int(lcd->vc.mval, event->mval);
@@ -450,19 +477,18 @@ static int loopcut_init(bContext *C, wmOperator *op, const wmEvent *event)
              "hold Alt for smooth"));
     return OPERATOR_RUNNING_MODAL;
   }
-  else {
-    ringsel_finish(C, op);
-    ringsel_exit(C, op);
-    return OPERATOR_FINISHED;
-  }
+
+  ringsel_finish(C, op);
+  ringsel_exit(C, op);
+  return OPERATOR_FINISHED;
 }
 
 static int ringcut_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
   /* When accessed as a tool, get the active edge from the preselection gizmo. */
   {
-    ARegion *ar = CTX_wm_region(C);
-    wmGizmoMap *gzmap = ar->gizmo_map;
+    ARegion *region = CTX_wm_region(C);
+    wmGizmoMap *gzmap = region->gizmo_map;
     wmGizmoGroup *gzgroup = gzmap ? WM_gizmomap_group_find(gzmap,
                                                            "VIEW3D_GGT_mesh_preselect_edgering") :
                                     NULL;
@@ -491,7 +517,7 @@ static int loopcut_exec(bContext *C, wmOperator *op)
 static int loopcut_finish(RingSelOpData *lcd, bContext *C, wmOperator *op)
 {
   /* finish */
-  ED_region_tag_redraw(lcd->ar);
+  ED_region_tag_redraw(lcd->region);
   ED_workspace_status_text(C, NULL);
 
   if (lcd->eed) {
@@ -514,6 +540,10 @@ static int loopcut_finish(RingSelOpData *lcd, bContext *C, wmOperator *op)
 
 static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
 {
+  if (event->type == NDOF_MOTION) {
+    return OPERATOR_PASS_THROUGH;
+  }
+
   RingSelOpData *lcd = op->customdata;
   float cuts = lcd->cuts;
   float smoothness = lcd->smoothness;
@@ -521,7 +551,7 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
   const bool has_numinput = hasNumInput(&lcd->num);
 
   em_setup_viewcontext(C, &lcd->vc);
-  lcd->ar = lcd->vc.ar;
+  lcd->region = lcd->vc.region;
 
   view3d_operator_needs_opengl(C);
 
@@ -536,33 +566,33 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
   else {
     bool handled = false;
     switch (event->type) {
-      case RETKEY:
-      case PADENTER:
-      case LEFTMOUSE: /* confirm */  // XXX hardcoded
+      case EVT_RETKEY:
+      case EVT_PADENTER:
+      case LEFTMOUSE: /* confirm */ /* XXX hardcoded */
         if (event->val == KM_PRESS) {
           return loopcut_finish(lcd, C, op);
         }
 
-        ED_region_tag_redraw(lcd->ar);
+        ED_region_tag_redraw(lcd->region);
         handled = true;
         break;
-      case RIGHTMOUSE: /* abort */  // XXX hardcoded
-        ED_region_tag_redraw(lcd->ar);
+      case RIGHTMOUSE: /* abort */ /* XXX hardcoded */
+        ED_region_tag_redraw(lcd->region);
         ringsel_exit(C, op);
         ED_workspace_status_text(C, NULL);
 
         return OPERATOR_CANCELLED;
-      case ESCKEY:
+      case EVT_ESCKEY:
         if (event->val == KM_RELEASE) {
           /* cancel */
-          ED_region_tag_redraw(lcd->ar);
+          ED_region_tag_redraw(lcd->region);
           ED_workspace_status_text(C, NULL);
 
           ringcut_cancel(C, op);
           return OPERATOR_CANCELLED;
         }
 
-        ED_region_tag_redraw(lcd->ar);
+        ED_region_tag_redraw(lcd->region);
         handled = true;
         break;
       case MOUSEPAN:
@@ -577,8 +607,8 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
         }
         handled = true;
         break;
-      case PADPLUSKEY:
-      case PAGEUPKEY:
+      case EVT_PADPLUSKEY:
+      case EVT_PAGEUPKEY:
       case WHEELUPMOUSE: /* change number of cuts */
         if (event->val == KM_RELEASE) {
           break;
@@ -591,8 +621,8 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
         }
         handled = true;
         break;
-      case PADMINUS:
-      case PAGEDOWNKEY:
+      case EVT_PADMINUS:
+      case EVT_PAGEDOWNKEY:
       case WHEELDOWNMOUSE: /* change number of cuts */
         if (event->val == KM_RELEASE) {
           break;
@@ -605,7 +635,8 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
         }
         handled = true;
         break;
-      case MOUSEMOVE: /* mouse moved somewhere to select another loop */
+      case MOUSEMOVE: {
+        /* mouse moved somewhere to select another loop */
 
         /* This is normally disabled for all modal operators.
          * This is an exception since mouse movement doesn't relate to numeric input.
@@ -614,14 +645,16 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
 #if 0
         if (!has_numinput)
 #endif
-      {
-        lcd->vc.mval[0] = event->mval[0];
-        lcd->vc.mval[1] = event->mval[1];
-        loopcut_mouse_move(lcd, (int)lcd->cuts);
+        {
+          lcd->vc.mval[0] = event->mval[0];
+          lcd->vc.mval[1] = event->mval[1];
+          loopcut_mouse_move(lcd, (int)lcd->cuts);
 
-        ED_region_tag_redraw(lcd->ar);
-        handled = true;
-      } break;
+          ED_region_tag_redraw(lcd->region);
+          handled = true;
+        }
+        break;
+      }
     }
 
     /* Modal numinput inactive, try to handle numeric inputs last... */
@@ -640,14 +673,14 @@ static int loopcut_modal(bContext *C, wmOperator *op, const wmEvent *event)
     RNA_int_set(op->ptr, "number_cuts", (int)lcd->cuts);
     ringsel_find_edge(lcd, (int)lcd->cuts);
     show_cuts = true;
-    ED_region_tag_redraw(lcd->ar);
+    ED_region_tag_redraw(lcd->region);
   }
 
   if (smoothness != lcd->smoothness) {
     lcd->smoothness = clamp_f(smoothness, -SUBD_SMOOTH_MAX, SUBD_SMOOTH_MAX);
     RNA_float_set(op->ptr, "smoothness", lcd->smoothness);
     show_cuts = true;
-    ED_region_tag_redraw(lcd->ar);
+    ED_region_tag_redraw(lcd->region);
   }
 
   if (show_cuts) {

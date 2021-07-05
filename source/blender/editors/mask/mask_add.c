@@ -26,178 +26,26 @@
 #include "BLI_math.h"
 
 #include "BKE_context.h"
+#include "BKE_curve.h"
 #include "BKE_mask.h"
 
 #include "DEG_depsgraph.h"
-#include "DEG_depsgraph_query.h"
 
+#include "DNA_mask_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_screen_types.h"
-#include "DNA_mask_types.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
 
-#include "ED_select_utils.h"
 #include "ED_mask.h" /* own include */
 #include "ED_screen.h"
+#include "ED_select_utils.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
 
 #include "mask_intern.h" /* own include */
-
-bool ED_mask_find_nearest_diff_point(const bContext *C,
-                                     struct Mask *mask_orig,
-                                     const float normal_co[2],
-                                     int threshold,
-                                     bool feather,
-                                     float tangent[2],
-                                     const bool use_deform,
-                                     const bool use_project,
-                                     MaskLayer **mask_layer_r,
-                                     MaskSpline **spline_r,
-                                     MaskSplinePoint **point_r,
-                                     float *u_r,
-                                     float *score_r)
-{
-  ScrArea *sa = CTX_wm_area(C);
-  ARegion *ar = CTX_wm_region(C);
-
-  MaskLayer *point_mask_layer;
-  MaskSpline *point_spline;
-  MaskSplinePoint *point = NULL;
-  float dist_best_sq = FLT_MAX, co[2];
-  int width, height;
-  float u = 0.0f;
-  float scalex, scaley;
-
-  Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
-  Mask *mask_eval = (Mask *)DEG_get_evaluated_id(depsgraph, &mask_orig->id);
-
-  ED_mask_get_size(sa, &width, &height);
-  ED_mask_pixelspace_factor(sa, ar, &scalex, &scaley);
-
-  co[0] = normal_co[0] * scalex;
-  co[1] = normal_co[1] * scaley;
-
-  for (MaskLayer *mask_layer_orig = mask_orig->masklayers.first,
-                 *mask_layer_eval = mask_eval->masklayers.first;
-       mask_layer_orig != NULL;
-       mask_layer_orig = mask_layer_orig->next, mask_layer_eval = mask_layer_eval->next) {
-    if (mask_layer_orig->restrictflag & (MASK_RESTRICT_VIEW | MASK_RESTRICT_SELECT)) {
-      continue;
-    }
-
-    for (MaskSpline *spline_orig = mask_layer_orig->splines.first,
-                    *spline_eval = mask_layer_eval->splines.first;
-         spline_orig != NULL;
-         spline_orig = spline_orig->next, spline_eval = spline_eval->next) {
-      int i;
-      MaskSplinePoint *cur_point_eval;
-
-      for (i = 0, cur_point_eval = use_deform ? spline_eval->points_deform : spline_eval->points;
-           i < spline_eval->tot_point;
-           i++, cur_point_eval++) {
-        unsigned int tot_diff_point;
-        float *diff_points = BKE_mask_point_segment_diff(
-            spline_eval, cur_point_eval, width, height, &tot_diff_point);
-
-        if (diff_points) {
-          int j, tot_point;
-          unsigned int tot_feather_point;
-          float *feather_points = NULL, *points;
-
-          if (feather) {
-            feather_points = BKE_mask_point_segment_feather_diff(
-                spline_eval, cur_point_eval, width, height, &tot_feather_point);
-
-            points = feather_points;
-            tot_point = tot_feather_point;
-          }
-          else {
-            points = diff_points;
-            tot_point = tot_diff_point;
-          }
-
-          for (j = 0; j < tot_point - 1; j++) {
-            float dist_sq, a[2], b[2];
-
-            a[0] = points[2 * j] * scalex;
-            a[1] = points[2 * j + 1] * scaley;
-
-            b[0] = points[2 * j + 2] * scalex;
-            b[1] = points[2 * j + 3] * scaley;
-
-            dist_sq = dist_squared_to_line_segment_v2(co, a, b);
-
-            if (dist_sq < dist_best_sq) {
-              if (tangent) {
-                sub_v2_v2v2(tangent, &diff_points[2 * j + 2], &diff_points[2 * j]);
-              }
-
-              point_mask_layer = mask_layer_orig;
-              point_spline = spline_orig;
-              point = use_deform ?
-                          &spline_orig->points[(cur_point_eval - spline_eval->points_deform)] :
-                          &spline_orig->points[(cur_point_eval - spline_eval->points)];
-              dist_best_sq = dist_sq;
-              u = (float)j / tot_point;
-            }
-          }
-
-          if (feather_points != NULL) {
-            MEM_freeN(feather_points);
-          }
-          MEM_freeN(diff_points);
-        }
-      }
-    }
-  }
-
-  if (point && dist_best_sq < threshold) {
-    if (mask_layer_r) {
-      *mask_layer_r = point_mask_layer;
-    }
-
-    if (spline_r) {
-      *spline_r = point_spline;
-    }
-
-    if (point_r) {
-      *point_r = point;
-    }
-
-    if (u_r) {
-      /* TODO(sergey): Projection fails in some weirdo cases.. */
-      if (use_project) {
-        u = BKE_mask_spline_project_co(point_spline, point, u, normal_co, MASK_PROJ_ANY);
-      }
-
-      *u_r = u;
-    }
-
-    if (score_r) {
-      *score_r = dist_best_sq;
-    }
-
-    return true;
-  }
-
-  if (mask_layer_r) {
-    *mask_layer_r = NULL;
-  }
-
-  if (spline_r) {
-    *spline_r = NULL;
-  }
-
-  if (point_r) {
-    *point_r = NULL;
-  }
-
-  return false;
-}
 
 /******************** add vertex *********************/
 
@@ -229,8 +77,7 @@ static void setup_vertex_point(Mask *mask,
        */
       int point_index = reference_point - spline->points;
       int delta = new_point == spline->points ? 1 : -1;
-      int i = 0;
-      for (i = 0; i < spline->tot_point - 1; i++) {
+      for (int i = 0; i < spline->tot_point - 1; i++) {
         MaskSplinePoint *current_point;
 
         point_index += delta;
@@ -298,7 +145,7 @@ static void setup_vertex_point(Mask *mask,
       /* parent */
       reference_parent_point = close_point;
 
-      /* note, we may want to copy other attributes later, radius? pressure? color? */
+      /* NOTE: we may want to copy other attributes later, radius? pressure? color? */
     }
   }
 
@@ -342,7 +189,7 @@ static void finSelectedSplinePoint(MaskLayer *mask_layer,
   *point = NULL;
 
   if (check_active) {
-    /* TODO, having an active point but no active spline is possible, why? */
+    /* TODO: having an active point but no active spline is possible, why? */
     if (mask_layer->act_spline && mask_layer->act_point &&
         MASKPOINT_ISSEL_ANY(mask_layer->act_point)) {
       *spline = mask_layer->act_spline;
@@ -352,18 +199,16 @@ static void finSelectedSplinePoint(MaskLayer *mask_layer,
   }
 
   while (cur_spline) {
-    int i;
-
-    for (i = 0; i < cur_spline->tot_point; i++) {
+    for (int i = 0; i < cur_spline->tot_point; i++) {
       MaskSplinePoint *cur_point = &cur_spline->points[i];
 
       if (MASKPOINT_ISSEL_ANY(cur_point)) {
-        if (*spline != NULL && *spline != cur_spline) {
+        if (!ELEM(*spline, NULL, cur_spline)) {
           *spline = NULL;
           *point = NULL;
           return;
         }
-        else if (*point) {
+        if (*point) {
           *point = NULL;
         }
         else {
@@ -432,7 +277,7 @@ static bool add_vertex_subdivide(const bContext *C, Mask *mask, const float co[2
 
     setup_vertex_point(mask, spline, new_point, co, u, ctime, NULL, true);
 
-    /* TODO - we could pass the spline! */
+    /* TODO: we could pass the spline! */
     BKE_mask_layer_shape_changed_add(mask_layer,
                                      BKE_mask_layer_shape_spline_to_index(mask_layer, spline) +
                                          point_index + 1,
@@ -467,14 +312,12 @@ static bool add_vertex_extrude(const bContext *C,
   float tangent_point[2];
   float tangent_co[2];
   bool do_cyclic_correct = false;
-  bool do_prev; /* use prev point rather then next?? */
+  bool do_prev; /* use prev point rather than next?? */
 
   if (!mask_layer) {
     return false;
   }
-  else {
-    finSelectedSplinePoint(mask_layer, &spline, &point, true);
-  }
+  finSelectedSplinePoint(mask_layer, &spline, &point, true);
 
   ED_mask_select_toggle_all(mask, SEL_DESELECT);
 
@@ -594,14 +437,14 @@ static bool add_vertex_new(const bContext *C, Mask *mask, MaskLayer *mask_layer,
 /* Convert coordinate from normalized space to pixel one.
  * TODO(sergey): Make the function more generally available. */
 static void mask_point_make_pixel_space(bContext *C,
-                                        float point_normalized[2],
+                                        const float point_normalized[2],
                                         float point_pixel[2])
 {
-  ScrArea *sa = CTX_wm_area(C);
-  ARegion *ar = CTX_wm_region(C);
+  ScrArea *area = CTX_wm_area(C);
+  ARegion *region = CTX_wm_region(C);
 
   float scalex, scaley;
-  ED_mask_pixelspace_factor(sa, ar, &scalex, &scaley);
+  ED_mask_pixelspace_factor(area, region, &scalex, &scaley);
 
   point_pixel[0] = point_normalized[0] * scalex;
   point_pixel[1] = point_normalized[1] * scaley;
@@ -617,8 +460,10 @@ static int add_vertex_handle_cyclic_at_point(bContext *C,
   const float tolerance_in_pixels_squared = 4 * 4;
 
   if (spline->flag & MASK_SPLINE_CYCLIC) {
-    /* No cycling toggle needed, we've got nothing meaningful to do in this operator. */
-    return OPERATOR_CANCELLED;
+    /* The spline is already cyclic, so there is no need to handle anything here.
+     * Return PASS_THROUGH so that it's possible to add vertices close to the endpoints of the
+     * cyclic spline. */
+    return OPERATOR_PASS_THROUGH;
   }
 
   float co_pixel[2];
@@ -634,7 +479,7 @@ static int add_vertex_handle_cyclic_at_point(bContext *C,
 
   spline->flag |= MASK_SPLINE_CYCLIC;
 
-  /* TODO, update keyframes in time. */
+  /* TODO: update keyframes in time. */
   BKE_mask_calc_handle_point_auto(spline, active_point, false);
   BKE_mask_calc_handle_point_auto(spline, other_point, false);
 
@@ -655,7 +500,7 @@ static int add_vertex_handle_cyclic(
   if (is_last_point_active) {
     return add_vertex_handle_cyclic_at_point(C, mask, spline, active_point, first_point, co);
   }
-  else if (is_first_point_active) {
+  if (is_first_point_active) {
     return add_vertex_handle_cyclic_at_point(C, mask, spline, active_point, last_point, co);
   }
   return OPERATOR_PASS_THROUGH;
@@ -663,6 +508,9 @@ static int add_vertex_handle_cyclic(
 
 static int add_vertex_exec(bContext *C, wmOperator *op)
 {
+  MaskViewLockState lock_state;
+  ED_mask_view_lock_state_store(C, &lock_state);
+
   Mask *mask = CTX_data_edit_mask(C);
   if (mask == NULL) {
     /* if there's no active mask, create one */
@@ -678,7 +526,7 @@ static int add_vertex_exec(bContext *C, wmOperator *op)
   float co[2];
   RNA_float_get_array(op->ptr, "location", co);
 
-  /* TODO, having an active point but no active spline is possible, why? */
+  /* TODO: having an active point but no active spline is possible, why? */
   if (mask_layer && mask_layer->act_spline && mask_layer->act_point &&
       MASKPOINT_ISSEL_ANY(mask_layer->act_point)) {
     MaskSpline *spline = mask_layer->act_spline;
@@ -704,17 +552,19 @@ static int add_vertex_exec(bContext *C, wmOperator *op)
 
   DEG_id_tag_update(&mask->id, ID_RECALC_GEOMETRY);
 
+  ED_mask_view_lock_state_restore_no_jump(C, &lock_state);
+
   return OPERATOR_FINISHED;
 }
 
 static int add_vertex_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  ARegion *ar = CTX_wm_region(C);
+  ScrArea *area = CTX_wm_area(C);
+  ARegion *region = CTX_wm_region(C);
 
   float co[2];
 
-  ED_mask_mouse_pos(sa, ar, event->mval, co);
+  ED_mask_mouse_pos(area, region, event->mval, co);
 
   RNA_float_set_array(op->ptr, "location", co);
 
@@ -801,12 +651,12 @@ static int add_feather_vertex_exec(bContext *C, wmOperator *op)
 
 static int add_feather_vertex_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  ARegion *ar = CTX_wm_region(C);
+  ScrArea *area = CTX_wm_area(C);
+  ARegion *region = CTX_wm_region(C);
 
   float co[2];
 
-  ED_mask_mouse_pos(sa, ar, event->mval, co);
+  ED_mask_mouse_pos(area, region, event->mval, co);
 
   RNA_float_set_array(op->ptr, "location", co);
 
@@ -843,23 +693,51 @@ void MASK_OT_add_feather_vertex(wmOperatorType *ot)
 
 /******************** common primitive functions *********************/
 
+static BezTriple *points_to_bezier(const float (*points)[2],
+                                   const int num_points,
+                                   const char handle_type,
+                                   const float scale,
+                                   const float location[2])
+{
+  BezTriple *bezier_points = MEM_calloc_arrayN(num_points, sizeof(BezTriple), __func__);
+  for (int i = 0; i < num_points; i++) {
+    copy_v2_v2(bezier_points[i].vec[1], points[i]);
+    mul_v2_fl(bezier_points[i].vec[1], scale);
+    add_v2_v2(bezier_points[i].vec[1], location);
+
+    bezier_points[i].h1 = handle_type;
+    bezier_points[i].h2 = handle_type;
+  }
+
+  for (int i = 0; i < num_points; i++) {
+    BKE_nurb_handle_calc(&bezier_points[i],
+                         &bezier_points[(i - 1 + num_points) % num_points],
+                         &bezier_points[(i + 1) % num_points],
+                         false,
+                         false);
+  }
+
+  return bezier_points;
+}
+
 static int create_primitive_from_points(
     bContext *C, wmOperator *op, const float (*points)[2], int num_points, char handle_type)
 {
-  ScrArea *sa = CTX_wm_area(C);
-  Mask *mask;
-  MaskLayer *mask_layer;
-  MaskSpline *new_spline;
-  float scale, location[2], frame_size[2];
-  int i, width, height;
+  MaskViewLockState lock_state;
+  ED_mask_view_lock_state_store(C, &lock_state);
+
+  ScrArea *area = CTX_wm_area(C);
   int size = RNA_float_get(op->ptr, "size");
 
-  ED_mask_get_size(sa, &width, &height);
-  scale = (float)size / max_ii(width, height);
+  int width, height;
+  ED_mask_get_size(area, &width, &height);
+  float scale = (float)size / max_ii(width, height);
 
   /* Get location in mask space. */
+  float frame_size[2];
   frame_size[0] = width;
   frame_size[1] = height;
+  float location[2];
   RNA_float_get_array(op->ptr, "location", location);
   location[0] /= width;
   location[1] /= height;
@@ -870,12 +748,12 @@ static int create_primitive_from_points(
   location[1] -= 0.5f * scale;
 
   bool added_mask = false;
-  mask_layer = ED_mask_layer_ensure(C, &added_mask);
-  mask = CTX_data_edit_mask(C);
+  MaskLayer *mask_layer = ED_mask_layer_ensure(C, &added_mask);
+  Mask *mask = CTX_data_edit_mask(C);
 
   ED_mask_select_toggle_all(mask, SEL_DESELECT);
 
-  new_spline = BKE_mask_spline_add(mask_layer);
+  MaskSpline *new_spline = BKE_mask_spline_add(mask_layer);
   new_spline->flag = MASK_SPLINE_CYCLIC | SELECT;
   new_spline->points = MEM_recallocN(new_spline->points, sizeof(MaskSplinePoint) * num_points);
 
@@ -884,24 +762,24 @@ static int create_primitive_from_points(
 
   const int spline_index = BKE_mask_layer_shape_spline_to_index(mask_layer, new_spline);
 
-  for (i = 0; i < num_points; i++) {
+  BezTriple *bezier_points = points_to_bezier(points, num_points, handle_type, scale, location);
+
+  for (int i = 0; i < num_points; i++) {
     new_spline->tot_point = i + 1;
 
     MaskSplinePoint *new_point = &new_spline->points[i];
     BKE_mask_parent_init(&new_point->parent);
 
-    copy_v2_v2(new_point->bezt.vec[1], points[i]);
-    mul_v2_fl(new_point->bezt.vec[1], scale);
-    add_v2_v2(new_point->bezt.vec[1], location);
+    new_point->bezt = bezier_points[i];
 
-    new_point->bezt.h1 = handle_type;
-    new_point->bezt.h2 = handle_type;
     BKE_mask_point_select_set(new_point, true);
 
     if (mask_layer->splines_shapes.first) {
-      BKE_mask_layer_shape_changed_add(mask_layer, spline_index + i, true, true);
+      BKE_mask_layer_shape_changed_add(mask_layer, spline_index + i, true, false);
     }
   }
+
+  MEM_freeN(bezier_points);
 
   if (added_mask) {
     WM_event_add_notifier(C, NC_MASK | NA_ADDED, NULL);
@@ -910,17 +788,19 @@ static int create_primitive_from_points(
 
   DEG_id_tag_update(&mask->id, ID_RECALC_GEOMETRY);
 
+  ED_mask_view_lock_state_restore_no_jump(C, &lock_state);
+
   return OPERATOR_FINISHED;
 }
 
 static int primitive_add_invoke(bContext *C, wmOperator *op, const wmEvent *UNUSED(event))
 {
-  ScrArea *sa = CTX_wm_area(C);
+  ScrArea *area = CTX_wm_area(C);
   float cursor[2];
   int width, height;
 
-  ED_mask_get_size(sa, &width, &height);
-  ED_mask_cursor_location_get(sa, cursor);
+  ED_mask_get_size(area, &width, &height);
+  ED_mask_cursor_location_get(area, cursor);
 
   cursor[0] *= width;
   cursor[1] *= height;
@@ -951,7 +831,7 @@ static void define_primitive_add_properties(wmOperatorType *ot)
 static int primitive_circle_add_exec(bContext *C, wmOperator *op)
 {
   const float points[4][2] = {{0.0f, 0.5f}, {0.5f, 1.0f}, {1.0f, 0.5f}, {0.5f, 0.0f}};
-  int num_points = sizeof(points) / (2 * sizeof(float));
+  int num_points = sizeof(points) / (sizeof(float[2]));
 
   create_primitive_from_points(C, op, points, num_points, HD_AUTO);
 
@@ -982,7 +862,7 @@ void MASK_OT_primitive_circle_add(wmOperatorType *ot)
 static int primitive_square_add_exec(bContext *C, wmOperator *op)
 {
   const float points[4][2] = {{0.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f}};
-  int num_points = sizeof(points) / (2 * sizeof(float));
+  int num_points = sizeof(points) / (sizeof(float[2]));
 
   create_primitive_from_points(C, op, points, num_points, HD_VECT);
 

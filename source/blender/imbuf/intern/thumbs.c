@@ -26,31 +26,31 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
-#include "BLI_string.h"
-#include "BLI_path_util.h"
 #include "BLI_fileops.h"
 #include "BLI_ghash.h"
 #include "BLI_hash_md5.h"
+#include "BLI_path_util.h"
+#include "BLI_string.h"
 #include "BLI_system.h"
 #include "BLI_threads.h"
+#include "BLI_utildefines.h"
 #include BLI_SYSTEM_PID_H
 
 #include "DNA_space_types.h" /* For FILE_MAX_LIBEXTRA */
 
 #include "BLO_readfile.h"
 
-#include "IMB_imbuf_types.h"
 #include "IMB_imbuf.h"
-#include "IMB_thumbs.h"
+#include "IMB_imbuf_types.h"
 #include "IMB_metadata.h"
+#include "IMB_thumbs.h"
 
 #include <ctype.h>
-#include <string.h>
-#include <time.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
 
 #ifdef WIN32
 /* Need to include windows.h so _WIN32_IE is defined. */
@@ -61,10 +61,10 @@
 #  endif
 /* For SHGetSpecialFolderPath, has to be done before BLI_winstuff
  * because 'near' is disabled through BLI_windstuff */
-#  include <shlobj.h>
-#  include <direct.h> /* chdir */
 #  include "BLI_winstuff.h"
 #  include "utfconv.h"
+#  include <direct.h> /* #chdir */
+#  include <shlobj.h>
 #endif
 
 #if defined(WIN32) || defined(__APPLE__)
@@ -88,7 +88,7 @@ static bool get_thumb_dir(char *dir, ThumbSize size)
   const char *subdir;
 #ifdef WIN32
   wchar_t dir_16[MAX_PATH];
-  /* yes, applications shouldn't store data there, but so does GIMP :)*/
+  /* Yes, applications shouldn't store data there, but so does GIMP :). */
   SHGetSpecialFolderPathW(0, dir_16, CSIDL_PROFILE, 0);
   conv_utf_16_to_8(dir_16, dir, FILE_MAX);
   s += strlen(dir);
@@ -112,13 +112,13 @@ static bool get_thumb_dir(char *dir, ThumbSize size)
 #endif
   switch (size) {
     case THB_NORMAL:
-      subdir = "/" THUMBNAILS "/normal/";
+      subdir = SEP_STR THUMBNAILS SEP_STR "normal" SEP_STR;
       break;
     case THB_LARGE:
-      subdir = "/" THUMBNAILS "/large/";
+      subdir = SEP_STR THUMBNAILS SEP_STR "large" SEP_STR;
       break;
     case THB_FAIL:
-      subdir = "/" THUMBNAILS "/fail/blender/";
+      subdir = SEP_STR THUMBNAILS SEP_STR "fail" SEP_STR "blender" SEP_STR;
       break;
     default:
       return 0; /* unknown size */
@@ -144,122 +144,35 @@ static bool get_thumb_dir(char *dir, ThumbSize size)
  * \{ */
 
 typedef enum {
-  UNSAFE_ALL = 0x1,        /* Escape all unsafe characters   */
-  UNSAFE_ALLOW_PLUS = 0x2, /* Allows '+'  */
+  UNSAFE_ALL = 0x1,        /* Escape all unsafe characters. */
+  UNSAFE_ALLOW_PLUS = 0x2, /* Allows '+' */
   UNSAFE_PATH = 0x8,       /* Allows '/', '&', '=', ':', '@', '+', '$' and ',' */
   UNSAFE_HOST = 0x10,      /* Allows '/' and ':' and '@' */
   UNSAFE_SLASHES = 0x20,   /* Allows all characters except for '/' and '%' */
 } UnsafeCharacterSet;
 
+/* Don't lose comment alignment. */
+/* clang-format off */
 static const unsigned char acceptable[96] = {
     /* A table of the ASCII chars from space (32) to DEL (127) */
     /*      !    "    #    $    %    &    '    (    )    *    +    ,    -    .    / */
-    0x00,
-    0x3F,
-    0x20,
-    0x20,
-    0x28,
-    0x00,
-    0x2C,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x2A,
-    0x28,
-    0x3F,
-    0x3F,
-    0x1C,
+    0x00,0x3F,0x20,0x20,0x28,0x00,0x2C,0x3F,0x3F,0x3F,0x3F,0x2A,0x28,0x3F,0x3F,0x1C,
     /* 0    1    2    3    4    5    6    7    8    9    :    ;    <    =    >    ? */
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x38,
-    0x20,
-    0x20,
-    0x2C,
-    0x20,
-    0x20,
+    0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x38,0x20,0x20,0x2C,0x20,0x20,
     /* @    A    B    C    D    E    F    G    H    I    J    K    L    M    N    O */
-    0x38,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
+    0x38,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,
     /* P    Q    R    S    T    U    V    W    X    Y    Z    [    \    ]    ^    _ */
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x20,
-    0x20,
-    0x20,
-    0x20,
-    0x3F,
+    0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x20,0x20,0x20,0x20,0x3F,
     /* `    a    b    c    d    e    f    g    h    i    j    k    l    m    n    o */
-    0x20,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
+    0x20,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,
     /* p    q    r    s    t    u    v    w    x    y    z    {    |    }    ~  DEL */
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x3F,
-    0x20,
-    0x20,
-    0x20,
-    0x3F,
-    0x20,
+    0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x3F,0x20,0x20,0x20,0x3F,0x20,
 };
+/* clang-format on */
 
 static const char hex[17] = "0123456789abcdef";
 
-/* Note: This escape function works on file: URIs, but if you want to
+/* NOTE: This escape function works on file: URIs, but if you want to
  * escape something else, please read RFC-2396 */
 static void escape_uri_string(const char *string,
                               char *escaped_string,
@@ -480,7 +393,7 @@ static ImBuf *thumb_create_ex(const char *file_path,
               img = IMB_thumb_load_font(file_path, tsize, tsize);
               break;
             default:
-              BLI_assert(0); /* This should never happen */
+              BLI_assert_unreachable(); /* This should never happen */
           }
         }
 
@@ -825,7 +738,7 @@ void IMB_thumb_path_unlock(const char *path)
 
   if (thumb_locks.locked_paths) {
     if (!BLI_gset_remove(thumb_locks.locked_paths, key, MEM_freeN)) {
-      BLI_assert(0);
+      BLI_assert_unreachable();
     }
     BLI_condition_notify_all(&thumb_locks.cond);
   }

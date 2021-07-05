@@ -28,14 +28,13 @@
  * - Meta Strip (SEQ_TYPE_META): Support for nesting Sequences.
  */
 
-#ifndef __DNA_SEQUENCE_TYPES_H__
-#define __DNA_SEQUENCE_TYPES_H__
+#pragma once
 
-#include "DNA_defs.h"
 #include "DNA_color_types.h"
+#include "DNA_defs.h"
 #include "DNA_listBase.h"
-#include "DNA_vec_types.h"
-#include "DNA_vfont_types.h"
+#include "DNA_session_uuid_types.h" /* for #SessionUUID */
+#include "DNA_vec_types.h"          /* for #rctf */
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,7 +43,9 @@ extern "C" {
 struct Ipo;
 struct MovieClip;
 struct Scene;
+struct VFont;
 struct bSound;
+struct SequenceLookup;
 
 /* strlens; 256= FILE_MAXFILE, 768= FILE_MAXDIR */
 
@@ -55,7 +56,9 @@ typedef struct StripAnim {
 
 typedef struct StripElem {
   char name[256];
+  /** Ignore when zeroed. */
   int orig_width, orig_height;
+  float orig_fps;
 } StripElem;
 
 typedef struct StripCrop {
@@ -68,6 +71,9 @@ typedef struct StripCrop {
 typedef struct StripTransform {
   int xofs;
   int yofs;
+  float scale_x;
+  float scale_y;
+  float rotation;
 } StripTransform;
 
 typedef struct StripColorBalance {
@@ -76,24 +82,24 @@ typedef struct StripColorBalance {
   float gain[3];
   int flag;
   char _pad[4];
-  // float exposure;
-  // float saturation;
+  /* float exposure; */
+  /* float saturation; */
 } StripColorBalance;
 
 typedef struct StripProxy {
-  char dir[768];  // custom directory for index and proxy files
-                  // (defaults to BL_proxy)
+  char dir[768]; /* custom directory for index and proxy files */
+                 /* (defaults to BL_proxy) */
 
-  char file[256];     // custom file
-  struct anim *anim;  // custom proxy anim file
+  char file[256];    /* custom file */
+  struct anim *anim; /* custom proxy anim file */
 
-  short tc;  // time code in use
+  short tc; /* time code in use */
 
-  short quality;           // proxy build quality
-  short build_size_flags;  // size flags (see below) of all proxies
-                           // to build
-  short build_tc_flags;    // time code flags (see below) of all tc indices
-                           // to build
+  short quality;          /* proxy build quality */
+  short build_size_flags; /* size flags (see below) of all proxies */
+                          /* to build */
+  short build_tc_flags;   /* time code flags (see below) of all tc indices */
+                          /* to build */
   short build_flags;
   char storage;
   char _pad[5];
@@ -118,6 +124,10 @@ typedef struct Strip {
   /* color management */
   ColorManagedColorspaceSettings colorspace_settings;
 } Strip;
+
+typedef struct SequenceRuntime {
+  SessionUUID session_uuid;
+} SequenceRuntime;
 
 /**
  * The sequence structure is the basic struct used by any strip.
@@ -157,14 +167,15 @@ typedef struct Sequence {
    * frames that use the last frame after data ends.
    */
   int startstill, endstill;
-  /** Machine: the strip channel, depth the depth in the sequence when dealing with metastrips. */
-  int machine, depth;
+  /** Machine: the strip channel */
+  int machine;
+  int _pad3;
   /** Starting and ending points of the strip in the sequence. */
   int startdisp, enddisp;
   float sat;
   float mul, handsize;
 
-  short anim_preseek;
+  short anim_preseek; /* UNUSED. */
   /** Streamindex for movie or sound files with several streams. */
   short streamindex;
   /** For multicam source selection. */
@@ -237,8 +248,7 @@ typedef struct Sequence {
   int cache_flag;
   int _pad2[3];
 
-  struct Sequence *orig_sequence;
-  void *_pad3;
+  SequenceRuntime runtime;
 } Sequence;
 
 typedef struct MetaStack {
@@ -248,6 +258,10 @@ typedef struct MetaStack {
   /* the startdisp/enddisp when entering the meta */
   int disp_range[2];
 } MetaStack;
+
+typedef struct EditingRuntime {
+  struct SequenceLookup *sequence_lookup;
+} EditingRuntime;
 
 typedef struct Editing {
   /** Pointer to the current list of seq's being edited (can be within a meta strip). */
@@ -272,10 +286,15 @@ typedef struct Editing {
   struct SeqCache *cache;
 
   /* Cache control */
-  float recycle_max_cost;
+  float recycle_max_cost; /* UNUSED only for versioning. */
   int cache_flag;
 
   struct PrefetchJob *prefetch_job;
+
+  /* Must be initialized only by seq_cache_create() */
+  int64_t disk_cache_timestamp;
+
+  EditingRuntime runtime;
 } Editing;
 
 /* ************* Effect Variable Structs ********* */
@@ -329,20 +348,24 @@ typedef struct GaussianBlurVars {
 
 typedef struct TextVars {
   char text[512];
-  VFont *text_font;
+  struct VFont *text_font;
   int text_blf_id;
   int text_size;
-  float color[4], shadow_color[4];
+  float color[4], shadow_color[4], box_color[4];
   float loc[2];
   float wrap_width;
+  float box_margin;
   char flag;
   char align, align_y;
-  char _pad[1];
+  char _pad[5];
 } TextVars;
 
 /* TextVars.flag */
 enum {
   SEQ_TEXT_SHADOW = (1 << 0),
+  SEQ_TEXT_BOX = (1 << 1),
+  SEQ_TEXT_BOLD = (1 << 2),
+  SEQ_TEXT_ITALIC = (1 << 3),
 };
 
 /* TextVars.align */
@@ -465,6 +488,7 @@ typedef struct SequencerScopes {
 #define SEQ_SPEED_INTEGRATE (1 << 0)
 #define SEQ_SPEED_UNUSED_1 (1 << 1) /* cleared */
 #define SEQ_SPEED_COMPRESS_IPO_Y (1 << 2)
+#define SEQ_SPEED_USE_INTERPOLATION (1 << 3)
 
 /* ***************** SEQUENCE ****************** */
 #define SEQ_NAME_MAXSTR 64
@@ -487,8 +511,8 @@ enum {
   SEQ_MAKE_FLOAT = (1 << 13),
   SEQ_LOCK = (1 << 14),
   SEQ_USE_PROXY = (1 << 15),
-  SEQ_USE_TRANSFORM = (1 << 16),
-  SEQ_USE_CROP = (1 << 17),
+  SEQ_FLAG_UNUSED_23 = (1 << 16), /* cleared */
+  SEQ_FLAG_UNUSED_22 = (1 << 17), /* cleared */
   SEQ_FLAG_UNUSED_18 = (1 << 18), /* cleared */
   SEQ_FLAG_UNUSED_19 = (1 << 19), /* cleared */
   SEQ_FLAG_UNUSED_21 = (1 << 21), /* cleared */
@@ -502,11 +526,11 @@ enum {
   SEQ_AUDIO_PAN_ANIMATED = (1 << 26),
   SEQ_AUDIO_DRAW_WAVEFORM = (1 << 27),
 
-  /* don't include Grease Pencil in OpenGL previews of Scene strips */
-  SEQ_SCENE_NO_GPENCIL = (1 << 28),
+  /* don't include Annotations in OpenGL previews of Scene strips */
+  SEQ_SCENE_NO_ANNOTATION = (1 << 28),
   SEQ_USE_VIEWS = (1 << 29),
 
-  /* access scene strips directly (like a metastrip) */
+  /* Access scene strips directly (like a meta-strip). */
   SEQ_SCENE_STRIPS = (1 << 30),
 
   SEQ_INVALID_EFFECT = (1u << 31),
@@ -521,8 +545,8 @@ enum {
 /* convenience define for all selection flags */
 #define SEQ_ALLSEL (SELECT + SEQ_LEFTSEL + SEQ_RIGHTSEL)
 
-/* deprecated, don't use a flag anymore*/
-/*#define SEQ_ACTIVE                            1048576*/
+/* Deprecated, don't use a flag anymore. */
+// #define SEQ_ACTIVE 1048576
 
 #define SEQ_COLOR_BALANCE_INVERSE_GAIN 1
 #define SEQ_COLOR_BALANCE_INVERSE_GAMMA 2
@@ -631,7 +655,7 @@ enum {
   seqModifierType_Mask = 5,
   seqModifierType_WhiteBalance = 6,
   seqModifierType_Tonemap = 7,
-
+  /* Keep last. */
   NUM_SEQUENCE_MODIFIER_TYPES,
 };
 
@@ -682,10 +706,9 @@ enum {
   SEQ_CACHE_VIEW_FINAL_OUT = (1 << 9),
 
   SEQ_CACHE_PREFETCH_ENABLE = (1 << 10),
+  SEQ_CACHE_DISK_CACHE_ENABLE = (1 << 11),
 };
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __DNA_SEQUENCE_TYPES_H__ */

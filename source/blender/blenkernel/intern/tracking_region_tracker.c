@@ -28,14 +28,14 @@
 
 #include "DNA_movieclip_types.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_threads.h"
+#include "BLI_utildefines.h"
 
-#include "BKE_tracking.h"
 #include "BKE_movieclip.h"
+#include "BKE_tracking.h"
 
-#include "IMB_imbuf_types.h"
 #include "IMB_imbuf.h"
+#include "IMB_imbuf_types.h"
 
 #include "libmv-capi.h"
 #include "tracking_private.h"
@@ -75,8 +75,8 @@ static void uint8_rgba_to_float_gray(const unsigned char *rgba,
 static float *track_get_search_floatbuf(ImBuf *ibuf,
                                         MovieTrackingTrack *track,
                                         MovieTrackingMarker *marker,
-                                        int *width_r,
-                                        int *height_r)
+                                        int *r_width,
+                                        int *r_height)
 {
   ImBuf *searchibuf;
   float *gray_pixels;
@@ -85,8 +85,8 @@ static float *track_get_search_floatbuf(ImBuf *ibuf,
   searchibuf = BKE_tracking_get_search_imbuf(ibuf, track, marker, false, true);
 
   if (!searchibuf) {
-    *width_r = 0;
-    *height_r = 0;
+    *r_width = 0;
+    *r_height = 0;
     return NULL;
   }
 
@@ -106,8 +106,8 @@ static float *track_get_search_floatbuf(ImBuf *ibuf,
 
   IMB_freeImBuf(searchibuf);
 
-  *width_r = width;
-  *height_r = height;
+  *r_width = width;
+  *r_height = height;
 
   return gray_pixels;
 }
@@ -138,7 +138,7 @@ static ImBuf *tracking_context_get_keyframed_ibuf(MovieClip *clip,
                                                   MovieTrackingTrack *track,
                                                   int curfra,
                                                   bool backwards,
-                                                  MovieTrackingMarker **marker_keyed_r)
+                                                  MovieTrackingMarker **r_marker_keyed)
 {
   MovieTrackingMarker *marker_keyed;
   int keyed_framenr;
@@ -150,7 +150,7 @@ static ImBuf *tracking_context_get_keyframed_ibuf(MovieClip *clip,
 
   keyed_framenr = marker_keyed->framenr;
 
-  *marker_keyed_r = marker_keyed;
+  *r_marker_keyed = marker_keyed;
 
   return tracking_context_get_frame_ibuf(clip, user, clip_flag, keyed_framenr);
 }
@@ -183,8 +183,13 @@ static ImBuf *tracking_context_get_reference_ibuf(MovieClip *clip,
 /* Fill in libmv tracker options structure with settings need to be used to perform track. */
 void tracking_configure_tracker(const MovieTrackingTrack *track,
                                 float *mask,
+                                const bool is_backwards,
                                 libmv_TrackRegionOptions *options)
 {
+  options->direction = is_backwards ? LIBMV_TRACK_REGION_BACKWARD : LIBMV_TRACK_REGION_FORWARD;
+
+  /* TODO(sergey): Use explicit conversion, so that options are decoupled between the Libmv library
+   * and enumerator values in DNA. */
   options->motion_model = track->motion_model;
 
   options->use_brute = ((track->algorithm_flag & TRACK_ALGORITHM_FLAG_USE_BRUTE) != 0);
@@ -218,6 +223,7 @@ static bool configure_and_run_tracker(ImBuf *destination_ibuf,
                                       int reference_search_area_width,
                                       int reference_search_area_height,
                                       float *mask,
+                                      const bool is_backward,
                                       double dst_pixel_x[5],
                                       double dst_pixel_y[5])
 {
@@ -246,7 +252,7 @@ static bool configure_and_run_tracker(ImBuf *destination_ibuf,
       destination_ibuf, track, marker, &new_search_area_width, &new_search_area_height);
 
   /* configure the tracker */
-  tracking_configure_tracker(track, mask, &options);
+  tracking_configure_tracker(track, mask, is_backward, &options);
 
   /* Convert the marker corners and center into pixel coordinates in the
    * search/destination images. */
@@ -372,6 +378,7 @@ void BKE_tracking_refine_marker(MovieClip *clip,
                                       search_area_width,
                                       search_area_height,
                                       mask,
+                                      backwards,
                                       dst_pixel_x,
                                       dst_pixel_y);
 

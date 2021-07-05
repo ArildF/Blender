@@ -156,10 +156,9 @@ def bake_action_iter(
     # Note: BBONE_PROPS is a list so we can preserve the ordering
     BBONE_PROPS = [
         'bbone_curveinx', 'bbone_curveoutx',
-        'bbone_curveiny', 'bbone_curveouty',
+        'bbone_curveinz', 'bbone_curveoutz',
         'bbone_rollin', 'bbone_rollout',
-        'bbone_scaleinx', 'bbone_scaleoutx',
-        'bbone_scaleiny', 'bbone_scaleouty',
+        'bbone_scalein', 'bbone_scaleout',
         'bbone_easein', 'bbone_easeout'
     ]
 
@@ -215,8 +214,6 @@ def bake_action_iter(
 
     pose_info = []
     obj_info = []
-
-    options = {'INSERTKEY_NEEDED'}
 
     # -------------------------------------------------------------------------
     # Collect transformations
@@ -281,7 +278,7 @@ def bake_action_iter(
             for (f, matrix, bbones) in pose_info:
                 pbone.matrix_basis = matrix[name].copy()
 
-                pbone.keyframe_insert("location", index=-1, frame=f, group=name, options=options)
+                pbone.keyframe_insert("location", index=-1, frame=f, group=name)
 
                 rotation_mode = pbone.rotation_mode
                 if rotation_mode == 'QUATERNION':
@@ -293,21 +290,18 @@ def bake_action_iter(
                         del quat
                     else:
                         quat_prev = pbone.rotation_quaternion.copy()
-                    pbone.keyframe_insert("rotation_quaternion", index=-1, frame=f, group=name, options=options)
+                    pbone.keyframe_insert("rotation_quaternion", index=-1, frame=f, group=name)
                 elif rotation_mode == 'AXIS_ANGLE':
-                    pbone.keyframe_insert("rotation_axis_angle", index=-1, frame=f, group=name, options=options)
+                    pbone.keyframe_insert("rotation_axis_angle", index=-1, frame=f, group=name)
                 else:  # euler, XYZ, ZXY etc
                     if euler_prev is not None:
-                        euler = pbone.rotation_euler.copy()
-                        euler.make_compatible(euler_prev)
+                        euler = pbone.matrix_basis.to_euler(pbone.rotation_mode, euler_prev)
                         pbone.rotation_euler = euler
-                        euler_prev = euler
                         del euler
-                    else:
-                        euler_prev = pbone.rotation_euler.copy()
-                    pbone.keyframe_insert("rotation_euler", index=-1, frame=f, group=name, options=options)
+                    euler_prev = pbone.rotation_euler.copy()
+                    pbone.keyframe_insert("rotation_euler", index=-1, frame=f, group=name)
 
-                pbone.keyframe_insert("scale", index=-1, frame=f, group=name, options=options)
+                pbone.keyframe_insert("scale", index=-1, frame=f, group=name)
 
                 # Bendy Bones
                 if pbone.bone.bbone_segments > 1:
@@ -315,7 +309,7 @@ def bake_action_iter(
                     for bb_prop in BBONE_PROPS:
                         # update this property with value from bbone_shape, then key it
                         setattr(pbone, bb_prop, bbone_shape[bb_prop])
-                        pbone.keyframe_insert(bb_prop, index=-1, frame=f, group=name, options=options)
+                        pbone.keyframe_insert(bb_prop, index=-1, frame=f, group=name)
 
     # object. TODO. multiple objects
     if do_object:
@@ -331,7 +325,7 @@ def bake_action_iter(
             name = "Action Bake"  # XXX: placeholder
             obj.matrix_basis = matrix
 
-            obj.keyframe_insert("location", index=-1, frame=f, group=name, options=options)
+            obj.keyframe_insert("location", index=-1, frame=f, group=name)
 
             rotation_mode = obj.rotation_mode
             if rotation_mode == 'QUATERNION':
@@ -341,24 +335,18 @@ def bake_action_iter(
                     obj.rotation_quaternion = quat
                     quat_prev = quat
                     del quat
-                    print ("quat_prev", quat_prev)
                 else:
                     quat_prev = obj.rotation_quaternion.copy()
-                obj.keyframe_insert("rotation_quaternion", index=-1, frame=f, group=name, options=options)
+                obj.keyframe_insert("rotation_quaternion", index=-1, frame=f, group=name)
             elif rotation_mode == 'AXIS_ANGLE':
-                obj.keyframe_insert("rotation_axis_angle", index=-1, frame=f, group=name, options=options)
+                obj.keyframe_insert("rotation_axis_angle", index=-1, frame=f, group=name)
             else:  # euler, XYZ, ZXY etc
                 if euler_prev is not None:
-                    euler = obj.rotation_euler.copy()
-                    euler.make_compatible(euler_prev)
-                    obj.rotation_euler = euler
-                    euler_prev = euler
-                    del euler
-                else:
-                    euler_prev = obj.rotation_euler.copy()
-                obj.keyframe_insert("rotation_euler", index=-1, frame=f, group=name, options=options)
+                    obj.rotation_euler = matrix.to_euler(obj.rotation_mode, euler_prev)
+                euler_prev = obj.rotation_euler.copy()
+                obj.keyframe_insert("rotation_euler", index=-1, frame=f, group=name)
 
-            obj.keyframe_insert("scale", index=-1, frame=f, group=name, options=options)
+            obj.keyframe_insert("scale", index=-1, frame=f, group=name)
 
         if do_parents_clear:
             obj.parent = None

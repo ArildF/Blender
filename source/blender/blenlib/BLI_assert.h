@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BLI_ASSERT_H__
-#define __BLI_ASSERT_H__
+#pragma once
 
 /** \file
  * \ingroup bli
@@ -30,52 +29,34 @@
 extern "C" {
 #endif
 
-#ifndef NDEBUG /* for BLI_assert */
-#  include <stdio.h>
-#endif
+/* Utility functions. */
+void _BLI_assert_print_pos(const char *file, const int line, const char *function, const char *id);
+void _BLI_assert_print_backtrace(void);
+void _BLI_assert_abort(void);
+void _BLI_assert_unreachable_print(const char *file, const int line, const char *function);
 
 #ifdef _MSC_VER
 #  include <crtdbg.h> /* for _STATIC_ASSERT */
 #endif
 
-/* BLI_assert(), default only to print
- * for aborting need to define WITH_ASSERT_ABORT
- */
-/* For 'abort' only. */
-#include <stdlib.h>
-
 #ifndef NDEBUG
-#  include "BLI_system.h"
 /* _BLI_ASSERT_PRINT_POS */
 #  if defined(__GNUC__)
-#    define _BLI_ASSERT_PRINT_POS(a) \
-      fprintf(stderr, \
-              "BLI_assert failed: %s:%d, %s(), at \'%s\'\n", \
-              __FILE__, \
-              __LINE__, \
-              __func__, \
-              #a)
+#    define _BLI_ASSERT_PRINT_POS(a) _BLI_assert_print_pos(__FILE__, __LINE__, __func__, #    a)
 #  elif defined(_MSC_VER)
-#    define _BLI_ASSERT_PRINT_POS(a) \
-      fprintf(stderr, \
-              "BLI_assert failed: %s:%d, %s(), at \'%s\'\n", \
-              __FILE__, \
-              __LINE__, \
-              __FUNCTION__, \
-              #a)
+#    define _BLI_ASSERT_PRINT_POS(a) _BLI_assert_print_pos(__FILE__, __LINE__, __func__, #    a)
 #  else
-#    define _BLI_ASSERT_PRINT_POS(a) \
-      fprintf(stderr, "BLI_assert failed: %s:%d, at \'%s\'\n", __FILE__, __LINE__, #a)
+#    define _BLI_ASSERT_PRINT_POS(a) _BLI_assert_print_pos(__FILE__, __LINE__, "<?>", #    a)
 #  endif
 /* _BLI_ASSERT_ABORT */
 #  ifdef WITH_ASSERT_ABORT
-#    define _BLI_ASSERT_ABORT abort
+#    define _BLI_ASSERT_ABORT _BLI_assert_abort
 #  else
 #    define _BLI_ASSERT_ABORT() (void)0
 #  endif
 /* BLI_assert */
 #  define BLI_assert(a) \
-    (void)((!(a)) ? ((BLI_system_backtrace(stderr), \
+    (void)((!(a)) ? ((_BLI_assert_print_backtrace(), \
                       _BLI_ASSERT_PRINT_POS(a), \
                       _BLI_ASSERT_ABORT(), \
                       NULL)) : \
@@ -108,8 +89,17 @@ extern "C" {
 #define BLI_STATIC_ASSERT_ALIGN(st, align) \
   BLI_STATIC_ASSERT((sizeof(st) % (align) == 0), "Structure must be strictly aligned")
 
+/**
+ * Indicates that this line of code should never be executed. If it is reached, it will abort in
+ * debug builds and print an error in release builds.
+ */
+#define BLI_assert_unreachable() \
+  { \
+    _BLI_assert_unreachable_print(__FILE__, __LINE__, __func__); \
+    BLI_assert(!"This line of code is marked to be unreachable."); \
+  } \
+  ((void)0)
+
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BLI_ASSERT_H__ */

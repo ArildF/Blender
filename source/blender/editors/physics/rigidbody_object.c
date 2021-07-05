@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "DNA_collection_types.h"
 #include "DNA_object_types.h"
 #include "DNA_rigidbody_types.h"
 #include "DNA_scene_types.h"
@@ -33,9 +34,7 @@
 
 #include "BLT_translation.h"
 
-#include "BKE_collection.h"
 #include "BKE_context.h"
-#include "BKE_library.h"
 #include "BKE_main.h"
 #include "BKE_report.h"
 #include "BKE_rigidbody.h"
@@ -73,9 +72,7 @@ static bool ED_operator_rigidbody_active_poll(bContext *C)
     Object *ob = ED_object_active_context(C);
     return (ob && ob->rigidbody_object);
   }
-  else {
-    return 0;
-  }
+  return 0;
 }
 
 static bool ED_operator_rigidbody_add_poll(bContext *C)
@@ -91,9 +88,7 @@ static bool ED_operator_rigidbody_add_poll(bContext *C)
     Object *ob = ED_object_active_context(C);
     return (ob && ob->type == OB_MESH);
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 /* ----------------- */
@@ -135,9 +130,7 @@ static int rigidbody_object_add_exec(bContext *C, wmOperator *op)
     /* done */
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void RIGIDBODY_OT_object_add(wmOperatorType *ot)
@@ -186,10 +179,9 @@ static int rigidbody_object_remove_exec(bContext *C, wmOperator *op)
     /* done */
     return OPERATOR_FINISHED;
   }
-  else {
-    BKE_report(op->reports, RPT_ERROR, "Object has no Rigid Body settings to remove");
-    return OPERATOR_CANCELLED;
-  }
+
+  BKE_report(op->reports, RPT_ERROR, "Object has no Rigid Body settings to remove");
+  return OPERATOR_CANCELLED;
 }
 
 void RIGIDBODY_OT_object_remove(wmOperatorType *ot)
@@ -233,9 +225,7 @@ static int rigidbody_objects_add_exec(bContext *C, wmOperator *op)
     /* done */
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void RIGIDBODY_OT_objects_add(wmOperatorType *ot)
@@ -286,9 +276,7 @@ static int rigidbody_objects_remove_exec(bContext *C, wmOperator *UNUSED(op))
     /* done */
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void RIGIDBODY_OT_objects_remove(wmOperatorType *ot)
@@ -340,9 +328,7 @@ static int rigidbody_objects_shape_change_exec(bContext *C, wmOperator *op)
     /* done */
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void RIGIDBODY_OT_shape_change(wmOperatorType *ot)
@@ -531,9 +517,27 @@ static int rigidbody_objects_calc_mass_exec(bContext *C, wmOperator *op)
     /* done */
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
+  return OPERATOR_CANCELLED;
+}
+
+static bool mass_calculate_poll_property(const bContext *UNUSED(C),
+                                         wmOperator *op,
+                                         const PropertyRNA *prop)
+{
+  const char *prop_id = RNA_property_identifier(prop);
+
+  /* Disable density input when not using the 'Custom' preset. */
+  if (STREQ(prop_id, "density")) {
+    int material = RNA_enum_get(op->ptr, "material");
+    if (material >= 0) {
+      RNA_def_property_clear_flag((PropertyRNA *)prop, PROP_EDITABLE);
+    }
+    else {
+      RNA_def_property_flag((PropertyRNA *)prop, PROP_EDITABLE);
+    }
   }
+
+  return true;
 }
 
 void RIGIDBODY_OT_mass_calculate(wmOperatorType *ot)
@@ -546,9 +550,10 @@ void RIGIDBODY_OT_mass_calculate(wmOperatorType *ot)
   ot->description = "Automatically calculate mass values for Rigid Body Objects based on volume";
 
   /* callbacks */
-  ot->invoke = WM_menu_invoke;  // XXX
+  ot->invoke = WM_menu_invoke; /* XXX */
   ot->exec = rigidbody_objects_calc_mass_exec;
   ot->poll = ED_operator_rigidbody_active_poll;
+  ot->poll_property = mass_calculate_poll_property;
 
   /* flags */
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
@@ -570,7 +575,7 @@ void RIGIDBODY_OT_mass_calculate(wmOperatorType *ot)
                 FLT_MIN,
                 FLT_MAX,
                 "Density",
-                "Custom density value (kg/m^3) to use instead of material preset",
+                "Density value (kg/m^3), allows custom value if the 'Custom' preset is used",
                 1.0f,
                 2500.0f);
 }

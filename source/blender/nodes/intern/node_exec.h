@@ -21,8 +21,7 @@
  * \ingroup nodes
  */
 
-#ifndef __NODE_EXEC_H__
-#define __NODE_EXEC_H__
+#pragma once
 
 #include "DNA_listBase.h"
 
@@ -33,6 +32,10 @@
 #include "node_util.h"
 
 #include "RNA_types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct bNode;
 struct bNodeStack;
@@ -45,7 +48,7 @@ typedef struct bNodeExec {
   bNodeExecData data;
 
   /** Free function, stored in exec itself to avoid dangling node pointer access. */
-  NodeFreeExecFunction freeexecfunc;
+  NodeFreeExecFunction free_exec_fn;
 } bNodeExec;
 
 /* Execution Data for each instance of node tree execution */
@@ -98,4 +101,6 @@ struct bNodeTreeExec *ntreeTexBeginExecTree_internal(struct bNodeExecContext *co
                                                      bNodeInstanceKey parent_key);
 void ntreeTexEndExecTree_internal(struct bNodeTreeExec *exec);
 
+#ifdef __cplusplus
+}
 #endif

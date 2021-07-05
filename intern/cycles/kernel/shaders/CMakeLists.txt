@@ -1,3 +1,16 @@
+# Copyright 2011-2020 Blender Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # OSL node shaders
 
@@ -78,6 +91,7 @@ set(SRC_OSL
   node_value.osl
   node_vector_curves.osl
   node_vector_math.osl
+  node_vector_rotate.osl
   node_vector_transform.osl
   node_velvet_bsdf.osl
   node_vertex_color.osl
@@ -95,16 +109,19 @@ set(SRC_OSL
   node_rgb_to_bw.osl
 )
 
+# The headers that OSL ships differs per release so we can not
+# hardcode this.
+file(GLOB SRC_OSL_HEADER_DIST ${OSL_SHADER_DIR}/*.h)
+
 set(SRC_OSL_HEADERS
   node_color.h
   node_fresnel.h
   node_hash.h
+  node_math.h
   node_noise.h
   node_ramp_util.h
-  stdosl.h
-  oslutil.h
-  vector2.h
-  vector4.h
+  stdcycles.h
+  ${SRC_OSL_HEADER_DIST}
 )
 
 set(SRC_OSO
@@ -119,7 +136,7 @@ foreach(_file ${SRC_OSL})
   string(REPLACE ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR} _OSO_FILE ${_OSO_FILE})
   add_custom_command(
     OUTPUT ${_OSO_FILE}
-    COMMAND ${OSL_COMPILER} -q -O2  -I"${CMAKE_CURRENT_SOURCE_DIR}" -o ${_OSO_FILE} ${_OSL_FILE}
+    COMMAND ${OSL_COMPILER} -q -O2  -I"${CMAKE_CURRENT_SOURCE_DIR}" -I"${OSL_SHADER_DIR}" -o ${_OSO_FILE} ${_OSL_FILE}
     DEPENDS ${_OSL_FILE} ${SRC_OSL_HEADERS} ${OSL_COMPILER})
   list(APPEND SRC_OSO
     ${_OSO_FILE}

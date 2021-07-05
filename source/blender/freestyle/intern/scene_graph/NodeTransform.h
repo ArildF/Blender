@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_NODE_TRANSFORM_H__
-#define __FREESTYLE_NODE_TRANSFORM_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -45,10 +44,10 @@ class NodeTransform : public NodeGroup {
   {
   }
 
-  /*! multiplies the current matrix by the x, y, z translation matrix. */
+  /** multiplies the current matrix by the x, y, z translation matrix. */
   void Translate(real x, real y, real z);
 
-  /*! multiplies the current matrix by a rotation matrix
+  /** multiplies the current matrix by a rotation matrix
    *    iAngle
    *      The rotation angle
    *    x, y, z
@@ -56,32 +55,32 @@ class NodeTransform : public NodeGroup {
    */
   void Rotate(real iAngle, real x, real y, real z);
 
-  /*! multiplies the current matrix by a scaling matrix.
+  /** multiplies the current matrix by a scaling matrix.
    *    x, y, z
    *      The scaling coefficients with respect to the x,y,z axis
    */
   void Scale(real x, real y, real z);
 
-  /*! Multiplies the current matrix by iMatrix */
+  /** Multiplies the current matrix by iMatrix */
   void MultiplyMatrix(const Matrix44r &iMatrix);
 
-  /*! Sets the current matrix to iMatrix */
+  /** Sets the current matrix to iMatrix */
   void setMatrix(const Matrix44r &iMatrix);
 
-  /*! Accept the corresponding visitor */
+  /** Accept the corresponding visitor */
   virtual void accept(SceneVisitor &v);
 
-  /*! Overloads the Node::AddBBox in order to take care about the transformation */
+  /** Overloads the Node::AddBBox in order to take care about the transformation */
   virtual void AddBBox(const BBox<Vec3r> &iBBox);
 
-  /*! Checks whether a matrix contains a scale factor or not.
+  /** Checks whether a matrix contains a scale factor or not.
    *  Returns true if yes.
    *    M
    *      The matrix to check
    */
   bool isScaled(const Matrix44r &M);
 
-  /*! accessors */
+  /** accessors */
   inline const Matrix44r &matrix() const
   {
     return _Matrix;
@@ -98,5 +97,3 @@ class NodeTransform : public NodeGroup {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_NODE_TRANSFORM_H__

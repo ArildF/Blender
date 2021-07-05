@@ -29,14 +29,13 @@
 #include "BKE_context.h"
 
 #include "GPU_batch.h"
-#include "GPU_glew.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
 
 #include "BKE_global.h"
-#include "BKE_main.h"
 #include "BKE_idprop.h"
+#include "BKE_main.h"
 
 #include "WM_api.h"
 #include "WM_toolsystem.h"
@@ -55,8 +54,8 @@
 #include "wm.h"
 
 /* own includes */
-#include "wm_gizmo_wmapi.h"
 #include "wm_gizmo_intern.h"
+#include "wm_gizmo_wmapi.h"
 
 static void wm_gizmo_register(wmGizmoGroup *gzgroup, wmGizmo *gz);
 
@@ -108,7 +107,7 @@ wmGizmo *WM_gizmo_new_ptr(const wmGizmoType *gzt, wmGizmoGroup *gzgroup, Pointer
 }
 
 /**
- * \param name: Must be a valid gizmo type name,
+ * \param idname: Must be a valid gizmo type name,
  * if you need to check it exists use #WM_gizmo_new_ptr
  * because callers of this function don't NULL check the return value.
  */
@@ -375,11 +374,10 @@ void WM_gizmo_set_color_highlight(wmGizmo *gz, const float color_hi[4])
   copy_v4_v4(gz->color_hi, color_hi);
 }
 
-/** \} */  // Gizmo Creation API
+/** \} */ /* Gizmo Creation API. */
 
 /* -------------------------------------------------------------------- */
 /** \name Gizmo Callback Assignment
- *
  * \{ */
 
 void WM_gizmo_set_fn_custom_modal(struct wmGizmo *gz, wmGizmoFnModal fn)
@@ -453,9 +451,7 @@ bool wm_gizmo_select_and_highlight(bContext *C, wmGizmoMap *gzmap, wmGizmo *gz)
     wm_gizmomap_highlight_set(gzmap, C, gz, gz->highlight_part);
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 /**
@@ -614,6 +610,7 @@ void WM_gizmo_calc_matrix_final(const wmGizmo *gz, float r_mat[4][4])
                                     r_mat);
 }
 
+/* -------------------------------------------------------------------- */
 /** \name Gizmo Property Access
  *
  * Matches `WM_operator_properties` conventions.
@@ -758,8 +755,8 @@ void WM_gizmo_properties_free(PointerRNA *ptr)
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name General Utilities
- *
  * \{ */
 
 bool WM_gizmo_context_check_drawstep(const struct bContext *C, eWM_GizmoFlagMapDrawStep step)

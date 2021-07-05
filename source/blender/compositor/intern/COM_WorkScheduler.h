@@ -16,51 +16,28 @@
  * Copyright 2011, Blender Foundation.
  */
 
-#ifndef __COM_WORKSCHEDULER_H__
-#define __COM_WORKSCHEDULER_H__
+#pragma once
 
 #include "COM_ExecutionGroup.h"
-extern "C" {
-#include "BLI_threads.h"
-}
+
+#include "COM_Device.h"
 #include "COM_WorkPackage.h"
 #include "COM_defines.h"
-#include "COM_Device.h"
+
+namespace blender::compositor {
 
 /** \brief the workscheduler
  * \ingroup execution
  */
-class WorkScheduler {
-
-#if COM_CURRENT_THREADING_MODEL == COM_TM_QUEUE
-  /**
-   * \brief are we being stopped.
-   */
-  static bool isStopping();
-
-  /**
-   * \brief main thread loop for cpudevices
-   * inside this loop new work is queried and being executed
-   */
-  static void *thread_execute_cpu(void *data);
-
-  /**
-   * \brief main thread loop for gpudevices
-   * inside this loop new work is queried and being executed
-   */
-  static void *thread_execute_gpu(void *data);
-#endif
- public:
+struct WorkScheduler {
   /**
    * \brief schedule a chunk of a group to be calculated.
    * An execution group schedules a chunk in the WorkScheduler
-   * when ExecutionGroup.isOpenCL is set the work will be handled by a OpenCLDevice
+   * when ExecutionGroup.get_flags().open_cl is set the work will be handled by a OpenCLDevice
    * otherwise the work is scheduled for an CPUDevice
    * \see ExecutionGroup.execute
-   * \param group: the execution group
-   * \param chunkNumber: the number of the chunk in the group to be executed
    */
-  static void schedule(ExecutionGroup *group, int chunkNumber);
+  static void schedule(WorkPackage *package);
 
   /**
    * \brief initialize the WorkScheduler
@@ -108,7 +85,9 @@ class WorkScheduler {
    * A node can generate a different operation tree when OpenCLDevices exists.
    * \see CompositorContext.getHasActiveOpenCLDevices
    */
-  static bool hasGPUDevices();
+  static bool has_gpu_devices();
+
+  static int get_num_cpu_threads();
 
   static int current_thread_id();
 
@@ -117,4 +96,4 @@ class WorkScheduler {
 #endif
 };
 
-#endif /* __COM_WORKSCHEDULER_H__ */
+}  // namespace blender::compositor

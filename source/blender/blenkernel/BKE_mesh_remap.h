@@ -14,12 +14,15 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BKE_MESH_REMAP_H__
-#define __BKE_MESH_REMAP_H__
+#pragma once
 
 /** \file
  * \ingroup bke
  */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct CustomData;
 struct CustomData_MeshMasks;
@@ -33,7 +36,7 @@ typedef struct MeshPairRemapItem {
   int sources_num;
   int *indices_src;   /* NULL if no source found. */
   float *weights_src; /* NULL if no source found, else, always normalized! */
-  /* UNUSED (at the moment)*/
+  /* UNUSED (at the moment). */
   // float  hit_dist;     /* FLT_MAX if irrelevant or no source found. */
   int island; /* For loops only. */
 } MeshPairRemapItem;
@@ -112,7 +115,7 @@ enum {
                                          MREMAP_USE_INTERP,
 
   /* ***** Target's loops ***** */
-  /* Note: when islands are given to loop mapping func,
+  /* NOTE: when islands are given to loop mapping func,
    * all loops from the same destination face will always be mapped
    * to loops of source faces within a same island, regardless of mapping mode. */
   MREMAP_MODE_LOOP = 1 << 26,
@@ -227,4 +230,6 @@ void BKE_mesh_remap_calc_polys_from_mesh(const int mode,
                                          struct Mesh *me_src,
                                          struct MeshPairRemap *r_map);
 
-#endif /* __BKE_MESH_REMAP_H__ */
+#ifdef __cplusplus
+}
+#endif

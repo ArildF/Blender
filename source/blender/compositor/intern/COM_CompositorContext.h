@@ -16,16 +16,20 @@
  * Copyright 2011, Blender Foundation.
  */
 
-#ifndef __COM_COMPOSITORCONTEXT_H__
-#define __COM_COMPOSITORCONTEXT_H__
+#pragma once
 
-#include <vector>
-#include <string>
-#include "DNA_node_types.h"
-#include "DNA_color_types.h"
 #include "BLI_rect.h"
+
+#include "COM_Enums.h"
+
+#include "DNA_color_types.h"
+#include "DNA_node_types.h"
 #include "DNA_scene_types.h"
-#include "COM_defines.h"
+
+#include <string>
+#include <vector>
+
+namespace blender::compositor {
 
 /**
  * \brief Overall context of the compositor
@@ -34,8 +38,8 @@ class CompositorContext {
  private:
   /**
    * \brief The rendering field describes if we are rendering (F12) or if we are editing (Node
-   * editor) This field is initialized in ExecutionSystem and must only be read from that point on.
-   * \see ExecutionSystem
+   * editor) This field is initialized in ExecutionSystem and must only be read from that point
+   * on. \see ExecutionSystem
    */
   bool m_rendering;
 
@@ -44,7 +48,7 @@ class CompositorContext {
    * This field is initialized in ExecutionSystem and must only be read from that point on.
    * \see ExecutionSystem
    */
-  CompositorQuality m_quality;
+  eCompositorQuality m_quality;
 
   Scene *m_scene;
 
@@ -167,7 +171,7 @@ class CompositorContext {
   }
 
   /**
-   * \brief set view settings of color color management
+   * \brief set view settings of color management
    */
   void setViewSettings(const ColorManagedViewSettings *viewSettings)
   {
@@ -175,7 +179,7 @@ class CompositorContext {
   }
 
   /**
-   * \brief get view settings of color color management
+   * \brief get view settings of color management
    */
   const ColorManagedViewSettings *getViewSettings() const
   {
@@ -183,7 +187,7 @@ class CompositorContext {
   }
 
   /**
-   * \brief set display settings of color color management
+   * \brief set display settings of color management
    */
   void setDisplaySettings(const ColorManagedDisplaySettings *displaySettings)
   {
@@ -191,7 +195,7 @@ class CompositorContext {
   }
 
   /**
-   * \brief get display settings of color color management
+   * \brief get display settings of color management
    */
   const ColorManagedDisplaySettings *getDisplaySettings() const
   {
@@ -201,7 +205,7 @@ class CompositorContext {
   /**
    * \brief set the quality
    */
-  void setQuality(CompositorQuality quality)
+  void setQuality(eCompositorQuality quality)
   {
     this->m_quality = quality;
   }
@@ -209,7 +213,7 @@ class CompositorContext {
   /**
    * \brief get the quality
    */
-  CompositorQuality getQuality() const
+  eCompositorQuality getQuality() const
   {
     return this->m_quality;
   }
@@ -268,6 +272,20 @@ class CompositorContext {
   {
     return (this->getbNodeTree()->flag & NTREE_COM_GROUPNODE_BUFFER) != 0;
   }
+
+  /**
+   * \brief Get the render percentage as a factor.
+   * The compositor uses a factor i.o. a percentage.
+   */
+  float getRenderPercentageAsFactor() const
+  {
+    return m_rd->size * 0.01f;
+  }
+
+  /**
+   * Get active execution model.
+   */
+  eExecutionModel get_execution_model() const;
 };
 
-#endif
+}  // namespace blender::compositor

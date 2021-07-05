@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BMESH_WALKERS_H__
-#define __BMESH_WALKERS_H__
+#pragma once
 
 /** \file
  * \ingroup bmesh
@@ -81,7 +80,7 @@ void *BMW_step(struct BMWalker *walker);
 void BMW_end(struct BMWalker *walker);
 int BMW_current_depth(BMWalker *walker);
 
-/*these are used by custom walkers*/
+/* These are used by custom walkers. */
 void *BMW_current_state(BMWalker *walker);
 void *BMW_state_add(BMWalker *walker);
 void BMW_state_remove(BMWalker *walker);
@@ -115,6 +114,7 @@ enum {
   BMW_FACELOOP,
   BMW_EDGERING,
   BMW_EDGEBOUNDARY,
+  BMW_EDGELOOP_NONMANIFOLD,
   /* BMW_RING, */
   BMW_LOOPDATA_ISLAND,
   BMW_ISLANDBOUND,
@@ -123,12 +123,10 @@ enum {
   BMW_CONNECTED_VERTEX,
   /* end of array index enum vals */
 
-  /* do not intitialze function pointers and struct size in BMW_init */
+  /* Do not initialize function pointers and struct size in #BMW_init. */
   BMW_CUSTOM,
   BMW_MAXWALKERS,
 };
 
 /* use with BMW_init, so as not to confuse with restrict flags */
 #define BMW_NIL_LAY 0
-
-#endif /* __BMESH_WALKERS_H__ */

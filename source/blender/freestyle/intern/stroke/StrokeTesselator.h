@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_STROKE_TESSELATOR_H__
-#define __FREESTYLE_STROKE_TESSELATOR_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -44,10 +43,10 @@ class StrokeTesselator {
   {
   }
 
-  /*! Builds a line rep contained from a Stroke */
+  /** Builds a line rep contained from a Stroke */
   LineRep *Tesselate(Stroke *iStroke);
 
-  /*! Builds a set of lines rep contained under a a NodeShape, itself contained under a NodeGroup
+  /** Builds a set of lines rep contained under a a NodeShape, itself contained under a NodeGroup
    *  from a set of strokes.
    */
   template<class StrokeIterator> NodeGroup *Tesselate(StrokeIterator begin, StrokeIterator end);
@@ -73,5 +72,3 @@ class StrokeTesselator {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_STROKE_TESSELATOR_H__

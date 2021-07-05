@@ -16,11 +16,13 @@
  * Copyright 2011, Blender Foundation.
  */
 
-#ifndef __COM_GAMMAOPERATION_H__
-#define __COM_GAMMAOPERATION_H__
-#include "COM_NodeOperation.h"
+#pragma once
 
-class GammaOperation : public NodeOperation {
+#include "COM_MultiThreadedRowOperation.h"
+
+namespace blender::compositor {
+
+class GammaOperation : public MultiThreadedRowOperation {
  private:
   /**
    * Cached reference to the inputProgram
@@ -32,18 +34,21 @@ class GammaOperation : public NodeOperation {
   GammaOperation();
 
   /**
-   * the inner loop of this program
+   * The inner loop of this operation.
    */
-  void executePixelSampled(float output[4], float x, float y, PixelSampler sampler);
+  void executePixelSampled(float output[4], float x, float y, PixelSampler sampler) override;
 
   /**
    * Initialize the execution
    */
-  void initExecution();
+  void initExecution() override;
 
   /**
    * Deinitialize the execution
    */
-  void deinitExecution();
+  void deinitExecution() override;
+
+  void update_memory_buffer_row(PixelCursor &p) override;
 };
-#endif
+
+}  // namespace blender::compositor

@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_BASE_OBJECT_H__
-#define __FREESTYLE_BASE_OBJECT_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -40,7 +39,7 @@ class BaseObject {
   {
   }
 
-  /*! At least makes a release on this.
+  /** At least makes a release on this.
    *  The BaseObject::destroy method must be explicitly called at the end of any overloaded destroy
    */
   virtual int destroy()
@@ -48,13 +47,13 @@ class BaseObject {
     return release();
   }
 
-  /*! Increments the reference counter */
+  /** Increments the reference counter */
   inline int addRef()
   {
     return ++_ref_counter;
   }
 
-  /*! Decrements the reference counter */
+  /** Decrements the reference counter */
   inline int release()
   {
     if (_ref_counter) {
@@ -72,5 +71,3 @@ class BaseObject {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_BASE_OBJECT_H__

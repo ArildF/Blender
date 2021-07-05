@@ -19,12 +19,11 @@
  * Declaration of GHOST_SystemNULL class.
  */
 
-#ifndef __GHOST_SYSTEMNULL_H__
-#define __GHOST_SYSTEMNULL_H__
+#pragma once
 
-#include "GHOST_System.h"
 #include "../GHOST_Types.h"
 #include "GHOST_DisplayManagerNULL.h"
+#include "GHOST_System.h"
 #include "GHOST_WindowNULL.h"
 
 class GHOST_WindowNULL;
@@ -53,36 +52,36 @@ class GHOST_SystemNULL : public GHOST_System {
   {
     return GHOST_kSuccess;
   }
-  GHOST_TUns8 *getClipboard(bool selection) const
+  char *getClipboard(bool selection) const
   {
     return NULL;
   }
-  void putClipboard(GHOST_TInt8 *buffer, bool selection) const
+  void putClipboard(char *buffer, bool selection) const
   { /* nop */
   }
-  GHOST_TUns64 getMilliSeconds() const
+  uint64_t getMilliSeconds() const
   {
     return 0;
   }
-  GHOST_TUns8 getNumDisplays() const
+  uint8_t getNumDisplays() const
   {
-    return GHOST_TUns8(1);
+    return uint8_t(1);
   }
-  GHOST_TSuccess getCursorPosition(GHOST_TInt32 &x, GHOST_TInt32 &y) const
-  {
-    return GHOST_kFailure;
-  }
-  GHOST_TSuccess setCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y)
+  GHOST_TSuccess getCursorPosition(int32_t &x, int32_t &y) const
   {
     return GHOST_kFailure;
   }
-  void getMainDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const
+  GHOST_TSuccess setCursorPosition(int32_t x, int32_t y)
+  {
+    return GHOST_kFailure;
+  }
+  void getMainDisplayDimensions(uint32_t &width, uint32_t &height) const
   { /* nop */
   }
-  void getAllDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const
+  void getAllDisplayDimensions(uint32_t &width, uint32_t &height) const
   { /* nop */
   }
-  GHOST_IContext *createOffscreenContext()
+  GHOST_IContext *createOffscreenContext(GHOST_GLSettings glSettings)
   {
     return NULL;
   }
@@ -106,11 +105,11 @@ class GHOST_SystemNULL : public GHOST_System {
     return GHOST_kFailure;
   }
 
-  GHOST_IWindow *createWindow(const STR_String &title,
-                              GHOST_TInt32 left,
-                              GHOST_TInt32 top,
-                              GHOST_TUns32 width,
-                              GHOST_TUns32 height,
+  GHOST_IWindow *createWindow(const char *title,
+                              int32_t left,
+                              int32_t top,
+                              uint32_t width,
+                              uint32_t height,
                               GHOST_TWindowState state,
                               GHOST_TDrawingContextType type,
                               GHOST_GLSettings glSettings,
@@ -130,5 +129,3 @@ class GHOST_SystemNULL : public GHOST_System {
                                 ((glSettings.flags & GHOST_glStereoVisual) != 0));
   }
 };
-
-#endif /* __GHOST_SYSTEMNULL_H__ */

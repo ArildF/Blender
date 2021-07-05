@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software  Foundation,
+ * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * The Original Code is Copyright (C) 2016 Blender Foundation.
@@ -26,13 +26,12 @@
 #include "DNA_cachefile_types.h"
 #include "DNA_space_types.h"
 
-#include "BLI_listbase.h"
 #include "BLI_path_util.h"
 #include "BLI_string.h"
 
 #include "BKE_cachefile.h"
 #include "BKE_context.h"
-#include "BKE_library.h"
+#include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_report.h"
 
@@ -131,10 +130,10 @@ void CACHEFILE_OT_open(wmOperatorType *ot)
   WM_operator_properties_filesel(ot,
                                  FILE_TYPE_ALEMBIC | FILE_TYPE_FOLDER,
                                  FILE_BLENDER,
-                                 FILE_SAVE,
-                                 WM_FILESEL_FILEPATH,
+                                 FILE_OPENFILE,
+                                 WM_FILESEL_FILEPATH | WM_FILESEL_RELPATH,
                                  FILE_DEFAULTDISPLAY,
-                                 FILE_SORT_ALPHA);
+                                 FILE_SORT_DEFAULT);
 }
 
 /* ***************************** Reload Operator **************************** */

@@ -33,19 +33,18 @@
 #include "RNA_access.h"
 #include "RNA_types.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_string.h"
+#include "BLI_utildefines.h"
 
 #include "intern/builder/deg_builder.h"
 #include "intern/builder/deg_builder_map.h"
 #include "intern/builder/deg_builder_rna.h"
 #include "intern/depsgraph.h"
 #include "intern/node/deg_node.h"
-#include "intern/node/deg_node_id.h"
 #include "intern/node/deg_node_component.h"
+#include "intern/node/deg_node_id.h"
 #include "intern/node/deg_node_operation.h"
 
-struct Base;
 struct CacheFile;
 struct Camera;
 struct Collection;
@@ -54,6 +53,7 @@ struct FCurve;
 struct FreestyleLineSet;
 struct FreestyleLineStyle;
 struct ID;
+struct IDProperty;
 struct Image;
 struct Key;
 struct LayerCollection;
@@ -68,6 +68,7 @@ struct Object;
 struct ParticleSettings;
 struct ParticleSystem;
 struct Scene;
+struct Simulation;
 struct Speaker;
 struct Tex;
 struct ViewLayer;
@@ -76,13 +77,15 @@ struct bAction;
 struct bArmature;
 struct bConstraint;
 struct bGPdata;
+struct bNodeSocket;
 struct bNodeTree;
 struct bPoseChannel;
 struct bSound;
 
 struct PropertyRNA;
 
-namespace DEG {
+namespace blender {
+namespace deg {
 
 struct ComponentNode;
 struct DepsNodeHandle;
@@ -191,9 +194,14 @@ class DepsgraphRelationBuilder : public DepsgraphBuilder {
   void add_modifier_to_transform_relation(const DepsNodeHandle *handle, const char *description);
 
   void add_customdata_mask(Object *object, const DEGCustomDataMeshMasks &customdata_masks);
-  void add_special_eval_flag(ID *object, uint32_t flag);
+  void add_special_eval_flag(ID *id, uint32_t flag);
 
   virtual void build_id(ID *id);
+
+  /* Build function for ID types that do not need their own build_xxx() function. */
+  virtual void build_generic_id(ID *id);
+
+  virtual void build_idproperties(IDProperty *id_property);
 
   virtual void build_scene_render(Scene *scene, ViewLayer *view_layer);
   virtual void build_scene_parameters(Scene *scene);
@@ -206,10 +214,10 @@ class DepsgraphRelationBuilder : public DepsgraphBuilder {
   virtual void build_collection(LayerCollection *from_layer_collection,
                                 Object *object,
                                 Collection *collection);
-  virtual void build_object(Base *base, Object *object);
+  virtual void build_object(Object *object);
   virtual void build_object_proxy_from(Object *object);
   virtual void build_object_proxy_group(Object *object);
-  virtual void build_object_flags(Base *base, Object *object);
+  virtual void build_object_from_layer_relations(Object *object);
   virtual void build_object_data(Object *object);
   virtual void build_object_data_camera(Object *object);
   virtual void build_object_data_geometry(Object *object);
@@ -235,6 +243,7 @@ class DepsgraphRelationBuilder : public DepsgraphBuilder {
                                                OperationNode *operation_from,
                                                ListBase *strips);
   virtual void build_animdata_drivers(ID *id);
+  virtual void build_animdata_force(ID *id);
   virtual void build_animation_images(ID *id);
   virtual void build_action(bAction *action);
   virtual void build_driver(ID *id, FCurve *fcurve);
@@ -242,6 +251,7 @@ class DepsgraphRelationBuilder : public DepsgraphBuilder {
   virtual void build_driver_variables(ID *id, FCurve *fcurve);
   virtual void build_driver_id_property(ID *id, const char *rna_path);
   virtual void build_parameters(ID *id);
+  virtual void build_dimensions(Object *object);
   virtual void build_world(World *world);
   virtual void build_rigidbody(Scene *scene);
   virtual void build_particle_systems(Object *object);
@@ -265,9 +275,11 @@ class DepsgraphRelationBuilder : public DepsgraphBuilder {
   virtual void build_proxy_rig(Object *object);
   virtual void build_shapekeys(Key *key);
   virtual void build_armature(bArmature *armature);
+  virtual void build_armature_bones(ListBase *bones);
   virtual void build_camera(Camera *camera);
   virtual void build_light(Light *lamp);
   virtual void build_nodetree(bNodeTree *ntree);
+  virtual void build_nodetree_socket(bNodeSocket *socket);
   virtual void build_material(Material *ma);
   virtual void build_materials(Material **materials, int num_materials);
   virtual void build_freestyle_lineset(FreestyleLineSet *fls);
@@ -281,6 +293,7 @@ class DepsgraphRelationBuilder : public DepsgraphBuilder {
   virtual void build_lightprobe(LightProbe *probe);
   virtual void build_speaker(Speaker *speaker);
   virtual void build_sound(bSound *sound);
+  virtual void build_simulation(Simulation *simulation);
   virtual void build_scene_sequencer(Scene *scene);
   virtual void build_scene_audio(Scene *scene);
   virtual void build_scene_speakers(Scene *scene, ViewLayer *view_layer);
@@ -302,6 +315,8 @@ class DepsgraphRelationBuilder : public DepsgraphBuilder {
 
   virtual void build_copy_on_write_relations();
   virtual void build_copy_on_write_relations(IDNode *id_node);
+  virtual void build_driver_relations();
+  virtual void build_driver_relations(IDNode *id_node);
 
   template<typename KeyType> OperationNode *find_operation_node(const KeyType &key);
 
@@ -376,6 +391,7 @@ struct DepsNodeHandle {
   const char *default_name;
 };
 
-}  // namespace DEG
+}  // namespace deg
+}  // namespace blender
 
 #include "intern/builder/deg_builder_relations_impl.h"

@@ -31,19 +31,41 @@ if(MSVC_CLANG AND WITH_OPENMP AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "9.0.1
   remove_cc_flag("-fopenmp")
 endif()
 
-set(MANTAVERSION "0.12")
+# Exporting functions from the blender binary gives linker warnings on Apple arm64 systems.
+# Silence them here.
+if(APPLE AND ("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64"))
+  if(CMAKE_COMPILER_IS_GNUCXX OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    string(APPEND CMAKE_C_FLAGS " -fvisibility=hidden")
+    string(APPEND CMAKE_CXX_FLAGS " -fvisibility=hidden")
+  endif()
+endif()
+
+set(MANTAVERSION "0.13")
 
 add_definitions(-DWITH_FLUID=1)
 
-set(MANTA_DEP
-  dependencies
-)
+# Compile Mantaflow dependencies too (e.g. cnpy for numpy file IO).
+# Make sure that dependencies exist before enabling this option by updating the source files in extern/
+set(WITH_MANTA_DEPENDENCIES 0)
+
+# Enable Mantaflow numpy support
+set(WITH_MANTA_NUMPY 0)
+
+if(NOT WITH_MANTA_DEPENDENCIES)
+  add_definitions(-DNO_CNPY=1)
+endif()
+
 set(MANTA_HLP
   helper
 )
 set(MANTA_PP
   preprocessed
 )
+if(WITH_MANTA_DEPENDENCIES)
+  set(MANTA_DEP
+    dependencies
+  )
+endif()
 
 if(WITH_TBB)
   add_definitions(-DTBB=1)
@@ -51,7 +73,20 @@ endif()
 
 if(WITH_OPENVDB)
   add_definitions(-DOPENVDB=1)
-  add_definitions(-DOPENVDB_STATICLIB)
+  # OpenVDB headers use deprecated TBB headers, silence warning.
+  add_definitions(-DTBB_SUPPRESS_DEPRECATED_MESSAGES=1)
+endif()
+
+if(WITH_OPENVDB_BLOSC)
+  add_definitions(-DOPENVDB_BLOSC=1)
+endif()
+
+if(WIN32)
+  add_definitions(-D_USE_MATH_DEFINES)
+endif()
+
+if(WITH_MANTA_NUMPY AND WITH_PYTHON_NUMPY)
+  add_definitions(-DNUMPY=1)
 endif()
 
 set(INC
@@ -61,13 +96,24 @@ set(INC
   ${MANTA_PP}/plugin
   ${MANTA_HLP}/pwrapper
   ${MANTA_HLP}/util
-  ${MANTA_DEP}/cnpy
 )
+
+if(WITH_MANTA_DEPENDENCIES)
+  list(APPEND INC
+    ${MANTA_DEP}/cnpy
+  )
+endif()
 
 set(INC_SYS
   ${PYTHON_INCLUDE_DIRS}
   ${ZLIB_INCLUDE_DIRS}
 )
+
+if(WITH_MANTA_NUMPY AND WITH_PYTHON_NUMPY)
+  list(APPEND INC_SYS
+    ${PYTHON_NUMPY_INCLUDE_DIRS}
+  )
+endif()
 
 if(WITH_TBB)
   list(APPEND INC_SYS
@@ -80,28 +126,22 @@ endif()
 
 if(WITH_OPENVDB)
   list(APPEND INC_SYS
-    ${BOOST_INCLUDE_DIR}
-    ${OPENEXR_INCLUDE_DIRS}
     ${OPENVDB_INCLUDE_DIRS}
   )
   list(APPEND LIB
     ${OPENVDB_LIBRARIES}
-    ${OPENEXR_LIBRARIES}
-    ${ZLIB_LIBRARIES}
-    ${BOOST_LIBRARIES}
   )
-  if(WITH_OPENVDB_BLOSC)
-    list(APPEND LIB
-      ${BLOSC_LIBRARIES}
-      ${ZLIB_LIBRARIES}
-    )
+  if(WIN32)
+    # OpenVDB emits lots of these, they should be suppressed through other
+    # means but MSVC 16.8/16.9 has broken this functionality, so C4251 is
+    # suppressed here explicitly. See
+    # https://developercommunity.visualstudio.com/content/problem/1167590/bug.html
+    # for details.
+    string(APPEND CMAKE_CXX_FLAGS " /wd4251")
   endif()
 endif()
 
 set(SRC
-  ${MANTA_DEP}/cnpy/cnpy.cpp
-  ${MANTA_DEP}/cnpy/cnpy.h
-
   ${MANTA_PP}/commonkernels.h
   ${MANTA_PP}/commonkernels.h.reg.cpp
   ${MANTA_PP}/conjugategrad.cpp
@@ -116,6 +156,9 @@ set(SRC
   ${MANTA_PP}/fileio/iogrids.cpp
   ${MANTA_PP}/fileio/iomeshes.cpp
   ${MANTA_PP}/fileio/ioparticles.cpp
+  ${MANTA_PP}/fileio/ioutil.cpp
+  ${MANTA_PP}/fileio/iovdb.cpp
+  ${MANTA_PP}/fileio/mantaio.cpp
   ${MANTA_PP}/fileio/mantaio.h
   ${MANTA_PP}/fileio/mantaio.h.reg.cpp
   ${MANTA_PP}/fluidsolver.cpp
@@ -161,14 +204,11 @@ set(SRC
   ${MANTA_PP}/plugin/initplugins.cpp
   ${MANTA_PP}/plugin/kepsilon.cpp
   ${MANTA_PP}/plugin/meshplugins.cpp
-# TODO (sebbas): add numpy to libraries
-#   ${MANTA_PP}/plugin/numpyconvert.cpp
   ${MANTA_PP}/plugin/pressure.cpp
   ${MANTA_PP}/plugin/ptsplugins.cpp
   ${MANTA_PP}/plugin/secondaryparticles.cpp
   ${MANTA_PP}/plugin/surfaceturbulence.cpp
-# TODO (sebbas): add numpy to libraries
-#   ${MANTA_PP}/plugin/tfplugins.cpp
+  ${MANTA_PP}/plugin/viscosity.cpp
   ${MANTA_PP}/plugin/vortexplugins.cpp
   ${MANTA_PP}/plugin/waveletturbulence.cpp
   ${MANTA_PP}/plugin/waves.cpp
@@ -193,9 +233,6 @@ set(SRC
   ${MANTA_PP}/vortexsheet.h.reg.cpp
 
   ${MANTA_HLP}/pwrapper/manta.h
-# TODO (sebbas): add numpy to libraries
-#  ${MANTA_HLP}/pwrapper/numpyWrap.cpp
-#  ${MANTA_HLP}/pwrapper/numpyWrap.h
   ${MANTA_HLP}/pwrapper/pclass.cpp
   ${MANTA_HLP}/pwrapper/pclass.h
   ${MANTA_HLP}/pwrapper/pconvert.cpp
@@ -220,6 +257,21 @@ set(SRC
   ${MANTA_HLP}/util/vectorbase.cpp
   ${MANTA_HLP}/util/vectorbase.h
 )
+
+if(WITH_MANTA_DEPENDENCIES)
+  list(APPEND SRC
+    ${MANTA_DEP}/cnpy/cnpy.cpp
+    ${MANTA_DEP}/cnpy/cnpy.h
+  )
+endif()
+if(WITH_MANTA_NUMPY AND WITH_PYTHON_NUMPY)
+  list(APPEND SRC
+    ${MANTA_PP}/plugin/numpyconvert.cpp
+    ${MANTA_PP}/plugin/tfplugins.cpp
+    ${MANTA_HLP}/pwrapper/numpyWrap.cpp
+    ${MANTA_HLP}/pwrapper/numpyWrap.h
+  )
+endif()
 
 set(LIB
   ${PYTHON_LINKFLAGS}

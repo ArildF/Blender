@@ -24,20 +24,20 @@
 #include <float.h>
 #include <string.h>
 
+#include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_string.h"
-#include "BLI_listbase.h"
 #include "BLI_utildefines.h"
 
+#include "DNA_anim_types.h"
+#include "DNA_camera_types.h"
 #include "DNA_color_types.h"
 #include "DNA_light_types.h"
 #include "DNA_node_types.h"
 #include "DNA_particle_types.h"
-#include "DNA_camera_types.h"
-#include "DNA_anim_types.h"
 
-#include "BKE_colortools.h"
 #include "BKE_animsys.h"
+#include "BKE_colortools.h"
 #include "BKE_idprop.h"
 #include "BKE_main.h"
 #include "BKE_node.h"
@@ -78,22 +78,45 @@ static IDProperty *cycles_properties_from_ID(ID *id)
   return (idprop) ? IDP_GetPropertyTypeFromGroup(idprop, "cycles", IDP_GROUP) : NULL;
 }
 
+static IDProperty *cycles_properties_from_view_layer(ViewLayer *view_layer)
+{
+  IDProperty *idprop = view_layer->id_properties;
+  return (idprop) ? IDP_GetPropertyTypeFromGroup(idprop, "cycles", IDP_GROUP) : NULL;
+}
+
 static float cycles_property_float(IDProperty *idprop, const char *name, float default_value)
 {
   IDProperty *prop = IDP_GetPropertyTypeFromGroup(idprop, name, IDP_FLOAT);
   return (prop) ? IDP_Float(prop) : default_value;
 }
 
-static float cycles_property_int(IDProperty *idprop, const char *name, int default_value)
+static int cycles_property_int(IDProperty *idprop, const char *name, int default_value)
 {
   IDProperty *prop = IDP_GetPropertyTypeFromGroup(idprop, name, IDP_INT);
   return (prop) ? IDP_Int(prop) : default_value;
 }
 
-static bool cycles_property_boolean(IDProperty *idprop, const char *name, bool default_value)
+static void cycles_property_int_set(IDProperty *idprop, const char *name, int value)
 {
   IDProperty *prop = IDP_GetPropertyTypeFromGroup(idprop, name, IDP_INT);
-  return (prop) ? IDP_Int(prop) : default_value;
+  if (prop) {
+    IDP_Int(prop) = value;
+  }
+  else {
+    IDPropertyTemplate val = {0};
+    val.i = value;
+    IDP_AddToGroup(idprop, IDP_New(IDP_INT, &val, name));
+  }
+}
+
+static bool cycles_property_boolean(IDProperty *idprop, const char *name, bool default_value)
+{
+  return cycles_property_int(idprop, name, default_value);
+}
+
+static void cycles_property_boolean_set(IDProperty *idprop, const char *name, bool value)
+{
+  cycles_property_int_set(idprop, name, value);
 }
 
 static void displacement_node_insert(bNodeTree *ntree)
@@ -159,7 +182,7 @@ static void displacement_principled_nodes(bNode *node)
   }
 }
 
-static bool node_has_roughness(bNode *node)
+static bool node_has_roughness(const bNode *node)
 {
   return ELEM(node->type,
               SH_NODE_BSDF_ANISOTROPIC,
@@ -173,7 +196,7 @@ static void square_roughness_node_insert(bNodeTree *ntree)
   bool need_update = false;
 
   /* Update default values */
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node_has_roughness(node)) {
       bNodeSocket *roughness_input = nodeFindSocket(node, SOCK_IN, "Roughness");
       float *roughness_value = cycles_node_socket_float_value(roughness_input);
@@ -256,7 +279,7 @@ static void ambient_occlusion_node_relink(bNodeTree *ntree)
   bool need_update = false;
 
   /* Set default values. */
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_AMBIENT_OCCLUSION) {
       node->custom1 = 1; /* samples */
       node->custom2 &= ~SHD_AO_LOCAL;
@@ -338,7 +361,7 @@ static void light_emission_node_to_energy(Light *light, float *energy, float col
   }
 
   bNode *emission_node = NULL;
-  for (bNodeLink *link = ntree->links.first; link; link = link->next) {
+  LISTBASE_FOREACH (bNodeLink *, link, &ntree->links) {
     if (link->tonode == output_node && link->fromnode->type == SH_NODE_EMISSION) {
       emission_node = link->fromnode;
       break;
@@ -410,7 +433,7 @@ static void update_math_node_single_operand_operators(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_MATH) {
       if (ELEM(node->custom1,
                NODE_MATH_SQRT,
@@ -459,7 +482,7 @@ static void update_vector_math_node_add_and_subtract_operators(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_VECTOR_MATH) {
       bNodeSocket *sockOutValue = nodeFindSocket(node, SOCK_OUT, "Value");
       if (socket_is_used(sockOutValue) &&
@@ -511,7 +534,7 @@ static void update_vector_math_node_dot_product_operator(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_VECTOR_MATH) {
       bNodeSocket *sockOutVector = nodeFindSocket(node, SOCK_OUT, "Vector");
       if (socket_is_used(sockOutVector) && node->custom1 == NODE_VECTOR_MATH_DOT_PRODUCT) {
@@ -550,7 +573,7 @@ static void update_vector_math_node_cross_product_operator(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_VECTOR_MATH) {
       if (node->custom1 == NODE_VECTOR_MATH_CROSS_PRODUCT) {
         bNodeSocket *sockOutVector = nodeFindSocket(node, SOCK_OUT, "Vector");
@@ -616,7 +639,7 @@ static void update_vector_math_node_normalize_operator(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_VECTOR_MATH) {
       bNodeSocket *sockOutValue = nodeFindSocket(node, SOCK_OUT, "Value");
       if (node->custom1 == NODE_VECTOR_MATH_NORMALIZE && socket_is_used(sockOutValue)) {
@@ -675,7 +698,7 @@ static void update_vector_math_node_normalize_operator(bNodeTree *ntree)
  */
 static void update_vector_math_node_operators_enum_mapping(bNodeTree *ntree)
 {
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_VECTOR_MATH) {
       switch (node->custom1) {
         case 2:
@@ -702,7 +725,7 @@ static void update_vector_math_node_average_operator(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_VECTOR_MATH) {
       /* See update_vector_math_node_operators_enum_mapping. */
       if (node->custom1 == -1) {
@@ -765,7 +788,7 @@ static void update_vector_math_node_average_operator(bNodeTree *ntree)
  */
 static void update_noise_node_dimensions(bNodeTree *ntree)
 {
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_TEX_NOISE && node->storage) {
       NodeTexNoise *tex = (NodeTexNoise *)node->storage;
       tex->dimensions = 3;
@@ -817,12 +840,14 @@ static void update_mapping_node_fcurve_rna_path_callback(ID *UNUSED(id),
     fcurve->rna_path = BLI_sprintfN("%s.%s", data->nodePath, "inputs[3].default_value");
   }
   else if (data->minimumNode && BLI_str_endswith(old_fcurve_rna_path, "max")) {
-    fcurve->rna_path = BLI_sprintfN(
-        "nodes[\"%s\"].%s", data->minimumNode->name, "inputs[1].default_value");
+    char node_name_esc[sizeof(data->minimumNode->name) * 2];
+    BLI_str_escape(node_name_esc, data->minimumNode->name, sizeof(node_name_esc));
+    fcurve->rna_path = BLI_sprintfN("nodes[\"%s\"].%s", node_name_esc, "inputs[1].default_value");
   }
   else if (data->maximumNode && BLI_str_endswith(old_fcurve_rna_path, "min")) {
-    fcurve->rna_path = BLI_sprintfN(
-        "nodes[\"%s\"].%s", data->maximumNode->name, "inputs[1].default_value");
+    char node_name_esc[sizeof(data->maximumNode->name) * 2];
+    BLI_str_escape(node_name_esc, data->maximumNode->name, sizeof(node_name_esc));
+    fcurve->rna_path = BLI_sprintfN("nodes[\"%s\"].%s", node_name_esc, "inputs[1].default_value");
   }
 
   if (fcurve->rna_path != old_fcurve_rna_path) {
@@ -853,7 +878,7 @@ static void update_mapping_node_inputs_and_properties(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     /* If node->storage is NULL, then conversion has already taken place.
      * This can happen if a file with the new mapping node [saved from (2, 81, 8) or newer]
      * is opened in a blender version prior to (2, 81, 8) and saved from there again. */
@@ -932,7 +957,10 @@ static void update_mapping_node_inputs_and_properties(bNodeTree *ntree)
       MEM_freeN(node->storage);
       node->storage = NULL;
 
-      char *nodePath = BLI_sprintfN("nodes[\"%s\"]", node->name);
+      char node_name_esc[sizeof(node->name) * 2];
+      BLI_str_escape(node_name_esc, node->name, sizeof(node_name_esc));
+
+      char *nodePath = BLI_sprintfN("nodes[\"%s\"]", node_name_esc);
       MappingNodeFCurveCallbackData data = {nodePath, minimumNode, maximumNode};
       BKE_fcurves_id_cb(&ntree->id, update_mapping_node_fcurve_rna_path_callback, &data);
       MEM_freeN(nodePath);
@@ -949,7 +977,7 @@ static void update_mapping_node_inputs_and_properties(bNodeTree *ntree)
  */
 static void update_musgrave_node_dimensions(bNodeTree *ntree)
 {
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_TEX_MUSGRAVE && node->storage) {
       NodeTexMusgrave *tex = (NodeTexMusgrave *)node->storage;
       tex->dimensions = 3;
@@ -977,7 +1005,7 @@ static void update_musgrave_node_color_output(bNodeTree *ntree)
  */
 static void update_voronoi_node_dimensions(bNodeTree *ntree)
 {
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_TEX_VORONOI && node->storage) {
       NodeTexVoronoi *tex = (NodeTexVoronoi *)node->storage;
       tex->dimensions = 3;
@@ -992,7 +1020,7 @@ static void update_voronoi_node_dimensions(bNodeTree *ntree)
  */
 static void update_voronoi_node_f3_and_f4(bNodeTree *ntree)
 {
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_TEX_VORONOI && node->storage) {
       NodeTexVoronoi *tex = (NodeTexVoronoi *)node->storage;
       if (ELEM(tex->feature, 2, 3)) {
@@ -1010,7 +1038,7 @@ static void update_voronoi_node_f3_and_f4(bNodeTree *ntree)
  */
 static void update_voronoi_node_fac_output(bNodeTree *ntree)
 {
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_TEX_VORONOI) {
       bNodeSocket *facOutput = BLI_findlink(&node->outputs, 1);
       strcpy(facOutput->identifier, "Distance");
@@ -1040,7 +1068,7 @@ static void update_voronoi_node_crackle(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_TEX_VORONOI && node->storage) {
       NodeTexVoronoi *tex = (NodeTexVoronoi *)node->storage;
       bNodeSocket *sockDistance = nodeFindSocket(node, SOCK_OUT, "Distance");
@@ -1169,13 +1197,12 @@ static void update_voronoi_node_square_distance(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_TEX_VORONOI && node->storage) {
       NodeTexVoronoi *tex = (NodeTexVoronoi *)node->storage;
       bNodeSocket *sockDistance = nodeFindSocket(node, SOCK_OUT, "Distance");
       if (tex->distance == SHD_VORONOI_EUCLIDEAN &&
-          (tex->feature == SHD_VORONOI_F1 || tex->feature == SHD_VORONOI_F2) &&
-          socket_is_used(sockDistance)) {
+          (ELEM(tex->feature, SHD_VORONOI_F1, SHD_VORONOI_F2)) && socket_is_used(sockDistance)) {
         bNode *multiplyNode = nodeAddStaticNode(NULL, ntree, SH_NODE_MATH);
         multiplyNode->custom1 = NODE_MATH_MULTIPLY;
         multiplyNode->locx = node->locx + node->width + 20.0f;
@@ -1213,8 +1240,8 @@ static void update_noise_and_wave_distortion(bNodeTree *ntree)
 {
   bool need_update = false;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
-    if (node->type == SH_NODE_TEX_NOISE || node->type == SH_NODE_TEX_WAVE) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    if (ELEM(node->type, SH_NODE_TEX_NOISE, SH_NODE_TEX_WAVE)) {
 
       bNodeSocket *sockDistortion = nodeFindSocket(node, SOCK_IN, "Distortion");
       float *distortion = cycles_node_socket_float_value(sockDistortion);
@@ -1247,6 +1274,32 @@ static void update_noise_and_wave_distortion(bNodeTree *ntree)
 
   if (need_update) {
     ntreeUpdateTree(NULL, ntree);
+  }
+}
+
+/**
+ * Wave Texture node: Restore previous texture directions and offset.
+ * 1. In 2.81, Wave texture had fixed diagonal direction (Bands) or
+ *    mapping along distance (Rings). Now, directions are customizable
+ *    properties, with X axis being new default. To fix this we set new
+ *    direction options to Diagonal and Spherical.
+ * 2. Sine profile is now negatively offset by PI/2 to better match
+ *    other profiles. To fix this we set new Phase Offset input to PI/2
+ *    in nodes with Sine profile.
+ */
+static void update_wave_node_directions_and_offset(bNodeTree *ntree)
+{
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+    if (node->type == SH_NODE_TEX_WAVE) {
+      NodeTexWave *tex = (NodeTexWave *)node->storage;
+      tex->bands_direction = SHD_WAVE_BANDS_DIRECTION_DIAGONAL;
+      tex->rings_direction = SHD_WAVE_RINGS_DIRECTION_SPHERICAL;
+
+      if (tex->wave_profile == SHD_WAVE_PROFILE_SIN) {
+        bNodeSocket *sockPhaseOffset = nodeFindSocket(node, SOCK_IN, "Phase Offset");
+        *cycles_node_socket_float_value(sockPhaseOffset) = M_PI_2;
+      }
+    }
   }
 }
 
@@ -1325,13 +1378,13 @@ void do_versions_after_linking_cycles(Main *bmain)
 
       if (!MAIN_VERSION_ATLEAST(bmain, 273, 5)) {
         /* Euler order was ZYX in previous versions. */
-        for (bNode *node = ntree->nodes.first; node; node = node->next) {
+        LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
           mapping_node_order_flip(node);
         }
       }
 
       if (!MAIN_VERSION_ATLEAST(bmain, 276, 6)) {
-        for (bNode *node = ntree->nodes.first; node; node = node->next) {
+        LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
           vector_curve_node_remap(node);
         }
       }
@@ -1342,7 +1395,7 @@ void do_versions_after_linking_cycles(Main *bmain)
       }
 
       if (!MAIN_VERSION_ATLEAST(bmain, 279, 3)) {
-        for (bNode *node = ntree->nodes.first; node; node = node->next) {
+        LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
           displacement_principled_nodes(node);
         }
       }
@@ -1358,7 +1411,7 @@ void do_versions_after_linking_cycles(Main *bmain)
       }
 
       if (!MAIN_VERSION_ATLEAST(bmain, 280, 66)) {
-        for (bNode *node = ntree->nodes.first; node; node = node->next) {
+        LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
           image_node_colorspace(node);
         }
       }
@@ -1367,7 +1420,7 @@ void do_versions_after_linking_cycles(Main *bmain)
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 280, 64)) {
-    /* Unfiy Cycles and Eevee settings. */
+    /* Unify Cycles and Eevee settings. */
     Scene *scene = bmain->scenes.first;
     const char *engine = (scene) ? scene->r.engine : "CYCLES";
 
@@ -1398,7 +1451,7 @@ void do_versions_after_linking_cycles(Main *bmain)
           if (is_fstop) {
             continue;
           }
-          else if (aperture_size > 0.0f) {
+          if (aperture_size > 0.0f) {
             if (camera->type == CAM_ORTHO) {
               camera->dof.aperture_fstop = 1.0f / (2.0f * aperture_size);
             }
@@ -1488,5 +1541,63 @@ void do_versions_after_linking_cycles(Main *bmain)
       }
     }
     FOREACH_NODETREE_END;
+  }
+
+  if (!MAIN_VERSION_ATLEAST(bmain, 283, 4)) {
+    FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
+      if (ntree->type == NTREE_SHADER) {
+        update_wave_node_directions_and_offset(ntree);
+      }
+    }
+    FOREACH_NODETREE_END;
+  }
+
+  if (!MAIN_VERSION_ATLEAST(bmain, 290, 5)) {
+    /* New denoiser settings. */
+    for (Scene *scene = bmain->scenes.first; scene; scene = scene->id.next) {
+      IDProperty *cscene = cycles_properties_from_ID(&scene->id);
+
+      /* Check if any view layers had (optix) denoising enabled. */
+      bool use_optix = false;
+      bool use_denoising = false;
+      for (ViewLayer *view_layer = scene->view_layers.first; view_layer;
+           view_layer = view_layer->next) {
+        IDProperty *cview_layer = cycles_properties_from_view_layer(view_layer);
+        if (cview_layer) {
+          use_denoising = use_denoising ||
+                          cycles_property_boolean(cview_layer, "use_denoising", false);
+          use_optix = use_optix ||
+                      cycles_property_boolean(cview_layer, "use_optix_denoising", false);
+        }
+      }
+
+      if (cscene) {
+        const int DENOISER_AUTO = 0;
+        const int DENOISER_NLM = 1;
+        const int DENOISER_OPTIX = 2;
+
+        /* Enable denoiser if it was enabled for one view layer before. */
+        cycles_property_int_set(cscene, "denoiser", (use_optix) ? DENOISER_OPTIX : DENOISER_NLM);
+        cycles_property_boolean_set(cscene, "use_denoising", use_denoising);
+
+        /* Migrate Optix denoiser to new settings. */
+        if (cycles_property_int(cscene, "preview_denoising", 0)) {
+          cycles_property_boolean_set(cscene, "use_preview_denoising", true);
+          cycles_property_int_set(cscene, "preview_denoiser", DENOISER_AUTO);
+        }
+      }
+
+      /* Enable denoising in all view layer if there was no denoising before,
+       * so that enabling the scene settings auto enables it for all view layers. */
+      if (!use_denoising) {
+        for (ViewLayer *view_layer = scene->view_layers.first; view_layer;
+             view_layer = view_layer->next) {
+          IDProperty *cview_layer = cycles_properties_from_view_layer(view_layer);
+          if (cview_layer) {
+            cycles_property_boolean_set(cview_layer, "use_denoising", true);
+          }
+        }
+      }
+    }
   }
 }

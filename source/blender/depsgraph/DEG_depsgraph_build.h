@@ -23,8 +23,7 @@
  * Public API for Depsgraph
  */
 
-#ifndef __DEG_DEPSGRAPH_BUILD_H__
-#define __DEG_DEPSGRAPH_BUILD_H__
+#pragma once
 
 /* ************************************************* */
 
@@ -39,58 +38,44 @@ struct ID;
 struct Main;
 struct Object;
 struct Scene;
-struct ViewLayer;
+struct Simulation;
 struct bNodeTree;
+struct Collection;
+
+#include "BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "BLI_sys_types.h"
-
 /* Graph Building -------------------------------- */
 
 /* Build depsgraph for the given scene, and dump results in given graph container. */
-void DEG_graph_build_from_view_layer(struct Depsgraph *graph,
-                                     struct Main *bmain,
-                                     struct Scene *scene,
-                                     struct ViewLayer *view_layer);
+void DEG_graph_build_from_view_layer(struct Depsgraph *graph);
+
+/* Build depsgraph for all objects (so also invisible ones) in the given view layer. */
+void DEG_graph_build_for_all_objects(struct Depsgraph *graph);
 
 /* Special version of builder which produces dependency graph suitable for the render pipeline.
  * It will contain sequencer and compositor (if needed) and all their dependencies. */
-void DEG_graph_build_for_render_pipeline(struct Depsgraph *graph,
-                                         struct Main *bmain,
-                                         struct Scene *scene,
-                                         struct ViewLayer *view_layer);
+void DEG_graph_build_for_render_pipeline(struct Depsgraph *graph);
 
 /* Builds minimal dependency graph for compositor preview.
  *
  * Note that compositor editor might have pinned node tree, which is different from scene's node
  * tree.
  */
-void DEG_graph_build_for_compositor_preview(struct Depsgraph *graph,
-                                            struct Main *bmain,
-                                            struct Scene *scene,
-                                            struct ViewLayer *view_layer,
-                                            struct bNodeTree *nodetree);
+void DEG_graph_build_for_compositor_preview(struct Depsgraph *graph, struct bNodeTree *nodetree);
 
-void DEG_graph_build_from_ids(struct Depsgraph *graph,
-                              struct Main *bmain,
-                              struct Scene *scene,
-                              struct ViewLayer *view_layer,
-                              struct ID **ids,
-                              const int num_ids);
+void DEG_graph_build_from_ids(struct Depsgraph *graph, struct ID **ids, const int num_ids);
 
 /* Tag relations from the given graph for update. */
 void DEG_graph_tag_relations_update(struct Depsgraph *graph);
 
 /* Create or update relations in the specified graph. */
-void DEG_graph_relations_update(struct Depsgraph *graph,
-                                struct Main *bmain,
-                                struct Scene *scene,
-                                struct ViewLayer *view_layer);
+void DEG_graph_relations_update(struct Depsgraph *graph);
 
-/* Tag all relations in the database for update.*/
+/* Tag all relations in the database for update. */
 void DEG_relations_tag_update(struct Main *bmain);
 
 /* Add Dependencies  ----------------------------- */
@@ -107,7 +92,7 @@ typedef enum eDepsSceneComponentType {
    * (i.e. just SDNA property setting). */
   DEG_SCENE_COMP_PARAMETERS,
   /* Animation Component
-   * TODO(sergey): merge in with parameters?  */
+   * TODO(sergey): merge in with parameters? */
   DEG_SCENE_COMP_ANIMATION,
   /* Sequencer Component (Scene Only). */
   DEG_SCENE_COMP_SEQUENCER,
@@ -153,6 +138,18 @@ void DEG_add_object_relation(struct DepsNodeHandle *node_handle,
                              struct Object *object,
                              eDepsObjectComponentType component,
                              const char *description);
+void DEG_add_collection_geometry_relation(struct DepsNodeHandle *node_handle,
+                                          struct Collection *collection,
+                                          const char *description);
+void DEG_add_collection_geometry_customdata_mask(struct DepsNodeHandle *node_handle,
+                                                 struct Collection *collection,
+                                                 const struct CustomData_MeshMasks *masks);
+void DEG_add_simulation_relation(struct DepsNodeHandle *node_handle,
+                                 struct Simulation *simulation,
+                                 const char *description);
+void DEG_add_node_tree_relation(struct DepsNodeHandle *node_handle,
+                                struct bNodeTree *node_tree,
+                                const char *description);
 void DEG_add_bone_relation(struct DepsNodeHandle *handle,
                            struct Object *object,
                            const char *bone_name,
@@ -192,10 +189,10 @@ void DEG_add_customdata_mask(struct DepsNodeHandle *handle,
 struct ID *DEG_get_id_from_handle(struct DepsNodeHandle *node_handle);
 struct Depsgraph *DEG_get_graph_from_handle(struct DepsNodeHandle *node_handle);
 
+bool DEG_object_has_geometry_component(struct Object *object);
+
 /* ************************************************ */
 
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
-
-#endif /* __DEG_DEPSGRAPH_BUILD_H__ */

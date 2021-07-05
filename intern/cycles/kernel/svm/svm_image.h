@@ -16,8 +16,6 @@
 
 CCL_NAMESPACE_BEGIN
 
-#ifdef __TEXTURES__
-
 ccl_device float4 svm_image_texture(KernelGlobals *kg, int id, float x, float y, uint flags)
 {
   if (id == -1) {
@@ -30,10 +28,6 @@ ccl_device float4 svm_image_texture(KernelGlobals *kg, int id, float x, float y,
 
   if ((flags & NODE_IMAGE_ALPHA_UNASSOCIATE) && alpha != 1.0f && alpha != 0.0f) {
     r /= alpha;
-    const int texture_type = kernel_tex_type(id);
-    if (texture_type == IMAGE_DATA_TYPE_BYTE4 || texture_type == IMAGE_DATA_TYPE_BYTE) {
-      r = min(r, make_float4(1.0f, 1.0f, 1.0f, 1.0f));
-    }
     r.w = alpha;
   }
 
@@ -44,7 +38,7 @@ ccl_device float4 svm_image_texture(KernelGlobals *kg, int id, float x, float y,
   return r;
 }
 
-/* Remap coordnate from 0..1 box to -1..-1 */
+/* Remap coordinate from 0..1 box to -1..-1 */
 ccl_device_inline float3 texco_remap_square(float3 co)
 {
   return (co - make_float3(0.5f, 0.5f, 0.5f)) * 2.0f;
@@ -188,7 +182,7 @@ ccl_device void svm_node_tex_image_box(KernelGlobals *kg, ShaderData *sd, float 
     }
   }
   else {
-    /* Desperate mode, no valid choice anyway, fallback to one side.*/
+    /* Desperate mode, no valid choice anyway, fallback to one side. */
     weight.x = 1.0f;
   }
 
@@ -249,7 +243,5 @@ ccl_device void svm_node_tex_environment(KernelGlobals *kg,
   if (stack_valid(alpha_offset))
     stack_store_float(stack, alpha_offset, f.w);
 }
-
-#endif /* __TEXTURES__ */
 
 CCL_NAMESPACE_END

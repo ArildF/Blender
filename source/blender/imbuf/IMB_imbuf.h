@@ -27,7 +27,7 @@
  * This module offers import/export of several graphical file formats.
  * \ingroup imbuf
  *
- * \page IMB Imbuf module external interface
+ * \page IMB ImBuf module external interface
  * \section imb_about About the IMB module
  *
  * External interface of the IMage Buffer module. This module offers
@@ -53,13 +53,16 @@
  *     posix-compliant.
  */
 
-#ifndef __IMB_IMBUF_H__
-#define __IMB_IMBUF_H__
-
-#define IM_MAX_SPACE 64
+#pragma once
 
 /* for bool */
 #include "../blenlib/BLI_sys_types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define IM_MAX_SPACE 64
 
 /**
  *
@@ -67,6 +70,7 @@
  */
 struct ImBuf;
 struct rcti;
+struct rctf;
 
 /**
  *
@@ -83,6 +87,12 @@ struct GSet;
  */
 struct ImageFormatData;
 struct Stereo3dFormat;
+
+/**
+ *
+ * \attention defined in GPU_texture.h
+ */
+struct GPUTexture;
 
 /**
  *
@@ -238,8 +248,8 @@ void IMB_rectclip(struct ImBuf *dbuf,
                   int *srcy,
                   int *width,
                   int *height);
-void IMB_rectcpy(struct ImBuf *drect,
-                 const struct ImBuf *srect,
+void IMB_rectcpy(struct ImBuf *dbuf,
+                 const struct ImBuf *sbuf,
                  int destx,
                  int desty,
                  int srcx,
@@ -251,7 +261,7 @@ void IMB_rectblend(struct ImBuf *dbuf,
                    const struct ImBuf *sbuf,
                    unsigned short *dmask,
                    const unsigned short *curvemask,
-                   const unsigned short *mmask,
+                   const unsigned short *texmask,
                    float mask_max,
                    int destx,
                    int desty,
@@ -268,7 +278,7 @@ void IMB_rectblend_threaded(struct ImBuf *dbuf,
                             const struct ImBuf *sbuf,
                             unsigned short *dmask,
                             const unsigned short *curvemask,
-                            const unsigned short *mmask,
+                            const unsigned short *texmask,
                             float mask_max,
                             int destx,
                             int desty,
@@ -287,19 +297,24 @@ void IMB_rectblend_threaded(struct ImBuf *dbuf,
  */
 
 typedef enum IMB_Timecode_Type {
-  /** Don't use timecode files at all. */
+  /** Don't use time-code files at all. */
   IMB_TC_NONE = 0,
-  /** use images in the order as they are recorded
+  /**
+   * Use images in the order as they are recorded
    * (currently, this is the only one implemented
-   * and is a sane default) */
+   * and is a sane default).
+   */
   IMB_TC_RECORD_RUN = 1,
-  /** Use global timestamp written by recording
-   * device (prosumer camcorders e.g. can do that). */
+  /**
+   * Use global timestamp written by recording
+   * device (prosumer camcorders e.g. can do that).
+   */
   IMB_TC_FREE_RUN = 2,
-  /** Interpolate a global timestamp using the
+  /**
+   * Interpolate a global timestamp using the
    * record date and time written by recording
-   * device (*every* consumer camcorder can do
-   * that :) )*/
+   * device (*every* consumer camcorder can do that).
+   */
   IMB_TC_INTERPOLATED_REC_DATE_FREE_RUN = 4,
   IMB_TC_RECORD_RUN_NO_GAPS = 8,
   IMB_TC_MAX_SLOT = 4,
@@ -314,7 +329,12 @@ typedef enum IMB_Proxy_Size {
   IMB_PROXY_MAX_SLOT = 4,
 } IMB_Proxy_Size;
 
-/* defaults to BL_proxy within the directory of the animation */
+typedef enum eIMBInterpolationFilterMode {
+  IMB_FILTER_NEAREST,
+  IMB_FILTER_BILINEAR,
+} eIMBInterpolationFilterMode;
+
+/* Defaults to BL_proxy within the directory of the animation. */
 void IMB_anim_set_index_dir(struct anim *anim, const char *dir);
 void IMB_anim_get_fname(struct anim *anim, char *file, int size);
 
@@ -324,7 +344,7 @@ IMB_Proxy_Size IMB_anim_proxy_get_existing(struct anim *anim);
 
 struct IndexBuildContext;
 
-/* prepare context for proxies/imecodes builder */
+/* Prepare context for proxies/time-codes builder. */
 struct IndexBuildContext *IMB_anim_index_rebuild_context(struct anim *anim,
                                                          IMB_Timecode_Type tcs_in_use,
                                                          IMB_Proxy_Size proxy_sizes_in_use,
@@ -332,13 +352,13 @@ struct IndexBuildContext *IMB_anim_index_rebuild_context(struct anim *anim,
                                                          const bool overwrite,
                                                          struct GSet *file_list);
 
-/* will rebuild all used indices and proxies at once */
+/* Will rebuild all used indices and proxies at once. */
 void IMB_anim_index_rebuild(struct IndexBuildContext *context,
                             short *stop,
                             short *do_update,
                             float *progress);
 
-/* finish rebuilding proxises/timecodes and free temporary contexts used */
+/* Finish rebuilding proxies/time-codes and free temporary contexts used. */
 void IMB_anim_index_rebuild_finish(struct IndexBuildContext *context, short stop);
 
 /**
@@ -363,6 +383,7 @@ struct anim *IMB_open_anim(const char *name,
 void IMB_suffix_anim(struct anim *anim, const char *suffix);
 void IMB_close_anim(struct anim *anim);
 void IMB_close_anim_proxies(struct anim *anim);
+bool IMB_anim_can_produce_frames(const struct anim *anim);
 
 /**
  *
@@ -370,8 +391,8 @@ void IMB_close_anim_proxies(struct anim *anim);
  */
 
 int ismovie(const char *filepath);
-void IMB_anim_set_preseek(struct anim *anim, int preseek);
-int IMB_anim_get_preseek(struct anim *anim);
+int IMB_anim_get_image_width(struct anim *anim);
+int IMB_anim_get_image_height(struct anim *anim);
 
 /**
  *
@@ -386,7 +407,7 @@ struct ImBuf *IMB_anim_absolute(struct anim *anim,
 /**
  *
  * \attention Defined in anim_movie.c
- * fetches a define previewframe, usually half way into the movie
+ * fetches a define preview-frame, usually half way into the movie.
  */
 struct ImBuf *IMB_anim_previewframe(struct anim *anim);
 
@@ -407,7 +428,7 @@ void IMB_free_anim(struct anim *anim);
 
 void IMB_filter(struct ImBuf *ibuf);
 void IMB_mask_filter_extend(char *mask, int width, int height);
-void IMB_mask_clear(struct ImBuf *ibuf, char *mask, int val);
+void IMB_mask_clear(struct ImBuf *ibuf, const char *mask, int val);
 void IMB_filter_extend(struct ImBuf *ibuf, char *mask, int filter);
 void IMB_makemipmap(struct ImBuf *ibuf, int use_filter);
 void IMB_remakemipmap(struct ImBuf *ibuf, int use_filter);
@@ -456,27 +477,29 @@ void IMB_scaleImBuf_threaded(struct ImBuf *ibuf, unsigned int newx, unsigned int
  *
  * \attention Defined in writeimage.c
  */
-short IMB_saveiff(struct ImBuf *ibuf, const char *filepath, int flags);
+bool IMB_saveiff(struct ImBuf *ibuf, const char *filepath, int flags);
 bool IMB_prepare_write_ImBuf(const bool isfloat, struct ImBuf *ibuf);
 
 /**
  *
  * \attention Defined in util.c
  */
-bool IMB_ispic(const char *name);
-int IMB_ispic_type(const char *name);
+bool IMB_ispic(const char *filepath);
+bool IMB_ispic_type_matches(const char *filepath, int filetype);
+int IMB_ispic_type_from_memory(const unsigned char *buf, const size_t buf_size);
+int IMB_ispic_type(const char *filepath);
 
 /**
  *
  * \attention Defined in util.c
  */
-bool IMB_isanim(const char *name);
+bool IMB_isanim(const char *filepath);
 
 /**
  *
  * \attention Defined in util.c
  */
-int imb_get_anim_type(const char *name);
+int imb_get_anim_type(const char *filepath);
 
 /**
  *
@@ -584,18 +607,21 @@ void bilinear_interpolation(
     struct ImBuf *in, struct ImBuf *out, float u, float v, int xout, int yout);
 
 void bicubic_interpolation_color(
-    struct ImBuf *in, unsigned char col[4], float col_float[4], float u, float v);
+    struct ImBuf *in, unsigned char outI[4], float outF[4], float u, float v);
 void nearest_interpolation_color(
-    struct ImBuf *in, unsigned char col[4], float col_float[4], float u, float v);
+    struct ImBuf *in, unsigned char outI[4], float outF[4], float u, float v);
 void nearest_interpolation_color_wrap(
-    struct ImBuf *in, unsigned char col[4], float col_float[4], float u, float v);
+    struct ImBuf *in, unsigned char outI[4], float outF[4], float u, float v);
 void bilinear_interpolation_color(
-    struct ImBuf *in, unsigned char col[4], float col_float[4], float u, float v);
+    struct ImBuf *in, unsigned char outI[4], float outF[4], float u, float v);
 void bilinear_interpolation_color_wrap(
-    struct ImBuf *in, unsigned char col[4], float col_float[4], float u, float v);
+    struct ImBuf *in, unsigned char outI[4], float outF[4], float u, float v);
 
 void IMB_alpha_under_color_float(float *rect_float, int x, int y, float backcol[3]);
-void IMB_alpha_under_color_byte(unsigned char *rect, int x, int y, float backcol[3]);
+void IMB_alpha_under_color_byte(unsigned char *rect, int x, int y, const float backcol[3]);
+
+void IMB_sampleImageAtLocation(
+    struct ImBuf *ibuf, float x, float y, bool make_linear_rgb, float color[4]);
 
 /**
  *
@@ -671,6 +697,8 @@ void IMB_rectfill_area(struct ImBuf *ibuf,
                        int x2,
                        int y2,
                        struct ColorManagedDisplay *display);
+void IMB_rectfill_area_replace(
+    const struct ImBuf *ibuf, const float col[4], int x1, int y1, int x2, int y2);
 void IMB_rectfill_alpha(struct ImBuf *ibuf, const float value);
 
 /* This should not be here, really,
@@ -710,14 +738,41 @@ void IMB_processor_apply_threaded(
     void(init_handle)(void *handle, int start_line, int tot_line, void *customdata),
     void *(do_thread)(void *));
 
-typedef void (*ScanlineThreadFunc)(void *custom_data, int start_scanline, int num_scanlines);
+typedef void (*ScanlineThreadFunc)(void *custom_data, int scanline);
 void IMB_processor_apply_threaded_scanlines(int total_scanlines,
                                             ScanlineThreadFunc do_thread,
                                             void *custom_data);
 
+void IMB_transform(struct ImBuf *src,
+                   struct ImBuf *dst,
+                   float transform_matrix[3][3],
+                   struct rctf *src_crop,
+                   const eIMBInterpolationFilterMode filter);
+
 /* ffmpeg */
 void IMB_ffmpeg_init(void);
 const char *IMB_ffmpeg_last_error(void);
+
+/**
+ *
+ * \attention defined in util_gpu.c
+ */
+struct GPUTexture *IMB_create_gpu_texture(const char *name,
+                                          struct ImBuf *ibuf,
+                                          bool use_high_bitdepth,
+                                          bool use_premult,
+                                          bool limit_gl_texture_size);
+struct GPUTexture *IMB_touch_gpu_texture(
+    const char *name, struct ImBuf *ibuf, int w, int h, int layers, bool use_high_bitdepth);
+void IMB_update_gpu_texture_sub(struct GPUTexture *tex,
+                                struct ImBuf *ibuf,
+                                int x,
+                                int y,
+                                int z,
+                                int w,
+                                int h,
+                                bool use_high_bitdepth,
+                                bool use_premult);
 
 /**
  *
@@ -755,4 +810,6 @@ void IMB_ImBufFromStereo3d(struct Stereo3dFormat *s3d,
                            struct ImBuf **r_ibuf_left,
                            struct ImBuf **r_ibuf_right);
 
+#ifdef __cplusplus
+}
 #endif

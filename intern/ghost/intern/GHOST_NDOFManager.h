@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GHOST_NDOFMANAGER_H__
-#define __GHOST_NDOFMANAGER_H__
+#pragma once
 
 #ifndef WITH_INPUT_NDOF
 #  error NDOF code included in non-NDOF-enabled build
@@ -131,13 +130,13 @@ class GHOST_NDOFManager {
   //       rotations are + when CCW, - when CW
   // each platform is responsible for getting axis data into this form
   // these values should not be scaled (just shuffled or flipped)
-  void updateTranslation(const int t[3], GHOST_TUns64 time);
-  void updateRotation(const int r[3], GHOST_TUns64 time);
+  void updateTranslation(const int t[3], uint64_t time);
+  void updateRotation(const int r[3], uint64_t time);
 
   // the latest raw button data from the device
   // use HID button encoding (not NDOF_ButtonT)
-  void updateButton(int button_number, bool press, GHOST_TUns64 time);
-  void updateButtons(int button_bits, GHOST_TUns64 time);
+  void updateButton(int button_number, bool press, uint64_t time);
+  void updateButtons(int button_bits, uint64_t time);
   // NDOFButton events are sent immediately
 
   // processes and sends most recent raw data as an NDOFMotion event
@@ -148,8 +147,8 @@ class GHOST_NDOFManager {
   GHOST_System &m_system;
 
  private:
-  void sendButtonEvent(NDOF_ButtonT, bool press, GHOST_TUns64 time, GHOST_IWindow *);
-  void sendKeyEvent(GHOST_TKey, bool press, GHOST_TUns64 time, GHOST_IWindow *);
+  void sendButtonEvent(NDOF_ButtonT, bool press, uint64_t time, GHOST_IWindow *);
+  void sendKeyEvent(GHOST_TKey, bool press, uint64_t time, GHOST_IWindow *);
 
   NDOF_DeviceT m_deviceType;
   int m_buttonCount;
@@ -160,12 +159,10 @@ class GHOST_NDOFManager {
   int m_rotation[3];
   int m_buttons;  // bit field
 
-  GHOST_TUns64 m_motionTime;      // in milliseconds
-  GHOST_TUns64 m_prevMotionTime;  // time of most recent Motion event sent
+  uint64_t m_motionTime;      // in milliseconds
+  uint64_t m_prevMotionTime;  // time of most recent Motion event sent
 
   GHOST_TProgress m_motionState;
   bool m_motionEventPending;
   float m_deadZone;  // discard motion with each component < this
 };
-
-#endif

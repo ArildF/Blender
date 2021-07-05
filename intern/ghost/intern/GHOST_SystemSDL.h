@@ -19,15 +19,14 @@
  * Declaration of GHOST_SystemSDL class.
  */
 
-#ifndef __GHOST_SYSTEMSDL_H__
-#define __GHOST_SYSTEMSDL_H__
+#pragma once
 
-#include "GHOST_System.h"
 #include "../GHOST_Types.h"
 #include "GHOST_DisplayManagerSDL.h"
+#include "GHOST_Event.h"
+#include "GHOST_System.h"
 #include "GHOST_TimerManager.h"
 #include "GHOST_WindowSDL.h"
-#include "GHOST_Event.h"
 
 extern "C" {
 #include "SDL.h"
@@ -57,34 +56,34 @@ class GHOST_SystemSDL : public GHOST_System {
 
   GHOST_TSuccess getButtons(GHOST_Buttons &buttons) const;
 
-  GHOST_TUns8 *getClipboard(bool selection) const;
+  char *getClipboard(bool selection) const;
 
-  void putClipboard(GHOST_TInt8 *buffer, bool selection) const;
+  void putClipboard(char *buffer, bool selection) const;
 
-  GHOST_TUns64 getMilliSeconds();
+  uint64_t getMilliSeconds();
 
-  GHOST_TUns8 getNumDisplays() const;
+  uint8_t getNumDisplays() const;
 
-  GHOST_TSuccess getCursorPosition(GHOST_TInt32 &x, GHOST_TInt32 &y) const;
+  GHOST_TSuccess getCursorPosition(int32_t &x, int32_t &y) const;
 
-  GHOST_TSuccess setCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y);
+  GHOST_TSuccess setCursorPosition(int32_t x, int32_t y);
 
-  void getAllDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const;
+  void getAllDisplayDimensions(uint32_t &width, uint32_t &height) const;
 
-  void getMainDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const;
+  void getMainDisplayDimensions(uint32_t &width, uint32_t &height) const;
 
-  GHOST_IContext *createOffscreenContext();
+  GHOST_IContext *createOffscreenContext(GHOST_GLSettings glSettings);
 
   GHOST_TSuccess disposeContext(GHOST_IContext *context);
 
  private:
   GHOST_TSuccess init();
 
-  GHOST_IWindow *createWindow(const STR_String &title,
-                              GHOST_TInt32 left,
-                              GHOST_TInt32 top,
-                              GHOST_TUns32 width,
-                              GHOST_TUns32 height,
+  GHOST_IWindow *createWindow(const char *title,
+                              int32_t left,
+                              int32_t top,
+                              uint32_t width,
+                              uint32_t height,
                               GHOST_TWindowState state,
                               GHOST_TDrawingContextType type,
                               GHOST_GLSettings glSettings,
@@ -99,8 +98,6 @@ class GHOST_SystemSDL : public GHOST_System {
 
   void processEvent(SDL_Event *sdl_event);
 
-  /// The vector of windows that need to be updated.
+  /** The vector of windows that need to be updated. */
   std::vector<GHOST_WindowSDL *> m_dirty_windows;
 };
-
-#endif

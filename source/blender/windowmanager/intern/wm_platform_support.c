@@ -25,12 +25,12 @@
 
 #include <string.h>
 
-#include "BLI_sys_types.h"
 #include "BLI_dynstr.h"
-#include "BLI_path_util.h"
 #include "BLI_fileops.h"
-#include "BLI_string.h"
 #include "BLI_linklist.h"
+#include "BLI_path_util.h"
+#include "BLI_string.h"
+#include "BLI_sys_types.h"
 
 #include "BLT_translation.h"
 
@@ -43,7 +43,9 @@
 
 #define WM_PLATFORM_SUPPORT_TEXT_SIZE 1024
 
-/* Check if user has already approved the given platform_support_key. */
+/**
+ * Check if user has already approved the given `platform_support_key`.
+ */
 static bool wm_platform_support_check_approval(const char *platform_support_key, bool update)
 {
   const char *const cfgdir = BKE_appdir_folder_id(BLENDER_USER_CONFIG, NULL);
@@ -55,7 +57,7 @@ static bool wm_platform_support_check_approval(const char *platform_support_key,
 
   if (cfgdir) {
     char filepath[FILE_MAX];
-    BLI_make_file_string("/", filepath, cfgdir, BLENDER_PLATFORM_SUPPORT_FILE);
+    BLI_join_dirfile(filepath, sizeof(filepath), cfgdir, BLENDER_PLATFORM_SUPPORT_FILE);
     LinkNode *lines = BLI_file_read_as_lines(filepath);
     for (LinkNode *line_node = lines; line_node; line_node = line_node->next) {
       char *line = line_node->link;
@@ -120,11 +122,11 @@ bool WM_platform_support_perform_checks()
   eGPUSupportLevel support_level = GPU_platform_support_level();
   const char *platform_key = GPU_platform_support_level_key();
 
-  /* check if previous check matches the current check. Don't update the approval when running in
-   * `background`. this could have been triggered by installing addons via installers.  */
+  /* Check if previous check matches the current check. Don't update the approval when running in
+   * `background`. this could have been triggered by installing add-ons via installers. */
   if (support_level != GPU_SUPPORT_LEVEL_UNSUPPORTED && !G.factory_startup &&
       wm_platform_support_check_approval(platform_key, !G.background)) {
-    /* if it matches the user has confirmed and whishes to use it */
+    /* If it matches the user has confirmed and wishes to use it. */
     return result;
   }
 

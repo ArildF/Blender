@@ -21,8 +21,8 @@
  * \ingroup pythonintern
  */
 
-#include <Python.h>
 #include "BLI_utildefines.h"
+#include <Python.h>
 
 #include "bpy_app_usd.h"
 
@@ -80,8 +80,8 @@ static PyObject *make_usd_info(void)
   SetStrItem("Unknown");
 #endif
 
-  if (PyErr_Occurred()) {
-    Py_CLEAR(usd_info);
+  if (UNLIKELY(PyErr_Occurred())) {
+    Py_DECREF(usd_info);
     return NULL;
   }
 
@@ -101,7 +101,7 @@ PyObject *BPY_app_usd_struct(void)
   BlenderAppUSDType.tp_init = NULL;
   BlenderAppUSDType.tp_new = NULL;
   BlenderAppUSDType.tp_hash = (hashfunc)
-      _Py_HashPointer; /* without this we can't do set(sys.modules) [#29635] */
+      _Py_HashPointer; /* without this we can't do set(sys.modules) T29635. */
 
   return ret;
 }

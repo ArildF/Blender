@@ -25,11 +25,11 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math_vector.h"
 #include "BLI_listbase.h"
+#include "BLI_math_vector.h"
 #include "BLI_mempool.h"
-#include "BLI_utildefines_iter.h"
 #include "BLI_stack.h"
+#include "BLI_utildefines_iter.h"
 
 #include "bmesh.h"
 
@@ -50,7 +50,7 @@ typedef struct BMEdgeLoopStore {
 #define EDGELOOP_EPS 1e-10f
 
 /* -------------------------------------------------------------------- */
-/* BM_mesh_edgeloops_find & Util Functions  */
+/* BM_mesh_edgeloops_find & Util Functions. */
 
 static int bm_vert_other_tag(BMVert *v, BMVert *v_prev, BMEdge **r_e)
 {
@@ -82,7 +82,7 @@ static bool bm_loop_build(BMEdgeLoopStore *el_store, BMVert *v_prev, BMVert *v, 
   BMVert *v_next;
   BMVert *v_first = v;
 
-  BLI_assert(ABS(dir) == 1);
+  BLI_assert(abs(dir) == 1);
 
   if (!BM_elem_flag_test(v, BM_ELEM_INTERNAL_TAG)) {
     return true;
@@ -187,7 +187,7 @@ int BM_mesh_edgeloops_find(BMesh *bm,
 }
 
 /* -------------------------------------------------------------------- */
-/* BM_mesh_edgeloops_find_path & Util Functions  */
+/* BM_mesh_edgeloops_find_path & Util Functions. */
 
 /**
  * Find s single, open edge loop - given 2 vertices.
@@ -224,7 +224,7 @@ static bool bm_loop_path_build_step(BLI_mempool *vs_pool,
 {
   ListBase lb_tmp = {NULL, NULL};
   struct VertStep *vs, *vs_next;
-  BLI_assert(ABS(dir) == 1);
+  BLI_assert(abs(dir) == 1);
 
   for (vs = lb->first; vs; vs = vs_next) {
     BMIter iter;
@@ -450,7 +450,7 @@ void BM_mesh_edgeloops_calc_order(BMesh *UNUSED(bm), ListBase *eloops, const boo
   }
   mul_v3_fl(cent, 1.0f / (float)tot);
 
-  /* find far outest loop */
+  /* Find the furthest out loop. */
   {
     BMEdgeLoopStore *el_store_best = NULL;
     float len_best_sq = -1.0f;
@@ -651,9 +651,7 @@ bool BM_edgeloop_calc_normal(BMesh *UNUSED(bm), BMEdgeLoopStore *el_store)
     el_store->no[2] = 1.0f; /* other axis set to 0.0 */
     return false;
   }
-  else {
-    return true;
-  }
+  return true;
 }
 
 /**
@@ -693,9 +691,7 @@ bool BM_edgeloop_calc_normal_aligned(BMesh *UNUSED(bm),
     el_store->no[2] = 1.0f; /* other axis set to 0.0 */
     return false;
   }
-  else {
-    return true;
-  }
+  return true;
 }
 
 void BM_edgeloop_flip(BMesh *UNUSED(bm), BMEdgeLoopStore *el_store)

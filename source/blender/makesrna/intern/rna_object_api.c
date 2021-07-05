@@ -21,13 +21,13 @@
  * \ingroup RNA
  */
 
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#include "BLI_utildefines.h"
 #include "BLI_kdopbvh.h"
+#include "BLI_utildefines.h"
 
 #include "RNA_define.h"
 
@@ -36,10 +36,12 @@
 #include "DNA_modifier_types.h"
 #include "DNA_object_types.h"
 
+#include "BKE_gpencil_curve.h"
 #include "BKE_layer.h"
-#include "BKE_gpencil.h"
 
 #include "DEG_depsgraph.h"
+
+#include "ED_outliner.h"
 
 #include "rna_internal.h" /* own include */
 
@@ -63,7 +65,6 @@ static const EnumPropertyItem space_items[] = {
 
 #  include "BLI_math.h"
 
-#  include "BKE_anim.h"
 #  include "BKE_bvhutils.h"
 #  include "BKE_constraint.h"
 #  include "BKE_context.h"
@@ -72,8 +73,8 @@ static const EnumPropertyItem space_items[] = {
 #  include "BKE_global.h"
 #  include "BKE_layer.h"
 #  include "BKE_main.h"
-#  include "BKE_mesh.h"
 #  include "BKE_mball.h"
+#  include "BKE_mesh.h"
 #  include "BKE_modifier.h"
 #  include "BKE_object.h"
 #  include "BKE_report.h"
@@ -115,6 +116,7 @@ static void rna_Object_select_set(
   Scene *scene = CTX_data_scene(C);
   DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
   WM_main_add_notifier(NC_SCENE | ND_OB_SELECT, scene);
+  ED_outliner_select_sync_from_object_tag(C);
 }
 
 static bool rna_Object_select_get(Object *ob, bContext *C, ViewLayer *view_layer)
@@ -222,7 +224,7 @@ static bool rna_Object_indirect_only_get(Object *ob, bContext *C, ViewLayer *vie
   return ((base->flag & BASE_INDIRECT_ONLY) != 0);
 }
 
-static Base *rna_Object_local_view_property_helper(bScreen *sc,
+static Base *rna_Object_local_view_property_helper(bScreen *screen,
                                                    View3D *v3d,
                                                    ViewLayer *view_layer,
                                                    Object *ob,
@@ -236,7 +238,7 @@ static Base *rna_Object_local_view_property_helper(bScreen *sc,
   }
 
   if (view_layer == NULL) {
-    win = ED_screen_window_find(sc, G_MAIN->wm.first);
+    win = ED_screen_window_find(screen, G_MAIN->wm.first);
     view_layer = WM_window_get_active_view_layer(win);
   }
 
@@ -266,10 +268,10 @@ static void rna_Object_local_view_set(Object *ob,
                                       PointerRNA *v3d_ptr,
                                       bool state)
 {
-  bScreen *sc = (bScreen *)v3d_ptr->owner_id;
+  bScreen *screen = (bScreen *)v3d_ptr->owner_id;
   View3D *v3d = v3d_ptr->data;
   Scene *scene;
-  Base *base = rna_Object_local_view_property_helper(sc, v3d, NULL, ob, reports, &scene);
+  Base *base = rna_Object_local_view_property_helper(screen, v3d, NULL, ob, reports, &scene);
   if (base == NULL) {
     return; /* Error reported. */
   }
@@ -277,9 +279,9 @@ static void rna_Object_local_view_set(Object *ob,
   SET_FLAG_FROM_TEST(base->local_view_bits, state, v3d->local_view_uuid);
   if (local_view_bits_prev != base->local_view_bits) {
     DEG_id_tag_update(&scene->id, ID_RECALC_BASE_FLAGS);
-    ScrArea *sa = ED_screen_area_find_with_spacedata(sc, (SpaceLink *)v3d, true);
-    if (sa) {
-      ED_area_tag_redraw(sa);
+    ScrArea *area = ED_screen_area_find_with_spacedata(screen, (SpaceLink *)v3d, true);
+    if (area) {
+      ED_area_tag_redraw(area);
     }
   }
 }
@@ -294,12 +296,15 @@ static bool rna_Object_visible_in_viewport_get(Object *ob, View3D *v3d)
 static void rna_Object_mat_convert_space(Object *ob,
                                          ReportList *reports,
                                          bPoseChannel *pchan,
-                                         float *mat,
-                                         float *mat_ret,
+                                         float mat[16],
+                                         float mat_ret[16],
                                          int from,
                                          int to)
 {
   copy_m4_m4((float(*)[4])mat_ret, (float(*)[4])mat);
+
+  BLI_assert(!ELEM(from, CONSTRAINT_SPACE_OWNLOCAL));
+  BLI_assert(!ELEM(to, CONSTRAINT_SPACE_OWNLOCAL));
 
   /* Error in case of invalid from/to values when pchan is NULL */
   if (pchan == NULL) {
@@ -322,8 +327,27 @@ static void rna_Object_mat_convert_space(Object *ob,
       return;
     }
   }
+  /* These checks are extra security, they should never occur. */
+  if (from == CONSTRAINT_SPACE_CUSTOM) {
+    const char *identifier = NULL;
+    RNA_enum_identifier(space_items, from, &identifier);
+    BKE_reportf(reports,
+                RPT_ERROR,
+                "'from_space' '%s' is invalid when no custom space is given!",
+                identifier);
+    return;
+  }
+  if (to == CONSTRAINT_SPACE_CUSTOM) {
+    const char *identifier = NULL;
+    RNA_enum_identifier(space_items, to, &identifier);
+    BKE_reportf(reports,
+                RPT_ERROR,
+                "'to_space' '%s' is invalid when no custom space is given!",
+                identifier);
+    return;
+  }
 
-  BKE_constraint_mat_convertspace(ob, pchan, (float(*)[4])mat_ret, from, to);
+  BKE_constraint_mat_convertspace(ob, pchan, NULL, (float(*)[4])mat_ret, from, to, false);
 }
 
 static void rna_Object_calc_matrix_camera(Object *ob,
@@ -341,7 +365,7 @@ static void rna_Object_calc_matrix_camera(Object *ob,
   BKE_camera_params_init(&params);
   BKE_camera_params_from_object(&params, ob_eval);
 
-  /* compute matrix, viewplane, .. */
+  /* Compute matrix, view-plane, etc. */
   BKE_camera_params_compute_viewplane(&params, width, height, scalex, scaley);
   BKE_camera_params_compute_matrix(&params);
 
@@ -383,6 +407,29 @@ static void rna_Object_to_mesh_clear(Object *object)
   BKE_object_to_mesh_clear(object);
 }
 
+static Curve *rna_Object_to_curve(Object *object,
+                                  ReportList *reports,
+                                  Depsgraph *depsgraph,
+                                  bool apply_modifiers)
+{
+  if (!ELEM(object->type, OB_FONT, OB_CURVE)) {
+    BKE_report(reports, RPT_ERROR, "Object is not a curve or a text");
+    return NULL;
+  }
+
+  if (depsgraph == NULL) {
+    BKE_report(reports, RPT_ERROR, "Invalid depsgraph");
+    return NULL;
+  }
+
+  return BKE_object_to_curve(object, depsgraph, apply_modifiers);
+}
+
+static void rna_Object_to_curve_clear(Object *object)
+{
+  BKE_object_to_curve_clear(object);
+}
+
 static PointerRNA rna_Object_shape_key_add(
     Object *ob, bContext *C, ReportList *reports, const char *name, bool from_mix)
 {
@@ -394,6 +441,9 @@ static PointerRNA rna_Object_shape_key_add(
 
     RNA_pointer_create((ID *)BKE_key_from_object(ob), &RNA_ShapeKey, kb, &keyptr);
     WM_event_add_notifier(C, NC_OBJECT | ND_DRAW, ob);
+
+    DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
+    DEG_relations_tag_update(bmain);
 
     return keyptr;
   }
@@ -461,7 +511,7 @@ static void rna_Mesh_assign_verts_to_group(
     create_dverts(&me->id);
   }
 
-  /* loop list adding verts to group  */
+  /* Loop list adding verts to group. */
   for (i = 0; i < totindex; i++) {
     if (i < 0 || i >= me->totvert) {
       BKE_report(reports, RPT_ERROR, "Bad vertex index in list");
@@ -487,7 +537,7 @@ static Object *eval_object_ensure(Object *ob,
                                   ReportList *reports,
                                   PointerRNA *rnaptr_depsgraph)
 {
-  if (ob->runtime.mesh_eval == NULL) {
+  if (ob->runtime.data_eval == NULL) {
     Object *ob_orig = ob;
     Depsgraph *depsgraph = rnaptr_depsgraph != NULL ? rnaptr_depsgraph->data : NULL;
     if (depsgraph == NULL) {
@@ -496,7 +546,7 @@ static Object *eval_object_ensure(Object *ob,
     if (depsgraph != NULL) {
       ob = DEG_get_evaluated_object(depsgraph, ob);
     }
-    if (ob == NULL || ob->runtime.mesh_eval == NULL) {
+    if (ob == NULL || BKE_object_get_evaluated_mesh(ob) == NULL) {
       BKE_reportf(
           reports, RPT_ERROR, "Object '%s' has no evaluated mesh data", ob_orig->id.name + 2);
       return NULL;
@@ -521,16 +571,17 @@ static void rna_Object_ray_cast(Object *ob,
 
   /* TODO(sergey): This isn't very reliable check. It is possible to have non-NULL pointer
    * but which is out of date, and possibly dangling one. */
-  if (ob->runtime.mesh_eval == NULL &&
-      (ob = eval_object_ensure(ob, C, reports, rnaptr_depsgraph)) == NULL) {
+  if ((ob = eval_object_ensure(ob, C, reports, rnaptr_depsgraph)) == NULL) {
     return;
   }
 
   /* Test BoundBox first (efficiency) */
   BoundBox *bb = BKE_object_boundbox_get(ob);
   float distmin;
-  normalize_v3(
-      direction); /* Needed for valid distance check from isect_ray_aabb_v3_simple() call. */
+
+  /* Needed for valid distance check from #isect_ray_aabb_v3_simple() call. */
+  normalize_v3(direction);
+
   if (!bb ||
       (isect_ray_aabb_v3_simple(origin, direction, bb->vec[0], bb->vec[6], &distmin, NULL) &&
        distmin <= distance)) {
@@ -538,7 +589,8 @@ static void rna_Object_ray_cast(Object *ob,
 
     /* No need to managing allocation or freeing of the BVH data.
      * This is generated and freed as needed. */
-    BKE_bvhtree_from_mesh_get(&treeData, ob->runtime.mesh_eval, BVHTREE_FROM_LOOPTRI, 4);
+    Mesh *mesh_eval = BKE_object_get_evaluated_mesh(ob);
+    BKE_bvhtree_from_mesh_get(&treeData, mesh_eval, BVHTREE_FROM_LOOPTRI, 4);
 
     /* may fail if the mesh has no faces, in that case the ray-cast misses */
     if (treeData.tree != NULL) {
@@ -559,8 +611,7 @@ static void rna_Object_ray_cast(Object *ob,
 
           copy_v3_v3(r_location, hit.co);
           copy_v3_v3(r_normal, hit.no);
-          *r_index = mesh_looptri_to_poly_index(ob->runtime.mesh_eval,
-                                                &treeData.looptri[hit.index]);
+          *r_index = mesh_looptri_to_poly_index(mesh_eval, &treeData.looptri[hit.index]);
         }
       }
 
@@ -589,14 +640,14 @@ static void rna_Object_closest_point_on_mesh(Object *ob,
 {
   BVHTreeFromMesh treeData = {NULL};
 
-  if (ob->runtime.mesh_eval == NULL &&
-      (ob = eval_object_ensure(ob, C, reports, rnaptr_depsgraph)) == NULL) {
+  if ((ob = eval_object_ensure(ob, C, reports, rnaptr_depsgraph)) == NULL) {
     return;
   }
 
   /* No need to managing allocation or freeing of the BVH data.
    * this is generated and freed as needed. */
-  BKE_bvhtree_from_mesh_get(&treeData, ob->runtime.mesh_eval, BVHTREE_FROM_LOOPTRI, 4);
+  Mesh *mesh_eval = BKE_object_get_evaluated_mesh(ob);
+  BKE_bvhtree_from_mesh_get(&treeData, mesh_eval, BVHTREE_FROM_LOOPTRI, 4);
 
   if (treeData.tree == NULL) {
     BKE_reportf(reports,
@@ -617,8 +668,7 @@ static void rna_Object_closest_point_on_mesh(Object *ob,
 
       copy_v3_v3(r_location, nearest.co);
       copy_v3_v3(r_normal, nearest.no);
-      *r_index = mesh_looptri_to_poly_index(ob->runtime.mesh_eval,
-                                            &treeData.looptri[nearest.index]);
+      *r_index = mesh_looptri_to_poly_index(mesh_eval, &treeData.looptri[nearest.index]);
 
       goto finally;
     }
@@ -659,8 +709,7 @@ void rna_Object_me_eval_info(
   switch (type) {
     case 1:
     case 2:
-      if (ob->runtime.mesh_eval == NULL &&
-          (ob = eval_object_ensure(ob, C, NULL, rnaptr_depsgraph)) == NULL) {
+      if ((ob = eval_object_ensure(ob, C, NULL, rnaptr_depsgraph)) == NULL) {
         return;
       }
   }
@@ -675,7 +724,7 @@ void rna_Object_me_eval_info(
       me_eval = ob->runtime.mesh_deform_eval;
       break;
     case 2:
-      me_eval = ob->runtime.mesh_eval;
+      me_eval = BKE_object_get_evaluated_mesh(ob);
       break;
   }
 
@@ -686,6 +735,15 @@ void rna_Object_me_eval_info(
       MEM_freeN(ret);
     }
   }
+}
+#  else
+void rna_Object_me_eval_info(struct Object *UNUSED(ob),
+                             bContext *UNUSED(C),
+                             int UNUSED(type),
+                             PointerRNA *UNUSED(rnaptr_depsgraph),
+                             char *result)
+{
+  result[0] = '\0';
 }
 #  endif /* NDEBUG */
 
@@ -705,20 +763,22 @@ bool rna_Object_generate_gpencil_strokes(Object *ob,
                                          bContext *C,
                                          ReportList *reports,
                                          Object *ob_gpencil,
-                                         bool gpencil_lines,
-                                         bool use_collections)
+                                         bool use_collections,
+                                         float scale_thickness,
+                                         float sample)
 {
   if (ob->type != OB_CURVE) {
     BKE_reportf(reports,
                 RPT_ERROR,
-                "Object '%s' not valid for this operation! Only curves supported.",
+                "Object '%s' is not valid for this operation! Only curves are supported",
                 ob->id.name + 2);
     return false;
   }
   Main *bmain = CTX_data_main(C);
   Scene *scene = CTX_data_scene(C);
 
-  BKE_gpencil_convert_curve(bmain, scene, ob_gpencil, ob, gpencil_lines, use_collections, false);
+  BKE_gpencil_convert_curve(
+      bmain, scene, ob_gpencil, ob, use_collections, scale_thickness, sample);
 
   WM_main_add_notifier(NC_GPENCIL | ND_DATA, NULL);
 
@@ -945,8 +1005,31 @@ void RNA_api_object(StructRNA *srna)
   func = RNA_def_function(srna, "to_mesh_clear", "rna_Object_to_mesh_clear");
   RNA_def_function_ui_description(func, "Clears mesh data-block created by to_mesh()");
 
+  /* curve */
+  func = RNA_def_function(srna, "to_curve", "rna_Object_to_curve");
+  RNA_def_function_ui_description(
+      func,
+      "Create a Curve data-block from the current state of the object. This only works for curve "
+      "and text objects. The object owns the data-block. To force free it, use to_curve_clear(). "
+      "The result is temporary and can not be used by objects from the main database");
+  RNA_def_function_flag(func, FUNC_USE_REPORTS);
+  parm = RNA_def_pointer(
+      func, "depsgraph", "Depsgraph", "Dependency Graph", "Evaluated dependency graph");
+  RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
+  RNA_def_boolean(func,
+                  "apply_modifiers",
+                  false,
+                  "",
+                  "Apply the deform modifiers on the control points of the curve. This is only "
+                  "supported for curve objects");
+  parm = RNA_def_pointer(func, "curve", "Curve", "", "Curve created from object");
+  RNA_def_function_return(func, parm);
+
+  func = RNA_def_function(srna, "to_curve_clear", "rna_Object_to_curve_clear");
+  RNA_def_function_ui_description(func, "Clears curve data-block created by to_curve()");
+
   /* Armature */
-  func = RNA_def_function(srna, "find_armature", "modifiers_isDeformedByArmature");
+  func = RNA_def_function(srna, "find_armature", "BKE_modifiers_is_deformed_by_armature");
   RNA_def_function_ui_description(
       func, "Find armature influencing this object as a parent or via a modifier");
   parm = RNA_def_pointer(
@@ -1182,12 +1265,17 @@ void RNA_api_object(StructRNA *srna)
   RNA_def_function_ui_description(func, "Convert a curve object to grease pencil strokes.");
   RNA_def_function_flag(func, FUNC_USE_CONTEXT | FUNC_USE_REPORTS);
 
-  parm = RNA_def_pointer(
-      func, "ob_gpencil", "Object", "", "Grease Pencil object used to create new strokes");
+  parm = RNA_def_pointer(func,
+                         "grease_pencil_object",
+                         "Object",
+                         "",
+                         "Grease Pencil object used to create new strokes");
   RNA_def_parameter_flags(parm, PROP_NEVER_NULL, PARM_REQUIRED);
-  parm = RNA_def_boolean(func, "gpencil_lines", 0, "", "Create Lines");
-  parm = RNA_def_boolean(func, "use_collections", 1, "", "Use Collections");
-
+  parm = RNA_def_boolean(func, "use_collections", true, "", "Use Collections");
+  parm = RNA_def_float(
+      func, "scale_thickness", 1.0f, 0.0f, FLT_MAX, "", "Thickness scaling factor", 0.0f, 100.0f);
+  parm = RNA_def_float(
+      func, "sample", 0.0f, 0.0f, FLT_MAX, "", "Sample distance, zero to disable", 0.0f, 100.0f);
   parm = RNA_def_boolean(func, "result", 0, "", "Result");
   RNA_def_function_return(func, parm);
 }

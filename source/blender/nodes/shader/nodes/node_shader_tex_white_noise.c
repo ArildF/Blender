@@ -22,14 +22,14 @@
 /* **************** WHITE NOISE **************** */
 
 static bNodeSocketTemplate sh_node_tex_white_noise_in[] = {
-    {SOCK_VECTOR, 1, N_("Vector"), 0.0f, 0.0f, 0.0f, 0.0f, -10000.0f, 10000.0f, PROP_NONE},
-    {SOCK_FLOAT, 1, N_("W"), 0.0f, 0.0f, 0.0f, 0.0f, -10000.0f, 10000.0f, PROP_NONE},
-    {-1, 0, ""}};
+    {SOCK_VECTOR, N_("Vector"), 0.0f, 0.0f, 0.0f, 0.0f, -10000.0f, 10000.0f, PROP_NONE},
+    {SOCK_FLOAT, N_("W"), 0.0f, 0.0f, 0.0f, 0.0f, -10000.0f, 10000.0f, PROP_NONE},
+    {-1, ""}};
 
 static bNodeSocketTemplate sh_node_tex_white_noise_out[] = {
-    {SOCK_FLOAT, 0, N_("Value")},
-    {SOCK_RGBA, 0, N_("Color")},
-    {-1, 0, ""},
+    {SOCK_FLOAT, N_("Value")},
+    {SOCK_RGBA, N_("Color")},
+    {-1, ""},
 };
 
 static void node_shader_init_tex_white_noise(bNodeTree *UNUSED(ntree), bNode *node)
@@ -54,9 +54,8 @@ static int gpu_shader_tex_white_noise(GPUMaterial *mat,
   if (node->custom1 < ARRAY_SIZE(names) && names[node->custom1]) {
     return GPU_stack_link(mat, node, names[node->custom1], in, out);
   }
-  else {
-    return 0;
-  }
+
+  return 0;
 }
 
 static void node_shader_update_tex_white_noise(bNodeTree *UNUSED(ntree), bNode *node)

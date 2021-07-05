@@ -23,9 +23,12 @@
 
 #pragma once
 
+#include "BLI_listbase.h"
+
 struct Sequence;
 
-namespace DEG {
+namespace blender {
+namespace deg {
 
 struct Depsgraph;
 
@@ -42,6 +45,8 @@ class SequenceBackup {
   bool isEmpty() const;
 
   void *scene_sound;
+  ListBase anims;
 };
 
-}  // namespace DEG
+}  // namespace deg
+}  // namespace blender

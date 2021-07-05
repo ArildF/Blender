@@ -15,13 +15,18 @@
  * limitations under the License.
  */
 
+/* clang-format off */
+
+/* #define __forceinline triggers a bug in some clang-format versions, disable
+ * format for entire file to keep results consistent. */
+
 #ifndef __UTIL_DEFINES_H__
 #define __UTIL_DEFINES_H__
 
 /* Bitness */
 
 #if defined(__ppc64__) || defined(__PPC64__) || defined(__x86_64__) || defined(__ia64__) || \
-    defined(_M_X64)
+    defined(_M_X64) || defined(__aarch64__)
 #  define __KERNEL_64_BIT__
 #endif
 
@@ -40,6 +45,7 @@
 #  define ccl_restrict __restrict
 #  define ccl_ref &
 #  define ccl_optional_struct_init
+#  define ccl_loop_no_unroll
 #  define __KERNEL_WITH_SSE_ALIGN__
 
 #  if defined(_WIN32) && !defined(FREE_WINDOWS)

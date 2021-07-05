@@ -28,32 +28,26 @@ ccl_device float4 film_get_pass_result(KernelGlobals *kg,
   int display_pass_components = kernel_data.film.display_pass_components;
 
   if (display_pass_components == 4) {
-    ccl_global float4 *in = (ccl_global float4 *)(buffer + display_pass_stride +
-                                                  index * kernel_data.film.pass_stride);
+    float4 in = *(ccl_global float4 *)(buffer + display_pass_stride +
+                                       index * kernel_data.film.pass_stride);
     float alpha = use_display_sample_scale ?
-                      (kernel_data.film.use_display_pass_alpha ? in->w : 1.0f / sample_scale) :
+                      (kernel_data.film.use_display_pass_alpha ? in.w : 1.0f / sample_scale) :
                       1.0f;
 
-    pass_result = make_float4(in->x, in->y, in->z, alpha);
+    pass_result = make_float4(in.x, in.y, in.z, alpha);
 
     int display_divide_pass_stride = kernel_data.film.display_divide_pass_stride;
     if (display_divide_pass_stride != -1) {
       ccl_global float4 *divide_in = (ccl_global float4 *)(buffer + display_divide_pass_stride +
                                                            index * kernel_data.film.pass_stride);
-      if (divide_in->x != 0.0f) {
-        pass_result.x /= divide_in->x;
-      }
-      if (divide_in->y != 0.0f) {
-        pass_result.y /= divide_in->y;
-      }
-      if (divide_in->z != 0.0f) {
-        pass_result.z /= divide_in->z;
-      }
+      float3 divided = safe_divide_even_color(float4_to_float3(pass_result),
+                                              float4_to_float3(*divide_in));
+      pass_result = make_float4(divided.x, divided.y, divided.z, pass_result.w);
     }
 
     if (kernel_data.film.use_display_exposure) {
       float exposure = kernel_data.film.exposure;
-      pass_result *= make_float4(exposure, exposure, exposure, alpha);
+      pass_result *= make_float4(exposure, exposure, exposure, 1.0f);
     }
   }
   else if (display_pass_components == 1) {
@@ -69,12 +63,12 @@ ccl_device float4 film_map(KernelGlobals *kg, float4 rgba_in, float scale)
 {
   float4 result;
 
-  /* conversion to srgb */
+  /* Conversion to SRGB. */
   result.x = color_linear_to_srgb(rgba_in.x * scale);
   result.y = color_linear_to_srgb(rgba_in.y * scale);
   result.z = color_linear_to_srgb(rgba_in.z * scale);
 
-  /* clamp since alpha might be > 1.0 due to russian roulette */
+  /* Clamp since alpha might be > 1.0 due to Russian roulette. */
   result.w = saturate(rgba_in.w * scale);
 
   return result;

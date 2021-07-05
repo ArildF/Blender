@@ -51,6 +51,10 @@
 #  include "BLI_math_base.h" /* isfinite() */
 #endif
 
+/* -------------------------------------------------------------------- */
+/** \name Fast Python to C Array Conversion for Primitive Types
+ * \{ */
+
 /* array utility function */
 int PyC_AsArray_FAST(void *array,
                      PyObject *value_fast,
@@ -137,11 +141,12 @@ int PyC_AsArray(void *array,
   return ret;
 }
 
+/** \} */
+
 /* -------------------------------------------------------------------- */
 /** \name Typed Tuple Packing
  *
  * \note See #PyC_Tuple_Pack_* macros that take multiple arguments.
- *
  * \{ */
 
 /* array utility function */
@@ -192,14 +197,18 @@ PyObject *PyC_Tuple_PackArray_Bool(const bool *array, uint len)
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
+/** \name Tuple/List Filling
+ * \{ */
+
 /**
  * Caller needs to ensure tuple is uninitialized.
  * Handy for filling a tuple with None for eg.
  */
 void PyC_Tuple_Fill(PyObject *tuple, PyObject *value)
 {
-  unsigned int tot = PyTuple_GET_SIZE(tuple);
-  unsigned int i;
+  const uint tot = PyTuple_GET_SIZE(tuple);
+  uint i;
 
   for (i = 0; i < tot; i++) {
     PyTuple_SET_ITEM(tuple, i, value);
@@ -209,14 +218,20 @@ void PyC_Tuple_Fill(PyObject *tuple, PyObject *value)
 
 void PyC_List_Fill(PyObject *list, PyObject *value)
 {
-  unsigned int tot = PyList_GET_SIZE(list);
-  unsigned int i;
+  const uint tot = PyList_GET_SIZE(list);
+  uint i;
 
   for (i = 0; i < tot; i++) {
     PyList_SET_ITEM(list, i, value);
     Py_INCREF(value);
   }
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Bool/Enum Argument Parsing
+ * \{ */
 
 /**
  * Use with PyArg_ParseTuple's "O&" formatting.
@@ -242,7 +257,7 @@ int PyC_ParseBool(PyObject *o, void *p)
 int PyC_ParseStringEnum(PyObject *o, void *p)
 {
   struct PyC_StringEnum *e = p;
-  const char *value = _PyUnicode_AsString(o);
+  const char *value = PyUnicode_AsUTF8(o);
   if (value == NULL) {
     PyErr_Format(PyExc_ValueError, "expected a string, got %s", Py_TYPE(o)->tp_name);
     return 0;
@@ -267,14 +282,33 @@ int PyC_ParseStringEnum(PyObject *o, void *p)
   return 0;
 }
 
-/* silly function, we dont use arg. just check its compatible with __deepcopy__ */
+const char *PyC_StringEnum_FindIDFromValue(const struct PyC_StringEnumItems *items,
+                                           const int value)
+{
+  for (int i = 0; items[i].id; i++) {
+    if (items[i].value == value) {
+      return items[i].id;
+    }
+  }
+  return NULL;
+}
+
+/* Silly function, we don't use arg. just check its compatible with `__deepcopy__`. */
 int PyC_CheckArgs_DeepCopy(PyObject *args)
 {
   PyObject *dummy_pydict;
   return PyArg_ParseTuple(args, "|O!:__deepcopy__", &PyDict_Type, &dummy_pydict) != 0;
 }
 
+/** \} */
+
 #ifndef MATH_STANDALONE
+
+/* -------------------------------------------------------------------- */
+/** \name Simple Printing (for debugging)
+ *
+ * These are useful to run directly from a debugger to be able to inspect the state.
+ * \{ */
 
 /* for debugging */
 void PyC_ObSpit(const char *name, PyObject *var)
@@ -320,7 +354,7 @@ void PyC_ObSpitStr(char *result, size_t result_len, PyObject *var)
                  (int)var->ob_refcnt,
                  (void *)var,
                  type ? type->tp_name : null_str,
-                 var_str ? _PyUnicode_AsString(var_str) : "<error>");
+                 var_str ? PyUnicode_AsUTF8(var_str) : "<error>");
     if (var_str != NULL) {
       Py_DECREF(var_str);
     }
@@ -333,7 +367,7 @@ void PyC_LineSpit(void)
   const char *filename;
   int lineno;
 
-  /* Note, allow calling from outside python (RNA) */
+  /* NOTE: allow calling from outside python (RNA). */
   if (!PyC_IsInterpreterActive()) {
     fprintf(stderr, "python line lookup failed, interpreter inactive\n");
     return;
@@ -347,28 +381,33 @@ void PyC_LineSpit(void)
 
 void PyC_StackSpit(void)
 {
-  /* Note, allow calling from outside python (RNA) */
+  /* NOTE: allow calling from outside python (RNA). */
   if (!PyC_IsInterpreterActive()) {
     fprintf(stderr, "python line lookup failed, interpreter inactive\n");
     return;
   }
-  else {
-    /* lame but handy */
-    PyGILState_STATE gilstate = PyGILState_Ensure();
-    PyRun_SimpleString("__import__('traceback').print_stack()");
-    PyGILState_Release(gilstate);
-  }
+
+  /* lame but handy */
+  const PyGILState_STATE gilstate = PyGILState_Ensure();
+  PyRun_SimpleString("__import__('traceback').print_stack()");
+  PyGILState_Release(gilstate);
 }
 
-void PyC_FileAndNum(const char **filename, int *lineno)
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Access Current Frame File Name & Line Number
+ * \{ */
+
+void PyC_FileAndNum(const char **r_filename, int *r_lineno)
 {
   PyFrameObject *frame;
 
-  if (filename) {
-    *filename = NULL;
+  if (r_filename) {
+    *r_filename = NULL;
   }
-  if (lineno) {
-    *lineno = -1;
+  if (r_lineno) {
+    *r_lineno = -1;
   }
 
   if (!(frame = PyThreadState_GET()->frame)) {
@@ -376,13 +415,13 @@ void PyC_FileAndNum(const char **filename, int *lineno)
   }
 
   /* when executing a script */
-  if (filename) {
-    *filename = _PyUnicode_AsString(frame->f_code->co_filename);
+  if (r_filename) {
+    *r_filename = PyUnicode_AsUTF8(frame->f_code->co_filename);
   }
 
   /* when executing a module */
-  if (filename && *filename == NULL) {
-    /* try an alternative method to get the filename - module based
+  if (r_filename && *r_filename == NULL) {
+    /* try an alternative method to get the r_filename - module based
      * references below are all borrowed (double checked) */
     PyObject *mod_name = PyDict_GetItemString(PyEval_GetGlobals(), "__name__");
     if (mod_name) {
@@ -390,7 +429,7 @@ void PyC_FileAndNum(const char **filename, int *lineno)
       if (mod) {
         PyObject *mod_file = PyModule_GetFilenameObject(mod);
         if (mod_file) {
-          *filename = _PyUnicode_AsString(mod_name);
+          *r_filename = PyUnicode_AsUTF8(mod_name);
           Py_DECREF(mod_file);
         }
         else {
@@ -399,25 +438,31 @@ void PyC_FileAndNum(const char **filename, int *lineno)
       }
 
       /* unlikely, fallback */
-      if (*filename == NULL) {
-        *filename = _PyUnicode_AsString(mod_name);
+      if (*r_filename == NULL) {
+        *r_filename = PyUnicode_AsUTF8(mod_name);
       }
     }
   }
 
-  if (lineno) {
-    *lineno = PyFrame_GetLineNumber(frame);
+  if (r_lineno) {
+    *r_lineno = PyFrame_GetLineNumber(frame);
   }
 }
 
-void PyC_FileAndNum_Safe(const char **filename, int *lineno)
+void PyC_FileAndNum_Safe(const char **r_filename, int *r_lineno)
 {
   if (!PyC_IsInterpreterActive()) {
     return;
   }
 
-  PyC_FileAndNum(filename, lineno);
+  PyC_FileAndNum(r_filename, r_lineno);
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Object Access Utilities
+ * \{ */
 
 /* Would be nice if python had this built in */
 PyObject *PyC_Object_GetAttrStringArgs(PyObject *o, Py_ssize_t n, ...)
@@ -447,6 +492,12 @@ PyObject *PyC_Object_GetAttrStringArgs(PyObject *o, Py_ssize_t n, ...)
   return item;
 }
 
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Frozen Set Creation
+ * \{ */
+
 PyObject *PyC_FrozenSetFromStrings(const char **strings)
 {
   const char **str;
@@ -463,10 +514,16 @@ PyObject *PyC_FrozenSetFromStrings(const char **strings)
   return ret;
 }
 
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Exception Utilities
+ * \{ */
+
 /**
  * Similar to #PyErr_Format(),
  *
- * Implementation - we cant actually prepend the existing exception,
+ * Implementation - we can't actually prepend the existing exception,
  * because it could have _any_ arguments given to it, so instead we get its
  * ``__str__`` output and raise our own exception including it.
  */
@@ -523,10 +580,16 @@ void PyC_Err_PrintWithFunc(PyObject *py_func)
   /* use py style error */
   fprintf(stderr,
           "File \"%s\", line %d, in %s\n",
-          _PyUnicode_AsString(f_code->co_filename),
+          PyUnicode_AsUTF8(f_code->co_filename),
           f_code->co_firstlineno,
-          _PyUnicode_AsString(((PyFunctionObject *)py_func)->func_name));
+          PyUnicode_AsUTF8(((PyFunctionObject *)py_func)->func_name));
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Exception Buffer Access
+ * \{ */
 
 /* returns the exception string as a new PyUnicode object, depends on external traceback module */
 #  if 0
@@ -594,10 +657,12 @@ PyObject *PyC_ExceptionBuffer(void)
     goto error_cleanup;
   }
 
-  Py_INCREF(stdout_backup);  // since these were borrowed we don't want them freed when replaced.
+  /* Since these were borrowed we don't want them freed when replaced. */
+  Py_INCREF(stdout_backup);
   Py_INCREF(stderr_backup);
 
-  PySys_SetObject("stdout", string_io);  // both of these are freed when restoring
+  /* Both of these are freed when restoring. */
+  PySys_SetObject("stdout", string_io);
   PySys_SetObject("stderr", string_io);
 
   PyErr_Restore(error_type, error_value, error_traceback);
@@ -634,7 +699,7 @@ error_cleanup:
 
 PyObject *PyC_ExceptionBuffer_Simple(void)
 {
-  PyObject *string_io_buf;
+  PyObject *string_io_buf = NULL;
 
   PyObject *error_type, *error_value, *error_traceback;
 
@@ -648,7 +713,19 @@ PyObject *PyC_ExceptionBuffer_Simple(void)
     return NULL;
   }
 
-  string_io_buf = PyObject_Str(error_value);
+  if (PyErr_GivenExceptionMatches(error_type, PyExc_SyntaxError)) {
+    /* Special exception for syntax errors,
+     * in these cases the full error is verbose and not very useful,
+     * just use the initial text so we know what the error is. */
+    if (PyTuple_CheckExact(error_value) && PyTuple_GET_SIZE(error_value) >= 1) {
+      string_io_buf = PyObject_Str(PyTuple_GET_ITEM(error_value, 0));
+    }
+  }
+
+  if (string_io_buf == NULL) {
+    string_io_buf = PyObject_Str(error_value);
+  }
+
   /* Python does this too */
   if (UNLIKELY(string_io_buf == NULL)) {
     string_io_buf = PyUnicode_FromFormat("<unprintable %s object>", Py_TYPE(error_value)->tp_name);
@@ -656,66 +733,69 @@ PyObject *PyC_ExceptionBuffer_Simple(void)
 
   PyErr_Restore(error_type, error_value, error_traceback);
 
-  PyErr_Print();
   PyErr_Clear();
   return string_io_buf;
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Unicode Conversion
+ *
+ * In some cases we need to coerce strings, avoid doing this inline.
+ * \{ */
 
 /* string conversion, escape non-unicode chars, coerce must be set to NULL */
 const char *PyC_UnicodeAsByteAndSize(PyObject *py_str, Py_ssize_t *size, PyObject **coerce)
 {
   const char *result;
 
-  result = _PyUnicode_AsStringAndSize(py_str, size);
+  result = PyUnicode_AsUTF8AndSize(py_str, size);
 
   if (result) {
     /* 99% of the time this is enough but we better support non unicode
      * chars since blender doesn't limit this */
     return result;
   }
-  else {
-    PyErr_Clear();
 
-    if (PyBytes_Check(py_str)) {
-      *size = PyBytes_GET_SIZE(py_str);
-      return PyBytes_AS_STRING(py_str);
-    }
-    else if ((*coerce = PyUnicode_EncodeFSDefault(py_str))) {
-      *size = PyBytes_GET_SIZE(*coerce);
-      return PyBytes_AS_STRING(*coerce);
-    }
-    else {
-      /* leave error raised from EncodeFS */
-      return NULL;
-    }
+  PyErr_Clear();
+
+  if (PyBytes_Check(py_str)) {
+    *size = PyBytes_GET_SIZE(py_str);
+    return PyBytes_AS_STRING(py_str);
   }
+  if ((*coerce = PyUnicode_EncodeFSDefault(py_str))) {
+    *size = PyBytes_GET_SIZE(*coerce);
+    return PyBytes_AS_STRING(*coerce);
+  }
+
+  /* leave error raised from EncodeFS */
+  return NULL;
 }
 
 const char *PyC_UnicodeAsByte(PyObject *py_str, PyObject **coerce)
 {
   const char *result;
 
-  result = _PyUnicode_AsString(py_str);
+  result = PyUnicode_AsUTF8(py_str);
 
   if (result) {
     /* 99% of the time this is enough but we better support non unicode
      * chars since blender doesn't limit this. */
     return result;
   }
-  else {
-    PyErr_Clear();
 
-    if (PyBytes_Check(py_str)) {
-      return PyBytes_AS_STRING(py_str);
-    }
-    else if ((*coerce = PyUnicode_EncodeFSDefault(py_str))) {
-      return PyBytes_AS_STRING(*coerce);
-    }
-    else {
-      /* leave error raised from EncodeFS */
-      return NULL;
-    }
+  PyErr_Clear();
+
+  if (PyBytes_Check(py_str)) {
+    return PyBytes_AS_STRING(py_str);
   }
+  if ((*coerce = PyUnicode_EncodeFSDefault(py_str))) {
+    return PyBytes_AS_STRING(*coerce);
+  }
+
+  /* leave error raised from EncodeFS */
+  return NULL;
 }
 
 PyObject *PyC_UnicodeFromByteAndSize(const char *str, Py_ssize_t size)
@@ -726,12 +806,11 @@ PyObject *PyC_UnicodeFromByteAndSize(const char *str, Py_ssize_t size)
      * chars since blender doesn't limit this */
     return result;
   }
-  else {
-    PyErr_Clear();
-    /* this means paths will always be accessible once converted, on all OS's */
-    result = PyUnicode_DecodeFSDefaultAndSize(str, size);
-    return result;
-  }
+
+  PyErr_Clear();
+  /* this means paths will always be accessible once converted, on all OS's */
+  result = PyUnicode_DecodeFSDefaultAndSize(str, size);
+  return result;
 }
 
 PyObject *PyC_UnicodeFromByte(const char *str)
@@ -739,15 +818,21 @@ PyObject *PyC_UnicodeFromByte(const char *str)
   return PyC_UnicodeFromByteAndSize(str, strlen(str));
 }
 
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Name Space Creation/Manipulation
+ * \{ */
+
 /*****************************************************************************
  * Description: This function creates a new Python dictionary object.
- * note: dict is owned by sys.modules["__main__"] module, reference is borrowed
- * note: important we use the dict from __main__, this is what python expects
+ * NOTE: dict is owned by sys.modules["__main__"] module, reference is borrowed
+ * NOTE: important we use the dict from __main__, this is what python expects
  * for 'pickle' to work as well as strings like this...
  * >> foo = 10
  * >> print(__import__("__main__").foo)
  *
- * note: this overwrites __main__ which gives problems with nested calls.
+ * NOTE: this overwrites __main__ which gives problems with nested calls.
  * be sure to run PyC_MainModule_Backup & PyC_MainModule_Restore if there is
  * any chance that python is in the call stack.
  ****************************************************************************/
@@ -761,7 +846,7 @@ PyObject *PyC_DefaultNameSpace(const char *filename)
   PyModule_AddStringConstant(mod_main, "__name__", "__main__");
   if (filename) {
     /* __file__ mainly for nice UI'ness
-     * note: this wont map to a real file when executing text-blocks and buttons. */
+     * NOTE: this won't map to a real file when executing text-blocks and buttons. */
     PyModule_AddObject(mod_main, "__file__", PyC_UnicodeFromByte(filename));
   }
   PyModule_AddObject(mod_main, "__builtins__", builtins);
@@ -790,11 +875,11 @@ bool PyC_NameSpace_ImportArray(PyObject *py_dict, const char *imports[])
 }
 
 /* restore MUST be called after this */
-void PyC_MainModule_Backup(PyObject **main_mod)
+void PyC_MainModule_Backup(PyObject **r_main_mod)
 {
   PyObject *modules = PyImport_GetModuleDict();
-  *main_mod = PyDict_GetItemString(modules, "__main__");
-  Py_XINCREF(*main_mod); /* don't free */
+  *r_main_mod = PyDict_GetItemString(modules, "__main__");
+  Py_XINCREF(*r_main_mod); /* don't free */
 }
 
 void PyC_MainModule_Restore(PyObject *main_mod)
@@ -804,62 +889,17 @@ void PyC_MainModule_Restore(PyObject *main_mod)
   Py_XDECREF(main_mod);
 }
 
-/* Must be called before Py_Initialize,
- * expects output of BKE_appdir_folder_id(BLENDER_PYTHON, NULL). */
-void PyC_SetHomePath(const char *py_path_bundle)
-{
-  if (py_path_bundle == NULL) {
-    /* Common enough to have bundled *nix python but complain on OSX/Win */
-#  if defined(__APPLE__) || defined(_WIN32)
-    fprintf(stderr,
-            "Warning! bundled python not found and is expected on this platform. "
-            "(if you built with CMake: 'install' target may have not been built)\n");
-#  endif
-    return;
-  }
-  /* set the environment path */
-  printf("found bundled python: %s\n", py_path_bundle);
-
-#  ifdef __APPLE__
-  /* OSX allow file/directory names to contain : character (represented as / in the Finder)
-   * but current Python lib (release 3.1.1) doesn't handle these correctly */
-  if (strchr(py_path_bundle, ':')) {
-    printf(
-        "Warning : Blender application is located in a path containing : or / chars\
-           \nThis may make python import function fail\n");
-  }
-#  endif
-
-#  if 0 /* disable for now [#31506] - campbell */
-#    ifdef _WIN32
-  /* cmake/MSVC debug build crashes without this, why only
-   * in this case is unknown.. */
-  {
-    /*BLI_setenv("PYTHONPATH", py_path_bundle)*/;
-  }
-#    endif
-#  endif
-
-  {
-    static wchar_t py_path_bundle_wchar[1024];
-
-    /* Can't use this, on linux gives bug: #23018,
-     * TODO: try LANG="en_US.UTF-8" /usr/bin/blender, suggested 2008 */
-    /* mbstowcs(py_path_bundle_wchar, py_path_bundle, FILE_MAXDIR); */
-
-    BLI_strncpy_wchar_from_utf8(
-        py_path_bundle_wchar, py_path_bundle, ARRAY_SIZE(py_path_bundle_wchar));
-
-    Py_SetPythonHome(py_path_bundle_wchar);
-    // printf("found python (wchar_t) '%ls'\n", py_path_bundle_wchar);
-  }
-}
-
 bool PyC_IsInterpreterActive(void)
 {
   /* instead of PyThreadState_Get, which calls Py_FatalError */
   return (PyThreadState_GetDict() != NULL);
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name #Py_SetPythonHome Wrapper
+ * \{ */
 
 /* Would be nice if python had this built in
  * See: https://wiki.blender.org/wiki/Tools/Debugging/PyFromC
@@ -869,7 +909,7 @@ void PyC_RunQuicky(const char *filepath, int n, ...)
   FILE *fp = fopen(filepath, "r");
 
   if (fp) {
-    PyGILState_STATE gilstate = PyGILState_Ensure();
+    const PyGILState_STATE gilstate = PyGILState_Ensure();
 
     va_list vargs;
 
@@ -1037,14 +1077,21 @@ void *PyC_RNA_AsPointer(PyObject *value, const char *type_name)
 
     return result;
   }
-  else {
-    PyErr_Format(PyExc_TypeError,
-                 "expected '%.200s' type found '%.200s' instead",
-                 type_name,
-                 Py_TYPE(value)->tp_name);
-    return NULL;
-  }
+
+  PyErr_Format(PyExc_TypeError,
+               "expected '%.200s' type found '%.200s' instead",
+               type_name,
+               Py_TYPE(value)->tp_name);
+  return NULL;
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Flag Set Utilities (#PyC_FlagSet)
+ *
+ * Convert to/from Python set of strings to an int flag.
+ * \{ */
 
 PyObject *PyC_FlagSet_AsString(PyC_FlagSet *item)
 {
@@ -1109,7 +1156,7 @@ int PyC_FlagSet_ToBitfield(PyC_FlagSet *items,
   *r_value = 0;
 
   while (_PySet_NextEntry(value, &pos, &key, &hash)) {
-    const char *param = _PyUnicode_AsString(key);
+    const char *param = PyUnicode_AsUTF8(key);
 
     if (param == NULL) {
       PyErr_Format(PyExc_TypeError,
@@ -1145,6 +1192,12 @@ PyObject *PyC_FlagSet_FromBitfield(PyC_FlagSet *items, int flag)
 
   return ret;
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Run String (Evaluate to Primitive Types)
+ * \{ */
 
 /**
  * \return success
@@ -1281,7 +1334,7 @@ bool PyC_RunString_AsStringAndSize(const char *imports[],
     const char *val;
     Py_ssize_t val_len;
 
-    val = _PyUnicode_AsStringAndSize(retval, &val_len);
+    val = PyUnicode_AsUTF8AndSize(retval, &val_len);
     if (val == NULL && PyErr_Occurred()) {
       ok = false;
     }
@@ -1309,6 +1362,8 @@ bool PyC_RunString_AsString(const char *imports[],
   return PyC_RunString_AsStringAndSize(imports, expr, filename, r_value, &value_size);
 }
 
+/** \} */
+
 #endif /* #ifndef MATH_STANDALONE */
 
 /* -------------------------------------------------------------------- */
@@ -1329,7 +1384,7 @@ bool PyC_RunString_AsString(const char *imports[],
  */
 int PyC_Long_AsBool(PyObject *value)
 {
-  int test = _PyLong_AsInt(value);
+  const int test = _PyLong_AsInt(value);
   if (UNLIKELY((uint)test > 1)) {
     PyErr_SetString(PyExc_TypeError, "Python number not a bool (0/1)");
     return -1;
@@ -1339,7 +1394,7 @@ int PyC_Long_AsBool(PyObject *value)
 
 int8_t PyC_Long_AsI8(PyObject *value)
 {
-  int test = _PyLong_AsInt(value);
+  const int test = _PyLong_AsInt(value);
   if (UNLIKELY(test < INT8_MIN || test > INT8_MAX)) {
     PyErr_SetString(PyExc_OverflowError, "Python int too large to convert to C int8");
     return -1;
@@ -1349,7 +1404,7 @@ int8_t PyC_Long_AsI8(PyObject *value)
 
 int16_t PyC_Long_AsI16(PyObject *value)
 {
-  int test = _PyLong_AsInt(value);
+  const int test = _PyLong_AsInt(value);
   if (UNLIKELY(test < INT16_MIN || test > INT16_MAX)) {
     PyErr_SetString(PyExc_OverflowError, "Python int too large to convert to C int16");
     return -1;
@@ -1364,7 +1419,7 @@ int16_t PyC_Long_AsI16(PyObject *value)
 
 uint8_t PyC_Long_AsU8(PyObject *value)
 {
-  ulong test = PyLong_AsUnsignedLong(value);
+  const ulong test = PyLong_AsUnsignedLong(value);
   if (UNLIKELY(test > UINT8_MAX)) {
     PyErr_SetString(PyExc_OverflowError, "Python int too large to convert to C uint8");
     return (uint8_t)-1;
@@ -1374,7 +1429,7 @@ uint8_t PyC_Long_AsU8(PyObject *value)
 
 uint16_t PyC_Long_AsU16(PyObject *value)
 {
-  ulong test = PyLong_AsUnsignedLong(value);
+  const ulong test = PyLong_AsUnsignedLong(value);
   if (UNLIKELY(test > UINT16_MAX)) {
     PyErr_SetString(PyExc_OverflowError, "Python int too large to convert to C uint16");
     return (uint16_t)-1;
@@ -1384,7 +1439,7 @@ uint16_t PyC_Long_AsU16(PyObject *value)
 
 uint32_t PyC_Long_AsU32(PyObject *value)
 {
-  ulong test = PyLong_AsUnsignedLong(value);
+  const ulong test = PyLong_AsUnsignedLong(value);
   if (UNLIKELY(test > UINT32_MAX)) {
     PyErr_SetString(PyExc_OverflowError, "Python int too large to convert to C uint32");
     return (uint32_t)-1;
@@ -1396,9 +1451,14 @@ uint32_t PyC_Long_AsU32(PyObject *value)
  * PyC_Long_AsU64
  */
 
+#ifdef __GNUC__
+#  pragma warning(pop)
+#endif
+
+/** \} */
+
 /* -------------------------------------------------------------------- */
 /** \name Py_buffer Utils
- *
  * \{ */
 
 char PyC_StructFmt_type_from_str(const char *typestr)
@@ -1470,11 +1530,5 @@ bool PyC_StructFmt_type_is_bool(char format)
       return false;
   }
 }
-
-/** \} */
-
-#ifdef __GNUC__
-#  pragma warning(pop)
-#endif
 
 /** \} */

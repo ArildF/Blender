@@ -22,12 +22,15 @@
  * \brief blenloader genfile private function prototypes
  */
 
-#ifndef __DNA_GENFILE_H__
-#define __DNA_GENFILE_H__
+#pragma once
 
 #include "intern/dna_utils.h"
 
 struct SDNA;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * DNAstr contains the prebuilt SDNA structure defining the layouts of the types
@@ -41,7 +44,7 @@ extern const int DNAlen;
 /**
  * Primitive (non-struct, non-pointer/function/array) types,
  * \warning Don't change these values!
- * Currently changes here here will work on native endianness,
+ * Currently changes here will work on native endianness,
  * however #DNA_struct_switch_endian currently checks these
  * hard-coded values against those from old files.
  */
@@ -60,6 +63,7 @@ typedef enum eSDNA_Type {
 #define SDNA_TYPE_VOID 9
   SDNA_TYPE_INT64 = 10,
   SDNA_TYPE_UINT64 = 11,
+  SDNA_TYPE_INT8 = 12,
 } eSDNA_Type;
 
 /**
@@ -75,6 +79,8 @@ enum eSDNA_StructCompare {
   /* Struct is different in some way
    * (needs to be copied/converted field by field) */
   SDNA_CMP_NOT_EQUAL = 2,
+  /* This is only used temporarily by #DNA_struct_get_compareflags. */
+  SDNA_CMP_UNKNOWN = 3,
 };
 
 struct SDNA *DNA_sdna_from_data(const void *data,
@@ -84,22 +90,26 @@ struct SDNA *DNA_sdna_from_data(const void *data,
                                 const char **r_error_message);
 void DNA_sdna_free(struct SDNA *sdna);
 
-/* Access for current Blender versions SDNA*/
+/* Access for current Blender versions SDNA. */
 void DNA_sdna_current_init(void);
 /* borrowed reference */
 const struct SDNA *DNA_sdna_current_get(void);
 void DNA_sdna_current_free(void);
 
+struct DNA_ReconstructInfo;
+struct DNA_ReconstructInfo *DNA_reconstruct_info_create(const struct SDNA *oldsdna,
+                                                        const struct SDNA *newsdna,
+                                                        const char *compare_flags);
+void DNA_reconstruct_info_free(struct DNA_ReconstructInfo *reconstruct_info);
+
 int DNA_struct_find_nr_ex(const struct SDNA *sdna, const char *str, unsigned int *index_last);
 int DNA_struct_find_nr(const struct SDNA *sdna, const char *str);
-void DNA_struct_switch_endian(const struct SDNA *oldsdna, int oldSDNAnr, char *data);
+void DNA_struct_switch_endian(const struct SDNA *sdna, int struct_nr, char *data);
 const char *DNA_struct_get_compareflags(const struct SDNA *sdna, const struct SDNA *newsdna);
-void *DNA_struct_reconstruct(const struct SDNA *newsdna,
-                             const struct SDNA *oldsdna,
-                             const char *compflags,
-                             int oldSDNAnr,
+void *DNA_struct_reconstruct(const struct DNA_ReconstructInfo *reconstruct_info,
+                             int old_struct_nr,
                              int blocks,
-                             const void *data);
+                             const void *old_blocks);
 
 int DNA_elem_offset(struct SDNA *sdna, const char *stype, const char *vartype, const char *name);
 
@@ -134,4 +144,6 @@ bool DNA_struct_alias_elem_find(const struct SDNA *sdna,
                                 const char *name);
 void DNA_sdna_alias_data_ensure_structs_map(struct SDNA *sdna);
 
-#endif /* __DNA_GENFILE_H__ */
+#ifdef __cplusplus
+}
+#endif

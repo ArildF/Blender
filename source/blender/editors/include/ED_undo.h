@@ -18,10 +18,13 @@
  * \ingroup editors
  */
 
-#ifndef __ED_UNDO_H__
-#define __ED_UNDO_H__
+#pragma once
 
 #include "BLI_compiler_attrs.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct Base;
 struct CLG_LogRef;
@@ -33,6 +36,9 @@ struct wmOperator;
 struct wmOperatorType;
 
 /* undo.c */
+bool ED_undo_is_state_valid(struct bContext *C);
+void ED_undo_group_begin(struct bContext *C);
+void ED_undo_group_end(struct bContext *C);
 void ED_undo_push(struct bContext *C, const char *str);
 void ED_undo_push_op(struct bContext *C, struct wmOperator *op);
 void ED_undo_grouped_push(struct bContext *C, const char *str);
@@ -47,7 +53,7 @@ void ED_OT_undo_redo(struct wmOperatorType *ot);
 void ED_OT_undo_history(struct wmOperatorType *ot);
 
 int ED_undo_operator_repeat(struct bContext *C, struct wmOperator *op);
-/* convenience since UI callbacks use this mostly*/
+/* Convenience since UI callbacks use this mostly. */
 void ED_undo_operator_repeat_cb(struct bContext *C, void *arg_op, void *arg_unused);
 void ED_undo_operator_repeat_cb_evt(struct bContext *C, void *arg_op, int arg_unused);
 
@@ -70,7 +76,8 @@ struct Base **ED_undo_editmode_bases_from_view_layer(struct ViewLayer *view_laye
 struct UndoStack *ED_undo_stack_get(void);
 
 /* helpers */
-void ED_undo_object_set_active_or_warn(struct ViewLayer *view_layer,
+void ED_undo_object_set_active_or_warn(struct Scene *scene,
+                                       struct ViewLayer *view_layer,
                                        struct Object *ob,
                                        const char *info,
                                        struct CLG_LogRef *log);
@@ -81,5 +88,8 @@ void ED_undosys_type_free(void);
 
 /* memfile_undo.c */
 struct MemFile *ED_undosys_stack_memfile_get_active(struct UndoStack *ustack);
+void ED_undosys_stack_memfile_id_changed_tag(struct UndoStack *ustack, struct ID *id);
 
-#endif /* __ED_UNDO_H__ */
+#ifdef __cplusplus
+}
+#endif

@@ -24,14 +24,14 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "BLI_alloca.h"
+#include "BLI_array.h"
+#include "BLI_kdopbvh.h"
+#include "BLI_linklist_stack.h"
 #include "BLI_math.h"
 #include "BLI_memarena.h"
-#include "BLI_array.h"
-#include "BLI_alloca.h"
-#include "BLI_utildefines_stack.h"
-#include "BLI_linklist_stack.h"
 #include "BLI_sort_utils.h"
-#include "BLI_kdopbvh.h"
+#include "BLI_utildefines_stack.h"
 
 #include "BKE_customdata.h"
 
@@ -39,9 +39,9 @@
 #include "intern/bmesh_private.h"
 
 /* -------------------------------------------------------------------- */
-/* Face Split Edge-Net */
-
-/** \name BM_face_split_edgenet and helper functions.
+/** \name Face Split Edge-Net
+ *
+ * #BM_face_split_edgenet and helper functions.
  *
  * \note Don't use #BM_edge_is_wire or #BM_edge_is_boundary
  * since we need to take flagged faces into account.
@@ -49,11 +49,11 @@
  *
  * \{ */
 
-/* Note: All these flags _must_ be cleared on exit */
+/* NOTE: All these flags _must_ be cleared on exit. */
 
-/* face is apart of the edge-net (including the original face we're splitting) */
+/* face is a part of the edge-net (including the original face we're splitting) */
 #define FACE_NET _FLAG_WALK
-/* edge is apart of the edge-net we're filling */
+/* edge is a part of the edge-net we're filling */
 #define EDGE_NET _FLAG_WALK
 /* tag verts we've visit */
 #define VERT_VISIT _FLAG_WALK
@@ -106,7 +106,7 @@ static void normalize_v2_m3_v3v3(float out[2],
 
 /**
  * \note Be sure to update #bm_face_split_edgenet_find_loop_pair_exists
- * when making changed to edge picking logic.
+ * when making changes to edge picking logic.
  */
 static bool bm_face_split_edgenet_find_loop_pair(BMVert *v_init,
                                                  const float face_normal[3],
@@ -449,17 +449,15 @@ static bool bm_face_split_edgenet_find_loop(BMVert *v_init,
     *r_face_verts_len = i;
     return (i > 2) ? true : false;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 /**
  * Splits a face into many smaller faces defined by an edge-net.
  * handle customdata and degenerate cases.
  *
- * - isolated holes or unsupported face configurations, will be ignored.
- * - customdata calculations aren't efficient
+ * - Isolated holes or unsupported face configurations, will be ignored.
+ * - Customdata calculations aren't efficient
  *   (need to calculate weights for each vert).
  */
 bool BM_face_split_edgenet(BMesh *bm,
@@ -496,7 +494,7 @@ bool BM_face_split_edgenet(BMesh *bm,
   }
 
   /* These arrays used to be stack memory, however they can be
-   * large for single faces with complex edgenets, see: T65980. */
+   * large for single faces with complex edge-nets, see: T65980. */
 
   /* over-alloc (probably 2-4 is only used in most cases), for the biggest-fan */
   edge_order = MEM_mallocN(sizeof(*edge_order) * edge_order_len, __func__);
@@ -521,9 +519,9 @@ bool BM_face_split_edgenet(BMesh *bm,
   } while ((l_iter = l_iter->next) != l_first);
 #endif
 
-  /* Note: 'VERT_IN_QUEUE' is often not needed at all,
+  /* NOTE: 'VERT_IN_QUEUE' is often not needed at all,
    * however in rare cases verts are added multiple times to the queue,
-   * that on it's own is harmless but in _very_ rare cases,
+   * that on its own is harmless but in _very_ rare cases,
    * the queue will overflow its maximum size,
    * so we better be strict about this! see: T51539 */
 
@@ -595,7 +593,7 @@ bool BM_face_split_edgenet(BMesh *bm,
     BMIter iter;
     BMLoop *l_other;
 
-    /* see: #BM_loop_interp_from_face for similar logic  */
+    /* See: #BM_loop_interp_from_face for similar logic. */
     void **blocks = BLI_array_alloca(blocks, f->len);
     float(*cos_2d)[2] = BLI_array_alloca(cos_2d, f->len);
     float *w = BLI_array_alloca(w, f->len);
@@ -704,9 +702,9 @@ bool BM_face_split_edgenet(BMesh *bm,
 /** \} */
 
 /* -------------------------------------------------------------------- */
-/* Face Split Edge-Net Connect Islands */
-
-/** \name BM_face_split_edgenet_connect_islands and helper functions.
+/** \name Face Split Edge-Net Connect Islands
+ *
+ * #BM_face_split_edgenet_connect_islands and helper functions.
  *
  * Connect isolated mesh 'islands' so they form legal regions from which we can create faces.
  *
@@ -1066,7 +1064,7 @@ static int bm_face_split_edgenet_find_connection(const struct EdgeGroup_FindConn
 #ifdef USE_PARTIAL_CONNECT
 
 /**
- * Used to identify edges that  get split off when making island from partial connection.
+ * Used to identify edges that get split off when making island from partial connection.
  * fptr should be a BMFace*, but is a void* for general interface to BM_vert_separate_tested_edges
  */
 static bool test_tagged_and_notface(BMEdge *e, void *fptr)
@@ -1213,13 +1211,11 @@ static bool bm_vert_partial_connect_check_overlap(const int *remap,
                                                   const int v_a_index,
                                                   const int v_b_index)
 {
-  /* connected to eachother */
+  /* Connected to each other. */
   if (UNLIKELY((remap[v_a_index] == v_b_index) || (remap[v_b_index] == v_a_index))) {
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 #endif /* USE_PARTIAL_CONNECT */
@@ -1230,7 +1226,7 @@ static bool bm_vert_partial_connect_check_overlap(const int *remap,
  * \param use_partial_connect: Support for handling islands connected by only a single edge,
  * \note that this is quite slow so avoid using where possible.
  * \param mem_arena: Avoids many small allocs & should be cleared after each use.
- * take care since \a r_edge_net_new is stored in \a r_edge_net_new.
+ * take care since \a edge_net_new is stored in \a r_edge_net_new.
  */
 bool BM_face_split_edgenet_connect_islands(BMesh *bm,
                                            BMFace *f,
@@ -1242,14 +1238,15 @@ bool BM_face_split_edgenet_connect_islands(BMesh *bm,
                                            uint *r_edge_net_new_len)
 {
   /* -------------------------------------------------------------------- */
-  /* This function has 2 main parts.
+  /**
+   * This function has 2 main parts.
    *
    * - Check if there are any holes.
    * - Connect the holes with edges (if any are found).
    *
    * Keep the first part fast since it will run very often for edge-nets that have no holes.
    *
-   * \note Don't use the mem_arena unless he have holes to fill.
+   * \note Don't use the mem_arena unless we have holes to fill.
    * (avoid thrashing the area when the initial check isn't so intensive on the stack).
    */
 
@@ -1302,7 +1299,7 @@ bool BM_face_split_edgenet_connect_islands(BMesh *bm,
         BMVert *v_delimit = (&edge_arr[i]->v1)[j];
         BMVert *v_other;
 
-        /* note, remapping will _never_ map a vertex to an already mapped vertex */
+        /* NOTE: remapping will _never_ map a vertex to an already mapped vertex. */
         while (UNLIKELY((v_other = bm_face_split_edgenet_partial_connect(bm, v_delimit, f)))) {
           struct TempVertPair *tvp = BLI_memarena_alloc(mem_arena, sizeof(*tvp));
           tvp->next = temp_vert_pairs.list;
@@ -1569,13 +1566,13 @@ bool BM_face_split_edgenet_connect_islands(BMesh *bm,
     for (uint g_index = 1; g_index < group_arr_len; g_index++) {
       struct EdgeGroupIsland *g = group_arr[g_index];
 
-      /* the range of verts this group uses in 'verts_arr' (not uncluding the last index) */
+      /* The range of verts this group uses in 'verts_arr' (not including the last index). */
       vert_range[0] = vert_range[1];
       vert_range[1] += g->vert_len;
 
       if (g->has_prev_edge == false) {
         BMVert *v_origin = g->vert_span.min;
-
+        /* Index of BMVert for the edge group connection with `v_origin`. */
         const int index_other = bm_face_split_edgenet_find_connection(&args, v_origin, false);
         // BLI_assert(index_other >= 0 && index_other < (int)vert_arr_len);
 
@@ -1601,7 +1598,7 @@ bool BM_face_split_edgenet_connect_islands(BMesh *bm,
 
       {
         BMVert *v_origin = g->vert_span.max;
-
+        /* Index of BMVert for the edge group connection with `v_origin`. */
         const int index_other = bm_face_split_edgenet_find_connection(&args, v_origin, true);
         // BLI_assert(index_other >= 0 && index_other < (int)vert_arr_len);
 
@@ -1653,8 +1650,8 @@ finally:
     {
       struct TempVertPair *tvp = temp_vert_pairs.list;
       do {
-        /* we must _never_ create connections here
-         * (inface the islands can't have a connection at all) */
+        /* We must _never_ create connections here
+         * (in case the islands can't have a connection at all). */
         BLI_assert(BM_edge_exists(tvp->v_orig, tvp->v_temp) == NULL);
       } while ((tvp = tvp->next));
     }
@@ -1663,14 +1660,14 @@ finally:
     struct TempVertPair *tvp = temp_vert_pairs.list;
     do {
       /* its _very_ unlikely the edge exists,
-       * however splicing may case this. see: T48012 */
+       * however splicing may cause this. see: T48012 */
       if (!BM_edge_exists(tvp->v_orig, tvp->v_temp)) {
         BM_vert_splice(bm, tvp->v_orig, tvp->v_temp);
       }
     } while ((tvp = tvp->next));
 
     /* Remove edges which have become doubles since splicing vertices together,
-     * its less trouble then detecting future-doubles on edge-creation. */
+     * its less trouble than detecting future-doubles on edge-creation. */
     for (uint i = edge_net_init_len; i < edge_net_new_len; i++) {
       while (BM_edge_find_double(edge_net_new[i])) {
         BM_edge_kill(bm, edge_net_new[i]);

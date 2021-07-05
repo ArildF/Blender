@@ -16,6 +16,7 @@
 
 #include <OSL/oslexec.h>
 
+// clang-format off
 #include "kernel/kernel_compat_cpu.h"
 #include "kernel/kernel_montecarlo.h"
 #include "kernel/kernel_types.h"
@@ -28,6 +29,7 @@
 #include "kernel/osl/osl_globals.h"
 #include "kernel/osl/osl_services.h"
 #include "kernel/osl/osl_shader.h"
+// clang-format on
 
 #include "util/util_foreach.h"
 
@@ -47,7 +49,7 @@ void OSLShader::thread_init(KernelGlobals *kg,
     return;
   }
 
-  /* per thread kernel data init*/
+  /* Per thread kernel data init. */
   kg->osl = osl_globals;
 
   OSL::ShadingSystem *ss = kg->osl->ss;
@@ -107,7 +109,7 @@ static void shaderdata_to_shaderglobals(
   globals->dvdy = sd->dv.dy;
   globals->dPdu = TO_VEC3(sd->dPdu);
   globals->dPdv = TO_VEC3(sd->dPdv);
-  globals->surfacearea = (sd->object == OBJECT_NONE) ? 1.0f : object_surface_area(kg, sd->object);
+  globals->surfacearea = 1.0f;
   globals->time = sd->time;
 
   /* booleans */
@@ -127,7 +129,7 @@ static void shaderdata_to_shaderglobals(
   /* clear trace data */
   tdata->tracedata.init = false;
 
-  /* used by renderservices */
+  /* Used by render-services. */
   sd->osl_globals = kg;
   sd->osl_path_state = state;
 }

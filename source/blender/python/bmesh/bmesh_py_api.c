@@ -30,13 +30,13 @@
 #include "bmesh.h"
 
 #include "bmesh_py_types.h"
-#include "bmesh_py_types_select.h"
 #include "bmesh_py_types_customdata.h"
 #include "bmesh_py_types_meshdata.h"
+#include "bmesh_py_types_select.h"
 
+#include "bmesh_py_geometry.h"
 #include "bmesh_py_ops.h"
 #include "bmesh_py_utils.h"
-#include "bmesh_py_geometry.h"
 
 #include "BKE_editmesh.h"
 
@@ -125,7 +125,7 @@ static PyObject *bpy_bm_update_edit_mesh(PyObject *UNUSED(self), PyObject *args,
 
   if (!PyArg_ParseTupleAndKeywords(args,
                                    kw,
-                                   "O|O&O&:update_edit_mesh",
+                                   "O|$O&O&:update_edit_mesh",
                                    (char **)kwlist,
                                    &py_me,
                                    PyC_ParseBool,
@@ -147,10 +147,10 @@ static PyObject *bpy_bm_update_edit_mesh(PyObject *UNUSED(self), PyObject *args,
   }
 
   {
-    extern void EDBM_update_generic(
+    extern void EDBM_update_extern(
         struct Mesh * me, const bool do_tessface, const bool is_destructive);
 
-    EDBM_update_generic(me, do_loop_triangles, is_destructive);
+    EDBM_update_extern(me, do_loop_triangles, is_destructive);
   }
 
   Py_RETURN_NONE;
@@ -201,8 +201,7 @@ PyObject *BPyInit_bmesh(void)
 
   /* bmesh.ops (not a real module, exposes module like access). */
   PyModule_AddObject(mod, "ops", (submodule = BPyInit_bmesh_ops()));
-  /* PyDict_SetItemString(sys_modules, PyModule_GetNameObject(submodule), submodule); */
-  PyDict_SetItemString(sys_modules, "bmesh.ops", submodule); /* fake module */
+  PyDict_SetItem(sys_modules, PyModule_GetNameObject(submodule), submodule);
 
   PyModule_AddObject(mod, "utils", (submodule = BPyInit_bmesh_utils()));
   PyDict_SetItem(sys_modules, PyModule_GetNameObject(submodule), submodule);

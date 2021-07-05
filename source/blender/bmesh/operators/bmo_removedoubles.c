@@ -22,12 +22,12 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_alloca.h"
 #include "BLI_kdtree.h"
 #include "BLI_listbase.h"
-#include "BLI_utildefines_stack.h"
+#include "BLI_math.h"
 #include "BLI_stack.h"
+#include "BLI_utildefines_stack.h"
 
 #include "BKE_customdata.h"
 
@@ -387,7 +387,7 @@ void bmo_average_vert_facedata_exec(BMesh *bm, BMOperator *op)
   BMOIter siter;
   BMIter iter;
   BMVert *v;
-  BMLoop *l /* , *firstl = NULL */;
+  BMLoop *l;
   CDBlockBytes min, max;
   int i;
 
@@ -599,7 +599,7 @@ void bmo_collapse_uvs_exec(BMesh *bm, BMOperator *op)
   const short oflag = EDGE_MARK;
   int i;
 
-  /* check flags dont change once set */
+  /* Check flags don't change once set. */
 #ifndef NDEBUG
   int tot_test;
 #endif

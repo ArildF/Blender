@@ -18,20 +18,20 @@
  * \ingroup spconsole
  */
 
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
 #include "BLI_blenlib.h"
 #include "BLI_utildefines.h"
 
-#include "BKE_global.h"
 #include "BKE_context.h"
+#include "BKE_global.h"
 #include "BKE_screen.h"
 
-#include "ED_space_api.h"
 #include "ED_screen.h"
+#include "ED_space_api.h"
 
 #include "RNA_access.h"
 
@@ -41,14 +41,13 @@
 #include "UI_resources.h"
 #include "UI_view2d.h"
 
-#include "console_intern.h"  // own include
-#include "GPU_framebuffer.h"
+#include "console_intern.h" /* own include */
 
 /* ******************** default callbacks for console space ***************** */
 
-static SpaceLink *console_new(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
+static SpaceLink *console_create(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
 {
-  ARegion *ar;
+  ARegion *region;
   SpaceConsole *sconsole;
 
   sconsole = MEM_callocN(sizeof(SpaceConsole), "initconsole");
@@ -57,28 +56,28 @@ static SpaceLink *console_new(const ScrArea *UNUSED(area), const Scene *UNUSED(s
   sconsole->lheight = 14;
 
   /* header */
-  ar = MEM_callocN(sizeof(ARegion), "header for console");
+  region = MEM_callocN(sizeof(ARegion), "header for console");
 
-  BLI_addtail(&sconsole->regionbase, ar);
-  ar->regiontype = RGN_TYPE_HEADER;
-  ar->alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
+  BLI_addtail(&sconsole->regionbase, region);
+  region->regiontype = RGN_TYPE_HEADER;
+  region->alignment = (U.uiflag & USER_HEADER_BOTTOM) ? RGN_ALIGN_BOTTOM : RGN_ALIGN_TOP;
 
   /* main region */
-  ar = MEM_callocN(sizeof(ARegion), "main region for text");
+  region = MEM_callocN(sizeof(ARegion), "main region for text");
 
-  BLI_addtail(&sconsole->regionbase, ar);
-  ar->regiontype = RGN_TYPE_WINDOW;
+  BLI_addtail(&sconsole->regionbase, region);
+  region->regiontype = RGN_TYPE_WINDOW;
 
   /* keep in sync with info */
-  ar->v2d.scroll |= (V2D_SCROLL_RIGHT);
-  ar->v2d.align |= V2D_ALIGN_NO_NEG_X | V2D_ALIGN_NO_NEG_Y; /* align bottom left */
-  ar->v2d.keepofs |= V2D_LOCKOFS_X;
-  ar->v2d.keepzoom = (V2D_LOCKZOOM_X | V2D_LOCKZOOM_Y | V2D_LIMITZOOM | V2D_KEEPASPECT);
-  ar->v2d.keeptot = V2D_KEEPTOT_BOUNDS;
-  ar->v2d.minzoom = ar->v2d.maxzoom = 1.0f;
+  region->v2d.scroll |= V2D_SCROLL_RIGHT;
+  region->v2d.align |= V2D_ALIGN_NO_NEG_X | V2D_ALIGN_NO_NEG_Y; /* align bottom left */
+  region->v2d.keepofs |= V2D_LOCKOFS_X;
+  region->v2d.keepzoom = (V2D_LOCKZOOM_X | V2D_LOCKZOOM_Y | V2D_LIMITZOOM | V2D_KEEPASPECT);
+  region->v2d.keeptot = V2D_KEEPTOT_BOUNDS;
+  region->v2d.minzoom = region->v2d.maxzoom = 1.0f;
 
   /* for now, aspect ratio should be maintained, and zoom is clamped within sane default limits */
-  // ar->v2d.keepzoom = (V2D_KEEPASPECT|V2D_LIMITZOOM);
+  // region->v2d.keepzoom = (V2D_KEEPASPECT|V2D_LIMITZOOM);
 
   return (SpaceLink *)sconsole;
 }
@@ -98,7 +97,7 @@ static void console_free(SpaceLink *sl)
 }
 
 /* spacetype; init callback */
-static void console_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(sa))
+static void console_init(struct wmWindowManager *UNUSED(wm), ScrArea *UNUSED(area))
 {
 }
 
@@ -108,7 +107,7 @@ static SpaceLink *console_duplicate(SpaceLink *sl)
 
   /* clear or remove stuff from old */
 
-  /* TODO - duplicate?, then we also need to duplicate the py namespace */
+  /* TODO: duplicate?, then we also need to duplicate the py namespace. */
   BLI_listbase_clear(&sconsolen->scrollback);
   BLI_listbase_clear(&sconsolen->history);
 
@@ -116,41 +115,41 @@ static SpaceLink *console_duplicate(SpaceLink *sl)
 }
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void console_main_region_init(wmWindowManager *wm, ARegion *ar)
+static void console_main_region_init(wmWindowManager *wm, ARegion *region)
 {
   wmKeyMap *keymap;
   ListBase *lb;
 
-  const float prev_y_min = ar->v2d.cur.ymin; /* so re-sizing keeps the cursor visible */
+  const float prev_y_min = region->v2d.cur.ymin; /* so re-sizing keeps the cursor visible */
 
   /* force it on init, for old files, until it becomes config */
-  ar->v2d.scroll = (V2D_SCROLL_RIGHT);
+  region->v2d.scroll = (V2D_SCROLL_RIGHT);
 
-  UI_view2d_region_reinit(&ar->v2d, V2D_COMMONVIEW_CUSTOM, ar->winx, ar->winy);
+  UI_view2d_region_reinit(&region->v2d, V2D_COMMONVIEW_CUSTOM, region->winx, region->winy);
 
   /* always keep the bottom part of the view aligned, less annoying */
-  if (prev_y_min != ar->v2d.cur.ymin) {
-    const float cur_y_range = BLI_rctf_size_y(&ar->v2d.cur);
-    ar->v2d.cur.ymin = prev_y_min;
-    ar->v2d.cur.ymax = prev_y_min + cur_y_range;
+  if (prev_y_min != region->v2d.cur.ymin) {
+    const float cur_y_range = BLI_rctf_size_y(&region->v2d.cur);
+    region->v2d.cur.ymin = prev_y_min;
+    region->v2d.cur.ymax = prev_y_min + cur_y_range;
   }
 
   /* own keymap */
   keymap = WM_keymap_ensure(wm->defaultconf, "Console", SPACE_CONSOLE, 0);
-  WM_event_add_keymap_handler_v2d_mask(&ar->handlers, keymap);
+  WM_event_add_keymap_handler_v2d_mask(&region->handlers, keymap);
 
   /* add drop boxes */
   lb = WM_dropboxmap_find("Console", SPACE_CONSOLE, RGN_TYPE_WINDOW);
 
-  WM_event_add_dropbox_handler(&ar->handlers, lb);
+  WM_event_add_dropbox_handler(&region->handlers, lb);
 }
 
 /* same as 'text_cursor' */
-static void console_cursor(wmWindow *win, ScrArea *UNUSED(sa), ARegion *ar)
+static void console_cursor(wmWindow *win, ScrArea *UNUSED(area), ARegion *region)
 {
   int wmcursor = WM_CURSOR_TEXT_EDIT;
   const wmEvent *event = win->eventstate;
-  if (UI_view2d_mouse_in_scrollers(ar, &ar->v2d, event->x, event->y)) {
+  if (UI_view2d_mouse_in_scrollers(region, &region->v2d, event->x, event->y)) {
     wmcursor = WM_CURSOR_DEFAULT;
   }
 
@@ -164,12 +163,12 @@ static bool id_drop_poll(bContext *UNUSED(C),
                          const wmEvent *UNUSED(event),
                          const char **UNUSED(tooltip))
 {
-  return WM_drag_ID(drag, 0) != NULL;
+  return WM_drag_get_local_ID(drag, 0) != NULL;
 }
 
 static void id_drop_copy(wmDrag *drag, wmDropBox *drop)
 {
-  ID *id = WM_drag_ID(drag, 0);
+  ID *id = WM_drag_get_local_ID(drag, 0);
 
   /* copy drag path to properties */
   char *text = RNA_path_full_ID_py(G_MAIN, id);
@@ -197,18 +196,17 @@ static void console_dropboxes(void)
 {
   ListBase *lb = WM_dropboxmap_find("Console", SPACE_CONSOLE, RGN_TYPE_WINDOW);
 
-  WM_dropbox_add(lb, "CONSOLE_OT_insert", id_drop_poll, id_drop_copy);
-  WM_dropbox_add(lb, "CONSOLE_OT_insert", path_drop_poll, path_drop_copy);
+  WM_dropbox_add(lb, "CONSOLE_OT_insert", id_drop_poll, id_drop_copy, NULL);
+  WM_dropbox_add(lb, "CONSOLE_OT_insert", path_drop_poll, path_drop_copy, NULL);
 }
 
 /* ************* end drop *********** */
 
-static void console_main_region_draw(const bContext *C, ARegion *ar)
+static void console_main_region_draw(const bContext *C, ARegion *region)
 {
   /* draw entirely, view changes should be handled here */
   SpaceConsole *sc = CTX_wm_space_console(C);
-  View2D *v2d = &ar->v2d;
-  View2DScrollers *scrollers;
+  View2D *v2d = &region->v2d;
 
   if (BLI_listbase_is_empty(&sc->scrollback)) {
     WM_operator_name_call((bContext *)C, "CONSOLE_OT_banner", WM_OP_EXEC_DEFAULT, NULL);
@@ -216,23 +214,20 @@ static void console_main_region_draw(const bContext *C, ARegion *ar)
 
   /* clear and setup matrix */
   UI_ThemeClearColor(TH_BACK);
-  GPU_clear(GPU_COLOR_BIT);
 
-  /* worlks best with no view2d matrix set */
+  /* Works best with no view2d matrix set. */
   UI_view2d_view_ortho(v2d);
 
   /* data... */
 
   console_history_verify(C); /* make sure we have some command line */
-  console_textview_main(sc, ar);
+  console_textview_main(sc, region);
 
   /* reset view matrix */
   UI_view2d_view_restore(C);
 
   /* scrollers */
-  scrollers = UI_view2d_scrollers_calc(v2d, NULL);
-  UI_view2d_scrollers_draw(v2d, scrollers);
-  UI_view2d_scrollers_free(scrollers);
+  UI_view2d_scrollers_draw(v2d, NULL);
 }
 
 static void console_operatortypes(void)
@@ -267,35 +262,36 @@ static void console_keymap(struct wmKeyConfig *keyconf)
 /****************** header region ******************/
 
 /* add handlers, stuff you only do once or on area/region changes */
-static void console_header_region_init(wmWindowManager *UNUSED(wm), ARegion *ar)
+static void console_header_region_init(wmWindowManager *UNUSED(wm), ARegion *region)
 {
-  ED_region_header_init(ar);
+  ED_region_header_init(region);
 }
 
-static void console_header_region_draw(const bContext *C, ARegion *ar)
+static void console_header_region_draw(const bContext *C, ARegion *region)
 {
-  ED_region_header(C, ar);
+  ED_region_header(C, region);
 }
 
-static void console_main_region_listener(
-    wmWindow *UNUSED(win), ScrArea *sa, ARegion *ar, wmNotifier *wmn, const Scene *UNUSED(scene))
+static void console_main_region_listener(const wmRegionListenerParams *params)
 {
-  // SpaceInfo *sinfo = sa->spacedata.first;
+  ScrArea *area = params->area;
+  ARegion *region = params->region;
+  wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
     case NC_SPACE: {
       if (wmn->data == ND_SPACE_CONSOLE) {
         if (wmn->action == NA_EDITED) {
-          if ((wmn->reference && sa) && (wmn->reference == sa->spacedata.first)) {
+          if ((wmn->reference && area) && (wmn->reference == area->spacedata.first)) {
             /* we've modified the geometry (font size), re-calculate rect */
-            console_textview_update_rect(wmn->reference, ar);
-            ED_region_tag_redraw(ar);
+            console_textview_update_rect(wmn->reference, region);
+            ED_region_tag_redraw(region);
           }
         }
         else {
           /* generic redraw request */
-          ED_region_tag_redraw(ar);
+          ED_region_tag_redraw(region);
         }
       }
       break;
@@ -312,7 +308,7 @@ void ED_spacetype_console(void)
   st->spaceid = SPACE_CONSOLE;
   strncpy(st->name, "Console", BKE_ST_MAXNAME);
 
-  st->new = console_new;
+  st->create = console_create;
   st->free = console_free;
   st->init = console_init;
   st->duplicate = console_duplicate;

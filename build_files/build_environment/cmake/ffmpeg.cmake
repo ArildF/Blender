@@ -50,13 +50,19 @@ if(APPLE)
   set(FFMPEG_EXTRA_FLAGS
     ${FFMPEG_EXTRA_FLAGS}
     --target-os=darwin
-    )
+    --x86asmexe=${LIBDIR}/nasm/bin/nasm
+  )
+elseif(UNIX)
+  set(FFMPEG_EXTRA_FLAGS
+    ${FFMPEG_EXTRA_FLAGS}
+    --x86asmexe=${LIBDIR}/nasm/bin/nasm
+  )
 endif()
 
 ExternalProject_Add(external_ffmpeg
-  URL ${FFMPEG_URI}
+  URL file://${PACKAGE_DIR}/${FFMPEG_FILE}
   DOWNLOAD_DIR ${DOWNLOAD_DIR}
-  URL_HASH MD5=${FFMPEG_HASH}
+  URL_HASH ${FFMPEG_HASH_TYPE}=${FFMPEG_HASH}
   # OpenJpeg is compiled with pthread support on Linux, which is all fine and is what we
   # want for maximum runtime performance, but due to static nature of that library we
   # need to force ffmpeg to link against pthread, otherwise test program used by autoconf
@@ -94,8 +100,6 @@ ExternalProject_Add(external_ffmpeg
     --disable-version3
     --disable-debug
     --enable-optimizations
-    --disable-sse
-    --disable-ssse3
     --enable-ffplay
     --disable-openssl
     --disable-securetransport
@@ -127,7 +131,6 @@ endif()
 add_dependencies(
   external_ffmpeg
   external_zlib
-  external_faad
   external_openjpeg
   external_xvidcore
   external_x264
@@ -142,6 +145,12 @@ if(WIN32)
   add_dependencies(
     external_ffmpeg
     external_zlib_mingw
+  )
+endif()
+if(UNIX)
+  add_dependencies(
+    external_ffmpeg
+    external_nasm
   )
 endif()
 

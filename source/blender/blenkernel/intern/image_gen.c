@@ -69,10 +69,11 @@ static void image_buf_fill_color_slice(
   }
 }
 
-static void image_buf_fill_color_thread_do(void *data_v, int start_scanline, int num_scanlines)
+static void image_buf_fill_color_thread_do(void *data_v, int scanline)
 {
   FillColorThreadData *data = (FillColorThreadData *)data_v;
-  size_t offset = ((size_t)start_scanline) * data->width * 4;
+  const int num_scanlines = 1;
+  size_t offset = ((size_t)scanline) * data->width * 4;
   unsigned char *rect = (data->rect != NULL) ? (data->rect + offset) : NULL;
   float *rect_float = (data->rect_float != NULL) ? (data->rect_float + offset) : NULL;
   image_buf_fill_color_slice(rect, rect_float, data->width, num_scanlines, data->color);
@@ -197,13 +198,14 @@ typedef struct FillCheckerThreadData {
   int width;
 } FillCheckerThreadData;
 
-static void image_buf_fill_checker_thread_do(void *data_v, int start_scanline, int num_scanlines)
+static void image_buf_fill_checker_thread_do(void *data_v, int scanline)
 {
   FillCheckerThreadData *data = (FillCheckerThreadData *)data_v;
-  size_t offset = ((size_t)start_scanline) * data->width * 4;
+  size_t offset = ((size_t)scanline) * data->width * 4;
+  const int num_scanlines = 1;
   unsigned char *rect = (data->rect != NULL) ? (data->rect + offset) : NULL;
   float *rect_float = (data->rect_float != NULL) ? (data->rect_float + offset) : NULL;
-  image_buf_fill_checker_slice(rect, rect_float, data->width, num_scanlines, start_scanline);
+  image_buf_fill_checker_slice(rect, rect_float, data->width, num_scanlines, scanline);
 }
 
 void BKE_image_buf_fill_checker(unsigned char *rect, float *rect_float, int width, int height)
@@ -240,7 +242,7 @@ static void checker_board_color_fill(
   }
 
   for (y = offset; y < height + offset; y++) {
-    /* Use a number lower then 1.0 else its too bright. */
+    /* Use a number lower than 1.0 else its too bright. */
     hsv[2] = 0.1 + (y * (0.4 / total_height));
 
     for (x = 0; x < width; x++) {
@@ -379,10 +381,16 @@ static void checker_board_text(
   const float text_color[4] = {0.0, 0.0, 0.0, 1.0};
   const float text_outline[4] = {1.0, 1.0, 1.0, 1.0};
 
-  for (y = 0; y < height; y += step) {
-    text[1] = '1';
+  const char char_array[36] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+  int first_char_index = 0;
+  for (y = 0; y < height; y += step) {
+    text[0] = char_array[first_char_index];
+
+    int second_char_index = 27;
     for (x = 0; x < width; x += step) {
+      text[1] = char_array[second_char_index];
+
       /* hard coded offset */
       pen_x = x + 33;
       pen_y = y + 44;
@@ -412,9 +420,9 @@ static void checker_board_text(
       BLF_position(mono, pen_x, pen_y, 0.0);
       BLF_draw_buffer(mono, text, 2);
 
-      text[1]++;
+      second_char_index = (second_char_index + 1) % ARRAY_SIZE(char_array);
     }
-    text[0]++;
+    first_char_index = (first_char_index + 1) % ARRAY_SIZE(char_array);
   }
 
   /* cleanup the buffer. */
@@ -438,16 +446,15 @@ typedef struct FillCheckerColorThreadData {
   int width, height;
 } FillCheckerColorThreadData;
 
-static void checker_board_color_prepare_thread_do(void *data_v,
-                                                  int start_scanline,
-                                                  int num_scanlines)
+static void checker_board_color_prepare_thread_do(void *data_v, int scanline)
 {
   FillCheckerColorThreadData *data = (FillCheckerColorThreadData *)data_v;
-  size_t offset = ((size_t)data->width) * start_scanline * 4;
+  const int num_scanlines = 1;
+  size_t offset = ((size_t)data->width) * scanline * 4;
   unsigned char *rect = (data->rect != NULL) ? (data->rect + offset) : NULL;
   float *rect_float = (data->rect_float != NULL) ? (data->rect_float + offset) : NULL;
   checker_board_color_prepare_slice(
-      rect, rect_float, data->width, num_scanlines, start_scanline, data->height);
+      rect, rect_float, data->width, num_scanlines, scanline, data->height);
 }
 
 void BKE_image_buf_fill_checker_color(unsigned char *rect,

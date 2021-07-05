@@ -22,11 +22,8 @@
  * \brief Preset shapes that can be drawn from any gizmo type.
  */
 
-#include "MEM_guardedalloc.h"
-
 #include "BLI_math.h"
 
-#include "DNA_view3d_types.h"
 #include "DNA_object_types.h"
 
 #include "BKE_context.h"
@@ -36,19 +33,15 @@
 
 #include "DEG_depsgraph.h"
 
-#include "RNA_access.h"
-
 #include "WM_types.h"
-#include "WM_api.h"
 
 #include "ED_view3d.h"
-#include "ED_screen.h"
 
 /* own includes */
 #include "ED_gizmo_library.h"     /* own include */
 #include "gizmo_library_intern.h" /* own include */
 
-/* TODO, this is to be used by RNA. might move to ED_gizmo_library */
+/* TODO: this is to be used by RNA. might move to ED_gizmo_library. */
 
 /**
  * Given a single axis, orient the matrix to a different direction.

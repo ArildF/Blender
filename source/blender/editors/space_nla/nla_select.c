@@ -21,8 +21,8 @@
  * \ingroup spnla
  */
 
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "DNA_anim_types.h"
 #include "DNA_scene_types.h"
@@ -31,8 +31,8 @@
 
 #include "BLI_blenlib.h"
 
-#include "BKE_nla.h"
 #include "BKE_context.h"
+#include "BKE_nla.h"
 #include "BKE_screen.h"
 
 #include "ED_anim_api.h"
@@ -46,10 +46,10 @@
 #include "WM_api.h"
 #include "WM_types.h"
 
-#include "UI_view2d.h"
 #include "UI_interface.h"
+#include "UI_view2d.h"
 
-#include "nla_intern.h"  // own include
+#include "nla_intern.h" /* own include */
 
 /* ******************** Utilities ***************************************** */
 
@@ -100,7 +100,7 @@ static void deselect_nla_strips(bAnimContext *ac, short test, short sel)
   short smode;
 
   /* determine type-based settings */
-  // FIXME: double check whether ANIMFILTER_LIST_VISIBLE is needed!
+  /* FIXME: double check whether ANIMFILTER_LIST_VISIBLE is needed! */
   filter = (ANIMFILTER_DATA_VISIBLE);
 
   /* filter data */
@@ -231,7 +231,7 @@ static void box_select_nla_strips(bAnimContext *ac, rcti rect, short mode, short
   int filter;
 
   SpaceNla *snla = (SpaceNla *)ac->sl;
-  View2D *v2d = &ac->ar->v2d;
+  View2D *v2d = &ac->region->v2d;
   rctf rectf;
 
   /* convert border-region to view coordinates */
@@ -285,7 +285,7 @@ static void nlaedit_strip_at_region_position(
   *r_strip = NULL;
 
   SpaceNla *snla = (SpaceNla *)ac->sl;
-  View2D *v2d = &ac->ar->v2d;
+  View2D *v2d = &ac->region->v2d;
 
   float view_x, view_y;
   int channel_index;
@@ -308,7 +308,7 @@ static void nlaedit_strip_at_region_position(
     if (ale->type == ANIMTYPE_NLATRACK) {
       NlaTrack *nlt = (NlaTrack *)ale->data;
 
-      for (NlaStrip *strip = nlt->strips.first; strip; strip = strip->next) {
+      LISTBASE_FOREACH (NlaStrip *, strip, &nlt->strips) {
         if (BKE_nlastrip_within_bounds(strip, xmin, xmax)) {
           *r_ale = ale;
           *r_strip = strip;
@@ -434,8 +434,8 @@ void NLA_OT_select_box(wmOperatorType *ot)
 /* defines for left-right select tool */
 static const EnumPropertyItem prop_nlaedit_leftright_select_types[] = {
     {NLAEDIT_LRSEL_TEST, "CHECK", 0, "Check if Select Left or Right", ""},
-    {NLAEDIT_LRSEL_LEFT, "LEFT", 0, "Before current frame", ""},
-    {NLAEDIT_LRSEL_RIGHT, "RIGHT", 0, "After current frame", ""},
+    {NLAEDIT_LRSEL_LEFT, "LEFT", 0, "Before Current Frame", ""},
+    {NLAEDIT_LRSEL_RIGHT, "RIGHT", 0, "After Current Frame", ""},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -550,8 +550,8 @@ static int nlaedit_select_leftright_invoke(bContext *C, wmOperator *op, const wm
   /* handle mode-based testing */
   if (leftright == NLAEDIT_LRSEL_TEST) {
     Scene *scene = ac.scene;
-    ARegion *ar = ac.ar;
-    View2D *v2d = &ar->v2d;
+    ARegion *region = ac.region;
+    View2D *v2d = &region->v2d;
     float x;
 
     /* determine which side of the current frame mouse is on */
@@ -577,7 +577,7 @@ void NLA_OT_select_leftright(wmOperatorType *ot)
   ot->idname = "NLA_OT_select_leftright";
   ot->description = "Select strips to the left or the right of the current frame";
 
-  /* api callbacks  */
+  /* api callbacks */
   ot->invoke = nlaedit_select_leftright_invoke;
   ot->exec = nlaedit_select_leftright_exec;
   ot->poll = ED_operator_nla_active;
@@ -638,7 +638,7 @@ static int mouse_nla_strips(bContext *C,
       deselect_nla_strips(ac, 0, SELECT_SUBTRACT);
 
       /* deselect all other channels first */
-      ANIM_deselect_anim_channels(ac, ac->data, ac->datatype, 0, ACHANNEL_SETFLAG_CLEAR);
+      ANIM_anim_channels_select_set(ac, ACHANNEL_SETFLAG_CLEAR);
     }
   }
 
@@ -728,7 +728,7 @@ void NLA_OT_click_select(wmOperatorType *ot)
 
   /* properties */
   WM_operator_properties_generic_select(ot);
-  prop = RNA_def_boolean(ot->srna, "extend", 0, "Extend Select", "");  // SHIFTKEY
+  prop = RNA_def_boolean(ot->srna, "extend", 0, "Extend Select", ""); /* SHIFTKEY */
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
   prop = RNA_def_boolean(ot->srna,

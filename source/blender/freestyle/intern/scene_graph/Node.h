@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_NODE_H__
-#define __FREESTYLE_NODE_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -53,7 +52,7 @@ class Node : public BaseObject {
   {
   }
 
-  /*! Accept the corresponding visitor
+  /** Accept the corresponding visitor
    *  Each inherited node must overload this method
    */
   virtual void accept(SceneVisitor &v)
@@ -61,8 +60,8 @@ class Node : public BaseObject {
     v.visitNode(*this);
   }
 
-  /*! bounding box management */
-  /*! Returns the node bounding box
+  /** bounding box management */
+  /** Returns the node bounding box
    *  If no bounding box exists, an empty bbox is returned
    */
   virtual const BBox<Vec3r> &bbox() const
@@ -70,13 +69,13 @@ class Node : public BaseObject {
     return _BBox;
   }
 
-  /*! Sets the Node bounding box */
+  /** Sets the Node bounding box */
   virtual void setBBox(const BBox<Vec3r> &iBox)
   {
     _BBox = iBox;
   }
 
-  /*! Makes the union of _BBox and iBox */
+  /** Makes the union of _BBox and iBox */
   virtual void AddBBox(const BBox<Vec3r> &iBox)
   {
     if (iBox.empty()) {
@@ -91,13 +90,13 @@ class Node : public BaseObject {
     }
   }
 
-  /*! Updates the BBox */
+  /** Updates the BBox */
   virtual const BBox<Vec3r> &UpdateBBox()
   {
     return _BBox;
   }
 
-  /*! Clears the bounding box */
+  /** Clears the bounding box */
   virtual void clearBBox()
   {
     _BBox.clear();
@@ -113,5 +112,3 @@ class Node : public BaseObject {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_NODE_H__

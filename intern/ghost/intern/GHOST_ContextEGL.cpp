@@ -118,7 +118,7 @@ static const char *get_egl_error_message_string(EGLint error)
     case EGL_CONTEXT_LOST:
       return (
           "A power management event has occurred. "
-          "The application must destroy all contexts and reinitialise OpenGL ES state "
+          "The application must destroy all contexts and reinitialize OpenGL ES state "
           "and objects to continue rendering.");
 
     default:
@@ -149,6 +149,9 @@ static bool egl_chk(bool result, const char *file = NULL, int line = 0, const ch
             static_cast<unsigned int>(error),
             code ? code : "<Unknown>",
             msg ? msg : "<Unknown>");
+    (void)(file);
+    (void)(line);
+    (void)(text);
 #endif
   }
 
@@ -199,7 +202,8 @@ template<typename T> T &choose_api(EGLenum api, T &a, T &b, T &c)
   }
 }
 
-GHOST_ContextEGL::GHOST_ContextEGL(bool stereoVisual,
+GHOST_ContextEGL::GHOST_ContextEGL(const GHOST_System *const system,
+                                   bool stereoVisual,
                                    EGLNativeWindowType nativeWindow,
                                    EGLNativeDisplayType nativeDisplay,
                                    EGLint contextProfileMask,
@@ -209,6 +213,7 @@ GHOST_ContextEGL::GHOST_ContextEGL(bool stereoVisual,
                                    EGLint contextResetNotificationStrategy,
                                    EGLenum api)
     : GHOST_Context(stereoVisual),
+      m_system(system),
       m_nativeDisplay(nativeDisplay),
       m_nativeWindow(nativeWindow),
       m_contextProfileMask(contextProfileMask),
@@ -285,6 +290,21 @@ GHOST_TSuccess GHOST_ContextEGL::getSwapInterval(int &intervalOut)
   return GHOST_kSuccess;
 }
 
+EGLDisplay GHOST_ContextEGL::getDisplay() const
+{
+  return m_display;
+}
+
+EGLConfig GHOST_ContextEGL::getConfig() const
+{
+  return m_config;
+}
+
+EGLContext GHOST_ContextEGL::getContext() const
+{
+  return m_context;
+}
+
 GHOST_TSuccess GHOST_ContextEGL::activateDrawingContext()
 {
   if (m_display) {
@@ -316,7 +336,7 @@ bool GHOST_ContextEGL::initContextEGLEW()
 {
   /* We have to manually get this function before we can call eglewInit, since
    * it requires a display argument. glewInit() does the same, but we only want
-   * to intialize EGLEW here. */
+   * to initialize EGLEW here. */
   eglGetDisplay = (PFNEGLGETDISPLAYPROC)eglGetProcAddress("eglGetDisplay");
   if (eglGetDisplay == NULL) {
     return false;
@@ -456,9 +476,7 @@ GHOST_TSuccess GHOST_ContextEGL::initializeDrawingContext()
 
   attrib_list.push_back(EGL_NONE);
 
-  EGLConfig config;
-
-  if (!EGL_CHK(::eglChooseConfig(m_display, &(attrib_list[0]), &config, 1, &num_config)))
+  if (!EGL_CHK(::eglChooseConfig(m_display, &(attrib_list[0]), &m_config, 1, &num_config)))
     goto error;
 
   // A common error is to assume that ChooseConfig worked because it returned EGL_TRUE
@@ -466,7 +484,7 @@ GHOST_TSuccess GHOST_ContextEGL::initializeDrawingContext()
     goto error;
 
   if (m_nativeWindow != 0) {
-    m_surface = ::eglCreateWindowSurface(m_display, config, m_nativeWindow, NULL);
+    m_surface = ::eglCreateWindowSurface(m_display, m_config, m_nativeWindow, NULL);
   }
   else {
     static const EGLint pb_attrib_list[] = {
@@ -476,7 +494,7 @@ GHOST_TSuccess GHOST_ContextEGL::initializeDrawingContext()
         1,
         EGL_NONE,
     };
-    m_surface = ::eglCreatePbufferSurface(m_display, config, pb_attrib_list);
+    m_surface = ::eglCreatePbufferSurface(m_display, m_config, pb_attrib_list);
   }
 
   if (!EGL_CHK(m_surface != EGL_NO_SURFACE))
@@ -577,7 +595,7 @@ GHOST_TSuccess GHOST_ContextEGL::initializeDrawingContext()
 
   attrib_list.push_back(EGL_NONE);
 
-  m_context = ::eglCreateContext(m_display, config, m_sharedContext, &(attrib_list[0]));
+  m_context = ::eglCreateContext(m_display, m_config, m_sharedContext, &(attrib_list[0]));
 
   if (!EGL_CHK(m_context != EGL_NO_CONTEXT))
     goto error;

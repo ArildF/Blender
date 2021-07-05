@@ -85,8 +85,9 @@ ccl_device_inline void sample_uniform_hemisphere(
 ccl_device_inline void sample_uniform_cone(
     const float3 N, float angle, float randu, float randv, float3 *omega_in, float *pdf)
 {
-  float z = cosf(angle * randu);
-  float r = sqrtf(max(0.0f, 1.0f - z * z));
+  float zMin = cosf(angle);
+  float z = zMin - zMin * randu + randu;
+  float r = safe_sqrtf(1.0f - sqr(z));
   float phi = M_2PI_F * randv;
   float x = r * cosf(phi);
   float y = r * sinf(phi);
@@ -94,7 +95,17 @@ ccl_device_inline void sample_uniform_cone(
   float3 T, B;
   make_orthonormals(N, &T, &B);
   *omega_in = x * T + y * B + z * N;
-  *pdf = 0.5f * M_1_PI_F / (1.0f - cosf(angle));
+  *pdf = M_1_2PI_F / (1.0f - zMin);
+}
+
+ccl_device_inline float pdf_uniform_cone(const float3 N, float3 D, float angle)
+{
+  float zMin = cosf(angle);
+  float z = dot(N, D);
+  if (z > zMin) {
+    return M_1_2PI_F / (1.0f - zMin);
+  }
+  return 0.0f;
 }
 
 /* sample uniform point on the surface of a sphere */
@@ -143,7 +154,7 @@ ccl_device float2 concentric_sample_disk(float u1, float u2)
   float b = 2.0f * u2 - 1.0f;
 
   if (a == 0.0f && b == 0.0f) {
-    return make_float2(0.0f, 0.0f);
+    return zero_float2();
   }
   else if (a * a > b * b) {
     r = a;

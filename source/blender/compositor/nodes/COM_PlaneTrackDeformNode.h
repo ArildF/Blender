@@ -16,15 +16,14 @@
  * Copyright 2013, Blender Foundation.
  */
 
-#ifndef __COM_PLANETRACKDEFORMNODE_H__
-#define __COM_PLANETRACKDEFORMNODE_H__
+#pragma once
 
 #include "COM_Node.h"
 
-extern "C" {
 #include "DNA_movieclip_types.h"
 #include "DNA_node_types.h"
-}
+
+namespace blender::compositor {
 
 /**
  * \brief PlaneTrackDeformNode
@@ -33,7 +32,8 @@ extern "C" {
 class PlaneTrackDeformNode : public Node {
  public:
   PlaneTrackDeformNode(bNode *editorNode);
-  void convertToOperations(NodeConverter &converter, const CompositorContext &context) const;
+  void convertToOperations(NodeConverter &converter,
+                           const CompositorContext &context) const override;
 };
 
-#endif /* __COM_PLANETRACKDEFORMNODE_H__ */
+}  // namespace blender::compositor

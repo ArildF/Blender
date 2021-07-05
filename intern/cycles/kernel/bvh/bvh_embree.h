@@ -17,9 +17,12 @@
 #include <embree3/rtcore_ray.h>
 #include <embree3/rtcore_scene.h>
 
+// clang-format off
 #include "kernel/kernel_compat_cpu.h"
 #include "kernel/split/kernel_split_data_types.h"
 #include "kernel/kernel_globals.h"
+// clang-format on
+
 #include "util/util_vector.h"
 
 CCL_NAMESPACE_BEGIN
@@ -109,8 +112,7 @@ ccl_device_inline void kernel_embree_convert_hit(KernelGlobals *kg,
     RTCScene inst_scene = (RTCScene)rtcGetGeometryUserData(
         rtcGetGeometry(kernel_data.bvh.scene, hit->instID[0]));
     isect->prim = hit->primID +
-                  (intptr_t)rtcGetGeometryUserData(rtcGetGeometry(inst_scene, hit->geomID)) +
-                  kernel_tex_fetch(__object_node, hit->instID[0] / 2);
+                  (intptr_t)rtcGetGeometryUserData(rtcGetGeometry(inst_scene, hit->geomID));
     isect->object = hit->instID[0] / 2;
   }
   else {
@@ -134,8 +136,7 @@ ccl_device_inline void kernel_embree_convert_sss_hit(KernelGlobals *kg,
   RTCScene inst_scene = (RTCScene)rtcGetGeometryUserData(
       rtcGetGeometry(kernel_data.bvh.scene, local_object_id * 2));
   isect->prim = hit->primID +
-                (intptr_t)rtcGetGeometryUserData(rtcGetGeometry(inst_scene, hit->geomID)) +
-                kernel_tex_fetch(__object_node, local_object_id);
+                (intptr_t)rtcGetGeometryUserData(rtcGetGeometry(inst_scene, hit->geomID));
   isect->object = local_object_id;
   isect->type = kernel_tex_fetch(__prim_type, isect->prim);
 }

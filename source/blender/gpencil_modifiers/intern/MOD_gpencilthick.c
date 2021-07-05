@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software  Foundation,
+ * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * The Original Code is Copyright (C) 2017, Blender Foundation
@@ -23,36 +23,46 @@
 
 #include <stdio.h>
 
+#include "BLI_listbase.h"
+#include "BLI_math.h"
 #include "BLI_utildefines.h"
 
-#include "DNA_meshdata_types.h"
-#include "DNA_scene_types.h"
-#include "DNA_object_types.h"
-#include "DNA_gpencil_types.h"
+#include "DNA_defaults.h"
 #include "DNA_gpencil_modifier_types.h"
+#include "DNA_gpencil_types.h"
+#include "DNA_meshdata_types.h"
+#include "DNA_object_types.h"
+#include "DNA_screen_types.h"
 
 #include "BKE_colortools.h"
+#include "BKE_context.h"
 #include "BKE_deform.h"
-#include "BKE_gpencil.h"
 #include "BKE_gpencil_modifier.h"
+#include "BKE_lib_query.h"
+#include "BKE_modifier.h"
+#include "BKE_screen.h"
 
 #include "DEG_depsgraph.h"
 
-#include "MOD_gpencil_util.h"
+#include "UI_interface.h"
+#include "UI_resources.h"
+
+#include "RNA_access.h"
+
 #include "MOD_gpencil_modifiertypes.h"
+#include "MOD_gpencil_ui_common.h"
+#include "MOD_gpencil_util.h"
 
 static void initData(GpencilModifierData *md)
 {
   ThickGpencilModifierData *gpmd = (ThickGpencilModifierData *)md;
-  gpmd->pass_index = 0;
-  gpmd->thickness = 2;
-  gpmd->layername[0] = '\0';
-  gpmd->materialname[0] = '\0';
-  gpmd->vgname[0] = '\0';
+
+  BLI_assert(MEMCMP_STRUCT_AFTER_IS_ZERO(gpmd, modifier));
+
+  MEMCPY_STRUCT_AFTER(gpmd, DNA_struct_default_get(ThickGpencilModifierData), modifier);
+
   gpmd->curve_thickness = BKE_curvemapping_add(1, 0.0f, 0.0f, 1.0f, 1.0f);
-  if (gpmd->curve_thickness) {
-    BKE_curvemapping_initialize(gpmd->curve_thickness);
-  }
+  BKE_curvemapping_init(gpmd->curve_thickness);
 }
 
 static void freeData(GpencilModifierData *md)
@@ -74,7 +84,7 @@ static void copyData(const GpencilModifierData *md, GpencilModifierData *target)
     tgmd->curve_thickness = NULL;
   }
 
-  BKE_gpencil_modifier_copyData_generic(md, target);
+  BKE_gpencil_modifier_copydata_generic(md, target);
 
   tgmd->curve_thickness = BKE_curvemapping_copy(gmd->curve_thickness);
 }
@@ -88,11 +98,11 @@ static void deformStroke(GpencilModifierData *md,
                          bGPDstroke *gps)
 {
   ThickGpencilModifierData *mmd = (ThickGpencilModifierData *)md;
-  const int def_nr = defgroup_name_index(ob, mmd->vgname);
+  const int def_nr = BKE_object_defgroup_name_index(ob, mmd->vgname);
 
   if (!is_stroke_affected_by_modifier(ob,
                                       mmd->layername,
-                                      mmd->materialname,
+                                      mmd->material,
                                       mmd->pass_index,
                                       mmd->layer_pass,
                                       1,
@@ -105,70 +115,48 @@ static void deformStroke(GpencilModifierData *md,
     return;
   }
 
-  /* Check to see if we normalize the whole stroke or only certain points along it. */
-  bool gps_has_affected_points = false;
-  bool gps_has_unaffected_points = false;
-
-  if (mmd->flag & GP_THICK_NORMALIZE) {
-    for (int i = 0; i < gps->totpoints; i++) {
-      MDeformVert *dvert = gps->dvert != NULL ? &gps->dvert[i] : NULL;
-      const float weight = get_modifier_point_weight(
-          dvert, (mmd->flag & GP_THICK_INVERT_VGROUP) != 0, def_nr);
-      if (weight < 0.0f) {
-        gps_has_unaffected_points = true;
-      }
-      else {
-        gps_has_affected_points = true;
-      }
-
-      /* If both checks are true, we have what we need so we can stop looking. */
-      if (gps_has_affected_points && gps_has_unaffected_points) {
-        break;
-      }
-    }
-  }
-
-  /* If we are normalizing and all points of the stroke are affected, it's safe to reset thickness
-   */
-  if (mmd->flag & GP_THICK_NORMALIZE && gps_has_affected_points && !gps_has_unaffected_points) {
-    gps->thickness = mmd->thickness;
-  }
-  /* Without this check, modifier alters the thickness of strokes which have no points in scope */
+  float stroke_thickness_inv = 1.0f / max_ii(gps->thickness, 1);
+  const bool is_normalized = (mmd->flag & GP_THICK_NORMALIZE);
+  bool is_inverted = ((mmd->flag & GP_THICK_WEIGHT_FACTOR) == 0) &&
+                     ((mmd->flag & GP_THICK_INVERT_VGROUP) != 0);
 
   for (int i = 0; i < gps->totpoints; i++) {
     bGPDspoint *pt = &gps->points[i];
     MDeformVert *dvert = gps->dvert != NULL ? &gps->dvert[i] : NULL;
-    float curvef = 1.0f;
     /* Verify point is part of vertex group. */
-    const float weight = get_modifier_point_weight(
-        dvert, (mmd->flag & GP_THICK_INVERT_VGROUP) != 0, def_nr);
+    float weight = get_modifier_point_weight(dvert, is_inverted, def_nr);
     if (weight < 0.0f) {
       continue;
     }
 
-    if (mmd->flag & GP_THICK_NORMALIZE) {
-      if (gps_has_unaffected_points) {
-        /* Clamp value for very weird situations when stroke thickness can be zero. */
-        CLAMP_MIN(gps->thickness, 1);
-        /* Calculate pressure value to match the width of strokes with reset thickness and 1.0
-         * pressure. */
-        pt->pressure = (float)mmd->thickness / (float)gps->thickness;
-      }
-      else {
-        /* Reset point pressure values so only stroke thickness counts. */
-        pt->pressure = 1.0f;
-      }
+    /* Apply weight directly. */
+    if ((!is_normalized) && (mmd->flag & GP_THICK_WEIGHT_FACTOR)) {
+      pt->pressure *= ((mmd->flag & GP_THICK_INVERT_VGROUP) ? 1.0f - weight : weight);
+      CLAMP_MIN(pt->pressure, 0.0f);
+      continue;
+    }
+
+    float curvef = 1.0f;
+
+    if ((mmd->flag & GP_THICK_CUSTOM_CURVE) && (mmd->curve_thickness)) {
+      /* Normalize value to evaluate curve. */
+      float value = (float)i / (gps->totpoints - 1);
+      curvef = BKE_curvemapping_evaluateF(mmd->curve_thickness, 0, value);
+    }
+
+    float target;
+    if (is_normalized) {
+      target = mmd->thickness * stroke_thickness_inv;
+      target *= curvef;
     }
     else {
-      if ((mmd->flag & GP_THICK_CUSTOM_CURVE) && (mmd->curve_thickness)) {
-        /* Normalize value to evaluate curve. */
-        float value = (float)i / (gps->totpoints - 1);
-        curvef = BKE_curvemapping_evaluateF(mmd->curve_thickness, 0, value);
-      }
-
-      pt->pressure += mmd->thickness * weight * curvef;
-      CLAMP_MIN(pt->pressure, 0.1f);
+      target = pt->pressure * mmd->thickness_fac;
+      weight *= curvef;
     }
+
+    pt->pressure = interpf(target, pt->pressure, weight);
+
+    CLAMP_MIN(pt->pressure, 0.0f);
   }
 }
 
@@ -179,13 +167,64 @@ static void bakeModifier(struct Main *UNUSED(bmain),
 {
   bGPdata *gpd = ob->data;
 
-  for (bGPDlayer *gpl = gpd->layers.first; gpl; gpl = gpl->next) {
-    for (bGPDframe *gpf = gpl->frames.first; gpf; gpf = gpf->next) {
-      for (bGPDstroke *gps = gpf->strokes.first; gps; gps = gps->next) {
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
         deformStroke(md, depsgraph, ob, gpl, gpf, gps);
       }
     }
   }
+}
+
+static void foreachIDLink(GpencilModifierData *md, Object *ob, IDWalkFunc walk, void *userData)
+{
+  ThickGpencilModifierData *mmd = (ThickGpencilModifierData *)md;
+
+  walk(userData, ob, (ID **)&mmd->material, IDWALK_CB_USER);
+}
+
+static void panel_draw(const bContext *UNUSED(C), Panel *panel)
+{
+  uiLayout *layout = panel->layout;
+
+  PointerRNA *ptr = gpencil_modifier_panel_get_property_pointers(panel, NULL);
+
+  uiLayoutSetPropSep(layout, true);
+
+  uiItemR(layout, ptr, "normalize_thickness", 0, NULL, ICON_NONE);
+  if (RNA_boolean_get(ptr, "normalize_thickness")) {
+    uiItemR(layout, ptr, "thickness", 0, NULL, ICON_NONE);
+  }
+  else {
+    const bool is_weighted = !RNA_boolean_get(ptr, "use_weight_factor");
+    uiLayout *row = uiLayoutRow(layout, true);
+    uiLayoutSetActive(row, is_weighted);
+    uiItemR(row, ptr, "thickness_factor", 0, NULL, ICON_NONE);
+    uiLayout *sub = uiLayoutRow(row, true);
+    uiLayoutSetActive(sub, true);
+    uiItemR(row, ptr, "use_weight_factor", 0, "", ICON_MOD_VERTEX_WEIGHT);
+  }
+
+  gpencil_modifier_panel_end(layout, ptr);
+}
+
+static void mask_panel_draw(const bContext *UNUSED(C), Panel *panel)
+{
+  gpencil_modifier_masking_panel_draw(panel, true, true);
+}
+
+static void panelRegister(ARegionType *region_type)
+{
+  PanelType *panel_type = gpencil_modifier_panel_register(
+      region_type, eGpencilModifierType_Thick, panel_draw);
+  PanelType *mask_panel_type = gpencil_modifier_subpanel_register(
+      region_type, "mask", "Influence", NULL, mask_panel_draw, panel_type);
+  gpencil_modifier_subpanel_register(region_type,
+                                     "curve",
+                                     "",
+                                     gpencil_modifier_curve_header_draw,
+                                     gpencil_modifier_curve_panel_draw,
+                                     mask_panel_type);
 }
 
 GpencilModifierTypeInfo modifierType_Gpencil_Thick = {
@@ -207,7 +246,7 @@ GpencilModifierTypeInfo modifierType_Gpencil_Thick = {
     /* isDisabled */ NULL,
     /* updateDepsgraph */ NULL,
     /* dependsOnTime */ NULL,
-    /* foreachObjectLink */ NULL,
-    /* foreachIDLink */ NULL,
+    /* foreachIDLink */ foreachIDLink,
     /* foreachTexLink */ NULL,
+    /* panelRegister */ panelRegister,
 };

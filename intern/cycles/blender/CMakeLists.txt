@@ -1,3 +1,16 @@
+# Copyright 2011-2020 Blender Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 set(INC
   ..
@@ -38,6 +51,7 @@ set(SRC
   CCL_api.h
   blender_device.h
   blender_id_map.h
+  blender_image.h
   blender_object_cull.h
   blender_sync.h
   blender_session.h
@@ -91,11 +105,32 @@ if(WITH_MOD_FLUID)
   add_definitions(-DWITH_FLUID)
 endif()
 
+if(WITH_OPENVDB)
+  add_definitions(-DWITH_OPENVDB ${OPENVDB_DEFINITIONS})
+  list(APPEND INC_SYS
+    ${OPENVDB_INCLUDE_DIRS}
+  )
+  list(APPEND LIB
+    ${OPENVDB_LIBRARIES}
+  )
+endif()
+
+if(WITH_OPENIMAGEDENOISE)
+  add_definitions(-DWITH_OPENIMAGEDENOISE)
+  list(APPEND INC_SYS
+    ${OPENIMAGEDENOISE_INCLUDE_DIRS}
+  )
+endif()
+
+if(WITH_EXPERIMENTAL_FEATURES)
+  add_definitions(-DWITH_HAIR_NODES)
+endif()
+
 blender_add_lib(bf_intern_cycles "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
 
 # avoid link failure with clang 3.4 debug
 if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT ${CMAKE_C_COMPILER_VERSION} VERSION_LESS '3.4')
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -gline-tables-only")
+  string(APPEND CMAKE_CXX_FLAGS_DEBUG " -gline-tables-only")
 endif()
 
 add_dependencies(bf_intern_cycles bf_rna)

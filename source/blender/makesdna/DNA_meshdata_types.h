@@ -21,11 +21,14 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_MESHDATA_TYPES_H__
-#define __DNA_MESHDATA_TYPES_H__
+#pragma once
 
 #include "DNA_customdata_types.h"
 #include "DNA_listBase.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* -------------------------------------------------------------------- */
 /** \name Geometry Elements
@@ -127,7 +130,7 @@ typedef struct MLoop {
 
 /**
  * Optionally store the order of selected elements.
- * This wont always be set since only some selection operations have an order.
+ * This won't always be set since only some selection operations have an order.
  *
  * Typically accessed from #Mesh.mselect
  */
@@ -148,7 +151,7 @@ enum {
 /** \} */
 
 /* -------------------------------------------------------------------- */
-/** \name Loop Tesselation Runtime Data
+/** \name Loop Tessellation Runtime Data
  * \{ */
 
 /**
@@ -268,6 +271,9 @@ typedef struct MIntProperty {
 typedef struct MStringProperty {
   char s[255], s_len;
 } MStringProperty;
+typedef struct MBoolProperty {
+  uint8_t b;
+} MBoolProperty;
 
 /** \} */
 
@@ -280,7 +286,7 @@ typedef struct MStringProperty {
  */
 typedef struct MDeformWeight {
   /** The index for the vertex group, must *always* be unique when in an array. */
-  int def_nr;
+  unsigned int def_nr;
   /** Weight between 0.0 and 1.0. */
   float weight;
 } MDeformWeight;
@@ -309,7 +315,7 @@ typedef enum eMVertSkinFlag {
    */
   MVERT_SKIN_ROOT = 1,
 
-  /** Marks a branch vertex (vertex with more than two connected edges), so that it's neighbors
+  /** Marks a branch vertex (vertex with more than two connected edges), so that its neighbors
    * are directly hulled together, rather than the default of generating intermediate frames.
    */
   MVERT_SKIN_LOOSE = 2,
@@ -331,18 +337,22 @@ typedef struct MLoopUV {
 
 /** #MLoopUV.flag */
 enum {
-  MLOOPUV_EDGESEL = (1 << 0),
+  /* MLOOPUV_DEPRECATED = (1 << 0), MLOOPUV_EDGESEL removed */
   MLOOPUV_VERTSEL = (1 << 1),
   MLOOPUV_PINNED = (1 << 2),
 };
 
 /**
- * \note While alpha is currently is not in the view-port,
+ * \note While alpha is not currently in the 3D Viewport,
  * this may eventually be added back, keep this value set to 255.
  */
 typedef struct MLoopCol {
   unsigned char r, g, b, a;
 } MLoopCol;
+
+typedef struct MPropCol {
+  float color[4];
+} MPropCol;
 
 /** Multi-Resolution loop data. */
 typedef struct MDisps {
@@ -407,7 +417,6 @@ typedef struct OrigSpaceLoop {
 
 typedef struct FreestyleEdge {
   char flag;
-  char _pad[3];
 } FreestyleEdge;
 
 /** #FreestyleEdge.flag */
@@ -417,7 +426,6 @@ enum {
 
 typedef struct FreestyleFace {
   char flag;
-  char _pad[3];
 } FreestyleFace;
 
 /** #FreestyleFace.flag */
@@ -515,56 +523,8 @@ typedef struct MRecast {
   int i;
 } MRecast;
 
-/** Multires structs kept for compatibility with old files. */
-typedef struct MultiresCol {
-  float a, r, g, b;
-} MultiresCol;
-
-typedef struct MultiresColFace {
-  /* vertex colors */
-  MultiresCol col[4];
-} MultiresColFace;
-
-typedef struct MultiresFace {
-  unsigned int v[4];
-  unsigned int mid;
-  char flag, mat_nr, _pad[2];
-} MultiresFace;
-
-typedef struct MultiresEdge {
-  unsigned int v[2];
-  unsigned int mid;
-} MultiresEdge;
-
-typedef struct MultiresLevel {
-  struct MultiresLevel *next, *prev;
-
-  MultiresFace *faces;
-  MultiresColFace *colfaces;
-  MultiresEdge *edges;
-
-  unsigned int totvert, totface, totedge;
-  char _pad[4];
-
-  /* Kept for compatibility with even older files */
-  MVert *verts;
-} MultiresLevel;
-
-typedef struct Multires {
-  ListBase levels;
-  MVert *verts;
-
-  unsigned char level_count, current, newlvl, edgelvl, pinlvl, renderlvl;
-  unsigned char use_col, flag;
-
-  /* Special level 1 data that cannot be modified from other levels */
-  CustomData vdata;
-  CustomData fdata;
-  short *edge_flags;
-  char *edge_creases;
-} Multires;
-/* End multi-res structs. */
-
 /** \} */
 
-#endif /* __DNA_MESHDATA_TYPES_H__ */
+#ifdef __cplusplus
+}
+#endif

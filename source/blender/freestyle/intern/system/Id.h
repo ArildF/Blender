@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_ID_H__
-#define __FREESTYLE_ID_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -28,21 +27,21 @@
 
 namespace Freestyle {
 
-/*! Class used to tag any object by an id.
+/** Class used to tag any object by an id.
  *  It is made of two unsigned integers.
  */
 class Id {
  public:
   typedef unsigned id_type;
 
-  /*! Default constructor */
+  /** Default constructor */
   Id()
   {
     _first = 0;
     _second = 0;
   }
 
-  /*! Builds an Id from an integer.
+  /** Builds an Id from an integer.
    *  The second number is set to 0.
    */
   Id(id_type id)
@@ -51,21 +50,21 @@ class Id {
     _second = 0;
   }
 
-  /*! Builds the Id from the two numbers */
+  /** Builds the Id from the two numbers */
   Id(id_type ifirst, id_type isecond)
   {
     _first = ifirst;
     _second = isecond;
   }
 
-  /*! Copy constructor */
+  /** Copy constructor */
   Id(const Id &iBrother)
   {
     _first = iBrother._first;
     _second = iBrother._second;
   }
 
-  /*! Operator= */
+  /** Operator= */
   Id &operator=(const Id &iBrother)
   {
     _first = iBrother._first;
@@ -73,43 +72,43 @@ class Id {
     return *this;
   }
 
-  /*! Returns the first Id number */
+  /** Returns the first Id number */
   id_type getFirst() const
   {
     return _first;
   }
 
-  /*! Returns the second Id number */
+  /** Returns the second Id number */
   id_type getSecond() const
   {
     return _second;
   }
 
-  /*! Sets the first number constituting the Id */
+  /** Sets the first number constituting the Id */
   void setFirst(id_type first)
   {
     _first = first;
   }
 
-  /*! Sets the second number constituting the Id */
+  /** Sets the second number constituting the Id */
   void setSecond(id_type second)
   {
     _second = second;
   }
 
-  /*! Operator== */
+  /** Operator== */
   bool operator==(const Id &id) const
   {
     return ((_first == id._first) && (_second == id._second));
   }
 
-  /*! Operator!= */
+  /** Operator!= */
   bool operator!=(const Id &id) const
   {
     return !((*this) == id);
   }
 
-  /*! Operator< */
+  /** Operator< */
   bool operator<(const Id &id) const
   {
     if (_first < id._first) {
@@ -138,5 +137,3 @@ inline std::ostream &operator<<(std::ostream &s, const Id &id)
 }
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_ID_H__

@@ -18,7 +18,6 @@
 
 # <pep8 compliant>
 import bpy
-import nodeitems_utils
 from bpy.types import Header, Menu, Panel
 from bpy.app.translations import pgettext_iface as iface_
 from bpy.app.translations import contexts as i18n_contexts
@@ -76,8 +75,9 @@ class NODE_HT_header(Header):
 
                 layout.separator_spacer()
 
-                types_that_support_material = {'MESH', 'CURVE', 'SURFACE', 'FONT', 'META', 'GPENCIL'}
-                # disable material slot buttons when pinned, cannot find correct slot within id_from (#36589)
+                types_that_support_material = {'MESH', 'CURVE', 'SURFACE', 'FONT', 'META',
+                                               'GPENCIL', 'VOLUME', 'HAIR', 'POINTCLOUD'}
+                # disable material slot buttons when pinned, cannot find correct slot within id_from (T36589)
                 # disable also when the selected object does not support materials
                 has_material_slots = not snode.pin and ob_type in types_that_support_material
 
@@ -150,6 +150,26 @@ class NODE_HT_header(Header):
             if snode_id:
                 layout.prop(snode_id, "use_nodes")
 
+        elif snode.tree_type == 'GeometryNodeTree':
+            NODE_MT_editor_menus.draw_collapsible(context, layout)
+            layout.separator_spacer()
+
+            ob = context.object
+
+            row = layout.row()
+            if snode.pin:
+                row.enabled = False
+                row.template_ID(snode, "node_tree", new="node.new_geometry_node_group_assign")
+            elif ob:
+                active_modifier = ob.modifiers.active
+                if active_modifier and active_modifier.type == 'NODES':
+                    if active_modifier.node_group:
+                        row.template_ID(active_modifier, "node_group", new="node.copy_geometry_node_group_assign")
+                    else:
+                        row.template_ID(active_modifier, "node_group", new="node.new_geometry_node_group_assign")
+                else:
+                    row.template_ID(snode, "node_tree", new="node.new_geometry_nodes_modifier")
+
         else:
             # Custom node tree is edited as independent ID block
             NODE_MT_editor_menus.draw_collapsible(context, layout)
@@ -204,16 +224,20 @@ class NODE_MT_add(bpy.types.Menu):
     bl_translation_context = i18n_contexts.operator_default
 
     def draw(self, context):
+        import nodeitems_utils
+
         layout = self.layout
 
         layout.operator_context = 'INVOKE_DEFAULT'
-        props = layout.operator("node.add_search", text="Search...", icon='VIEWZOOM')
-        props.use_transform = True
 
-        layout.separator()
+        if nodeitems_utils.has_node_categories(context):
+            props = layout.operator("node.add_search", text="Search...", icon='VIEWZOOM')
+            props.use_transform = True
 
-        # actual node submenus are defined by draw functions from node categories
-        nodeitems_utils.draw_node_categories_menu(self, context)
+            layout.separator()
+
+            # actual node submenus are defined by draw functions from node categories
+            nodeitems_utils.draw_node_categories_menu(self, context)
 
 
 class NODE_MT_view(Menu):
@@ -234,8 +258,10 @@ class NODE_MT_view(Menu):
 
         layout.separator()
 
-        layout.operator("view2d.zoom_in")
-        layout.operator("view2d.zoom_out")
+        sub = layout.column()
+        sub.operator_context = 'EXEC_REGION_WIN'
+        sub.operator("view2d.zoom_in")
+        sub.operator("view2d.zoom_out")
 
         layout.separator()
 
@@ -266,7 +292,7 @@ class NODE_MT_select(Menu):
 
         layout.separator()
         layout.operator("node.select_all").action = 'TOGGLE'
-        layout.operator("node.select_all", text="Inverse").action = 'INVERT'
+        layout.operator("node.select_all", text="Invert").action = 'INVERT'
         layout.operator("node.select_linked_from")
         layout.operator("node.select_linked_to")
 
@@ -309,6 +335,7 @@ class NODE_MT_node(Menu):
         layout.operator("node.link_make", text="Make and Replace Links").replace = True
         layout.operator("node.links_cut")
         layout.operator("node.links_detach")
+        layout.operator("node.links_mute")
 
         layout.separator()
 
@@ -424,7 +451,7 @@ class NODE_MT_context_menu(Menu):
         layout.operator("node.delete")
         layout.operator("node.clipboard_copy", text="Copy")
         layout.operator("node.clipboard_paste", text="Paste")
-        layout.operator_context = 'EXEC_DEFAULT'
+        layout.operator_context = 'EXEC_REGION_WIN'
 
         layout.operator("node.delete_reconnect")
 
@@ -455,7 +482,7 @@ class NODE_MT_context_menu(Menu):
 class NODE_PT_active_node_generic(Panel):
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'UI'
-    bl_category = "Item"
+    bl_category = "Node"
     bl_label = "Node"
 
     @classmethod
@@ -473,7 +500,7 @@ class NODE_PT_active_node_generic(Panel):
 class NODE_PT_active_node_color(Panel):
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'UI'
-    bl_category = "Item"
+    bl_category = "Node"
     bl_label = "Color"
     bl_options = {'DEFAULT_CLOSED'}
     bl_parent_id = 'NODE_PT_active_node_generic'
@@ -503,7 +530,7 @@ class NODE_PT_active_node_color(Panel):
 class NODE_PT_active_node_properties(Panel):
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'UI'
-    bl_category = "Item"
+    bl_category = "Node"
     bl_label = "Properties"
     bl_options = {'DEFAULT_CLOSED'}
 
@@ -524,19 +551,27 @@ class NODE_PT_active_node_properties(Panel):
 
         # XXX this could be filtered further to exclude socket types
         # which don't have meaningful input values (e.g. cycles shader)
-        value_inputs = [socket for socket in node.inputs if socket.enabled and not socket.is_linked]
+        value_inputs = [socket for socket in node.inputs if self.show_socket_input(socket)]
         if value_inputs:
             layout.separator()
             layout.label(text="Inputs:")
             for socket in value_inputs:
                 row = layout.row()
-                socket.draw(context, row, node, iface_(socket.name, socket.bl_rna.translation_context))
+                socket.draw(
+                    context,
+                    row,
+                    node,
+                    iface_(socket.label if socket.label else socket.name, socket.bl_rna.translation_context),
+                )
+
+    def show_socket_input(self, socket):
+        return hasattr(socket, 'draw') and socket.enabled and not socket.is_linked
 
 
 class NODE_PT_texture_mapping(Panel):
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'UI'
-    bl_category = "Item"
+    bl_category = "Node"
     bl_label = "Texture Mapping"
     bl_options = {'DEFAULT_CLOSED'}
     COMPAT_ENGINES = {'BLENDER_RENDER', 'BLENDER_EEVEE', 'BLENDER_WORKBENCH'}
@@ -625,8 +660,12 @@ class NODE_PT_quality(bpy.types.Panel):
 
         snode = context.space_data
         tree = snode.node_tree
+        prefs = bpy.context.preferences
 
         col = layout.column()
+        if prefs.experimental.use_full_frame_compositor:
+            col.prop(tree, "execution_mode")
+
         col.prop(tree, "render_quality", text="Render")
         col.prop(tree, "edit_quality", text="Edit")
         col.prop(tree, "chunk_size")
@@ -648,16 +687,8 @@ class NODE_UL_interface_sockets(bpy.types.UIList):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
             row = layout.row(align=True)
 
-            # inputs get icon on the left
-            if not socket.is_output:
-                row.template_node_socket(color=color)
-
+            row.template_node_socket(color=color)
             row.prop(socket, "name", text="", emboss=False, icon_value=icon)
-
-            # outputs get icon on the right
-            if socket.is_output:
-                row.template_node_socket(color=color)
-
         elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
             layout.template_node_socket(color=color)

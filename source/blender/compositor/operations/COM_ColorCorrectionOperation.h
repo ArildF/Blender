@@ -16,11 +16,13 @@
  * Copyright 2011, Blender Foundation.
  */
 
-#ifndef __COM_COLORCORRECTIONOPERATION_H__
-#define __COM_COLORCORRECTIONOPERATION_H__
-#include "COM_NodeOperation.h"
+#pragma once
 
-class ColorCorrectionOperation : public NodeOperation {
+#include "COM_MultiThreadedRowOperation.h"
+
+namespace blender::compositor {
+
+class ColorCorrectionOperation : public MultiThreadedRowOperation {
  private:
   /**
    * Cached reference to the inputProgram
@@ -37,19 +39,19 @@ class ColorCorrectionOperation : public NodeOperation {
   ColorCorrectionOperation();
 
   /**
-   * the inner loop of this program
+   * The inner loop of this operation.
    */
-  void executePixelSampled(float output[4], float x, float y, PixelSampler sampler);
+  void executePixelSampled(float output[4], float x, float y, PixelSampler sampler) override;
 
   /**
    * Initialize the execution
    */
-  void initExecution();
+  void initExecution() override;
 
   /**
    * Deinitialize the execution
    */
-  void deinitExecution();
+  void deinitExecution() override;
 
   void setData(NodeColorCorrection *data)
   {
@@ -67,5 +69,8 @@ class ColorCorrectionOperation : public NodeOperation {
   {
     this->m_blueChannelEnabled = enabled;
   }
+
+  void update_memory_buffer_row(PixelCursor &p) override;
 };
-#endif
+
+}  // namespace blender::compositor

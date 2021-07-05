@@ -27,7 +27,7 @@ ccl_device_noinline_cpu float3 direct_emissive_eval(KernelGlobals *kg,
                                                     float time)
 {
   /* setup shading at emitter */
-  float3 eval = make_float3(0.0f, 0.0f, 0.0f);
+  float3 eval = zero_float3();
 
   if (shader_constant_emission_eval(kg, ls->shader, &eval)) {
     if ((ls->prim != PRIM_NONE) && dot(ls->Ng, I) < 0.0f) {
@@ -145,16 +145,14 @@ ccl_device_noinline_cpu bool direct_emission(KernelGlobals *kg,
 #ifdef __PASSES__
   /* use visibility flag to skip lights */
   if (ls->shader & SHADER_EXCLUDE_ANY) {
-    if (ls->shader & SHADER_EXCLUDE_DIFFUSE) {
-      eval->diffuse = make_float3(0.0f, 0.0f, 0.0f);
-      eval->subsurface = make_float3(0.0f, 0.0f, 0.0f);
-    }
+    if (ls->shader & SHADER_EXCLUDE_DIFFUSE)
+      eval->diffuse = zero_float3();
     if (ls->shader & SHADER_EXCLUDE_GLOSSY)
-      eval->glossy = make_float3(0.0f, 0.0f, 0.0f);
+      eval->glossy = zero_float3();
     if (ls->shader & SHADER_EXCLUDE_TRANSMIT)
-      eval->transmission = make_float3(0.0f, 0.0f, 0.0f);
+      eval->transmission = zero_float3();
     if (ls->shader & SHADER_EXCLUDE_SCATTER)
-      eval->scatter = make_float3(0.0f, 0.0f, 0.0f);
+      eval->volume = zero_float3();
   }
 #endif
 
@@ -178,8 +176,7 @@ ccl_device_noinline_cpu bool direct_emission(KernelGlobals *kg,
 
   if (ls->shader & SHADER_CAST_SHADOW) {
     /* setup ray */
-    bool transmit = (dot(sd->Ng, ls->D) < 0.0f);
-    ray->P = ray_offset(sd->P, (transmit) ? -sd->Ng : sd->Ng);
+    ray->P = ray_offset_shadow(kg, sd, ls->D);
 
     if (ls->t == FLT_MAX) {
       /* distant light */
@@ -268,7 +265,7 @@ ccl_device_noinline_cpu void indirect_lamp_emission(KernelGlobals *kg,
       /* shadow attenuation */
       Ray volume_ray = *ray;
       volume_ray.t = ls.t;
-      float3 volume_tp = make_float3(1.0f, 1.0f, 1.0f);
+      float3 volume_tp = one_float3();
       kernel_volume_shadow(kg, emission_sd, state, &volume_ray, &volume_tp);
       lamp_L *= volume_tp;
     }
@@ -305,11 +302,11 @@ ccl_device_noinline_cpu float3 indirect_background(KernelGlobals *kg,
         ((shader & SHADER_EXCLUDE_TRANSMIT) && (state->flag & PATH_RAY_TRANSMIT)) ||
         ((shader & SHADER_EXCLUDE_CAMERA) && (state->flag & PATH_RAY_CAMERA)) ||
         ((shader & SHADER_EXCLUDE_SCATTER) && (state->flag & PATH_RAY_VOLUME_SCATTER)))
-      return make_float3(0.0f, 0.0f, 0.0f);
+      return zero_float3();
   }
 
   /* Evaluate background shader. */
-  float3 L = make_float3(0.0f, 0.0f, 0.0f);
+  float3 L = zero_float3();
   if (!shader_constant_emission_eval(kg, shader, &L)) {
 #  ifdef __SPLIT_KERNEL__
     Ray priv_ray = *ray;
@@ -328,9 +325,7 @@ ccl_device_noinline_cpu float3 indirect_background(KernelGlobals *kg,
   /* Background MIS weights. */
 #  ifdef __BACKGROUND_MIS__
   /* Check if background light exists or if we should skip pdf. */
-  int res_x = kernel_data.integrator.pdf_background_res_x;
-
-  if (!(state->flag & PATH_RAY_MIS_SKIP) && res_x) {
+  if (!(state->flag & PATH_RAY_MIS_SKIP) && kernel_data.background.use_mis) {
     /* multiple importance sampling, get background light pdf for ray
      * direction, and compute weight with respect to BSDF pdf */
     float pdf = background_light_pdf(kg, ray->P, ray->D);

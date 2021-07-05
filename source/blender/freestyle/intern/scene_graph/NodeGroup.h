@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_NODE_GROUP_H__
-#define __FREESTYLE_NODE_GROUP_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -43,33 +42,33 @@ class NodeGroup : public Node {
   {
   }
 
-  /*! Adds a child. Makes a addRef on the iChild reference counter */
+  /** Adds a child. Makes a addRef on the iChild reference counter */
   virtual void AddChild(Node *iChild);
 
-  /*! destroys all the underlying nodes
+  /** destroys all the underlying nodes
    *  Returns the reference counter after having done a release()
    */
   virtual int destroy();
 
-  /*! Detaches all the children */
+  /** Detaches all the children */
   virtual void DetachChildren();
 
-  /*! Detached the specified child */
+  /** Detached the specified child */
   virtual void DetachChild(Node *iChild);
 
-  /*! Retrieve children */
+  /** Retrieve children */
   virtual void RetrieveChildren(vector<Node *> &oNodes);
 
-  /*! Renders every children */
+  /** Renders every children */
   //  virtual void Render(Renderer *iRenderer);
 
-  /*! Accept the corresponding visitor */
+  /** Accept the corresponding visitor */
   virtual void accept(SceneVisitor &v);
 
-  /*! Updates the BBox */
+  /** Updates the BBox */
   virtual const BBox<Vec3r> &UpdateBBox();
 
-  /*! Returns the number of children */
+  /** Returns the number of children */
   virtual int numberOfChildren()
   {
     return _Children.size();
@@ -80,5 +79,3 @@ class NodeGroup : public Node {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_NODE_GROUP_H__

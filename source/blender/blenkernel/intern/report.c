@@ -21,10 +21,10 @@
  * \ingroup bke
  */
 
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -34,8 +34,8 @@
 
 #include "BLT_translation.h"
 
-#include "BKE_report.h"
 #include "BKE_global.h" /* G.background only */
+#include "BKE_report.h"
 
 const char *BKE_report_type_str(ReportType type)
 {
@@ -107,7 +107,7 @@ void BKE_report(ReportList *reports, ReportType type, const char *_message)
   int len;
   const char *message = TIP_(_message);
 
-  /* in background mode always print otherwise there are cases the errors wont be displayed,
+  /* in background mode always print otherwise there are cases the errors won't be displayed,
    * but still add to the report list since this is used for python exception handling */
   if (G.background || !reports || ((reports->flag & RPT_PRINT) && (type >= reports->printlevel))) {
     printf("%s: %s\n", BKE_report_type_str(type), message);
@@ -121,7 +121,7 @@ void BKE_report(ReportList *reports, ReportType type, const char *_message)
     report->typestr = BKE_report_type_str(type);
 
     len = strlen(message);
-    message_alloc = MEM_callocN(sizeof(char) * (len + 1), "ReportMessage");
+    message_alloc = MEM_mallocN(sizeof(char) * (len + 1), "ReportMessage");
     memcpy(message_alloc, message, sizeof(char) * (len + 1));
     report->message = message_alloc;
     report->len = len;

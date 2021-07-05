@@ -34,9 +34,9 @@ else()
 endif()
 
 ExternalProject_Add(external_sndfile
-  URL ${SNDFILE_URI}
+  URL file://${PACKAGE_DIR}/${SNDFILE_FILE}
   DOWNLOAD_DIR ${DOWNLOAD_DIR}
-  URL_HASH MD5=${SNDFILE_HASH}
+  URL_HASH ${SNDFILE_HASH_TYPE}=${SNDFILE_HASH}
   PREFIX ${BUILD_DIR}/sndfile
   PATCH_COMMAND ${SNDFILE_PATCH_CMD}
   CONFIGURE_COMMAND ${CONFIGURE_ENV} && cd ${BUILD_DIR}/sndfile/src/external_sndfile/ && ${SNDFILE_ENV} ${CONFIGURE_COMMAND} ${SNDFILE_OPTIONS} --prefix=${mingw_LIBDIR}/sndfile
@@ -58,5 +58,16 @@ if(UNIX)
   add_dependencies(
     external_sndfile
     external_flac
+  )
+endif()
+
+if(BUILD_MODE STREQUAL Release AND WIN32)
+  ExternalProject_Add_Step(external_sndfile after_install
+      COMMAND  lib /def:${BUILD_DIR}/sndfile/src/external_sndfile/src/libsndfile-1.def /machine:x64 /out:${BUILD_DIR}/sndfile/src/external_sndfile/src/libsndfile-1.lib
+      COMMAND  ${CMAKE_COMMAND} -E copy ${LIBDIR}/sndfile/bin/libsndfile-1.dll ${HARVEST_TARGET}/sndfile/lib/libsndfile-1.dll
+      COMMAND  ${CMAKE_COMMAND} -E copy ${BUILD_DIR}/sndfile/src/external_sndfile/src/libsndfile-1.lib ${HARVEST_TARGET}/sndfile/lib/libsndfile-1.lib
+      COMMAND  ${CMAKE_COMMAND} -E copy ${LIBDIR}/sndfile/include/sndfile.h ${HARVEST_TARGET}/sndfile/include/sndfile.h
+
+    DEPENDEES install
   )
 endif()

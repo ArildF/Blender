@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BKE_COLLECTION_H__
-#define __BKE_COLLECTION_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -24,6 +23,8 @@
 #include "BLI_compiler_compat.h"
 #include "BLI_ghash.h"
 #include "BLI_iterator.h"
+#include "BLI_sys_types.h"
+
 #include "DNA_listBase.h"
 
 #ifdef __cplusplus
@@ -34,10 +35,16 @@ extern "C" {
 
 struct BLI_Iterator;
 struct Base;
+struct BlendDataReader;
+struct BlendExpander;
+struct BlendLibReader;
+struct BlendWriter;
 struct Collection;
+struct Library;
 struct Main;
 struct Object;
 struct Scene;
+struct SceneCollection;
 struct ViewLayer;
 
 typedef struct CollectionParent {
@@ -50,42 +57,38 @@ typedef struct CollectionParent {
 struct Collection *BKE_collection_add(struct Main *bmain,
                                       struct Collection *parent,
                                       const char *name);
+void BKE_collection_add_from_object(struct Main *bmain,
+                                    struct Scene *scene,
+                                    const struct Object *ob_src,
+                                    struct Collection *collection_dst);
+void BKE_collection_add_from_collection(struct Main *bmain,
+                                        struct Scene *scene,
+                                        struct Collection *collection_src,
+                                        struct Collection *collection_dst);
 void BKE_collection_free(struct Collection *collection);
 bool BKE_collection_delete(struct Main *bmain, struct Collection *collection, bool hierarchy);
-
-struct Collection *BKE_collection_copy(struct Main *bmain,
-                                       struct Collection *parent,
-                                       struct Collection *collection);
-void BKE_collection_copy_data(struct Main *bmain,
-                              struct Collection *collection_dst,
-                              const struct Collection *collection_src,
-                              const int flag);
-void BKE_collection_make_local(struct Main *bmain,
-                               struct Collection *collection,
-                               const bool lib_local);
 
 struct Collection *BKE_collection_duplicate(struct Main *bmain,
                                             struct Collection *parent,
                                             struct Collection *collection,
-                                            const bool do_hierarchy,
-                                            const bool do_objects,
-                                            const bool do_obdata);
+                                            const uint duplicate_flags,
+                                            const uint duplicate_options);
 
 /* Master Collection for Scene */
 
 struct Collection *BKE_collection_master_add(void);
-struct Scene *BKE_collection_master_scene_search(const struct Main *bmain,
-                                                 const struct Collection *master_collection);
 
 /* Collection Objects */
 
 bool BKE_collection_has_object(struct Collection *collection, const struct Object *ob);
 bool BKE_collection_has_object_recursive(struct Collection *collection, struct Object *ob);
+bool BKE_collection_has_object_recursive_instanced(struct Collection *collection,
+                                                   struct Object *ob);
 struct Collection *BKE_collection_object_find(struct Main *bmain,
                                               struct Scene *scene,
                                               struct Collection *collection,
                                               struct Object *ob);
-bool BKE_collection_is_empty(struct Collection *collection);
+bool BKE_collection_is_empty(const struct Collection *collection);
 
 bool BKE_collection_object_add(struct Main *bmain,
                                struct Collection *collection,
@@ -109,7 +112,9 @@ bool BKE_scene_collections_object_remove(struct Main *bmain,
                                          struct Object *object,
                                          const bool free_us);
 void BKE_collections_object_remove_nulls(struct Main *bmain);
-void BKE_collections_child_remove_nulls(struct Main *bmain, struct Collection *old_collection);
+void BKE_collections_child_remove_nulls(struct Main *bmain,
+                                        struct Collection *parent_collection,
+                                        struct Collection *child_collection);
 
 /* Dependencies. */
 
@@ -122,6 +127,7 @@ bool BKE_collection_object_cyclic_check(struct Main *bmain,
 /* Object list cache. */
 
 struct ListBase BKE_collection_object_cache_get(struct Collection *collection);
+ListBase BKE_collection_object_cache_instanced_get(struct Collection *collection);
 void BKE_collection_object_cache_free(struct Collection *collection);
 
 struct Base *BKE_collection_or_layer_objects(const struct ViewLayer *view_layer,
@@ -155,12 +161,30 @@ bool BKE_collection_move(struct Main *bmain,
                          bool relative_after,
                          struct Collection *collection);
 
-bool BKE_collection_find_cycle(struct Collection *new_ancestor, struct Collection *collection);
+bool BKE_collection_cycle_find(struct Collection *new_ancestor, struct Collection *collection);
+bool BKE_collection_cycles_fix(struct Main *bmain, struct Collection *collection);
 
-bool BKE_collection_has_collection(struct Collection *parent, struct Collection *collection);
+bool BKE_collection_has_collection(const struct Collection *parent,
+                                   const struct Collection *collection);
 
 void BKE_collection_parent_relations_rebuild(struct Collection *collection);
 void BKE_main_collections_parent_relations_rebuild(struct Main *bmain);
+
+/* .blend file I/O */
+
+void BKE_collection_blend_write_nolib(struct BlendWriter *writer, struct Collection *collection);
+void BKE_collection_blend_read_data(struct BlendDataReader *reader, struct Collection *collection);
+void BKE_collection_blend_read_lib(struct BlendLibReader *reader, struct Collection *collection);
+void BKE_collection_blend_read_expand(struct BlendExpander *expander,
+                                      struct Collection *collection);
+
+void BKE_collection_compat_blend_read_data(struct BlendDataReader *reader,
+                                           struct SceneCollection *sc);
+void BKE_collection_compat_blend_read_lib(struct BlendLibReader *reader,
+                                          struct Library *lib,
+                                          struct SceneCollection *sc);
+void BKE_collection_compat_blend_read_expand(struct BlendExpander *expander,
+                                             struct SceneCollection *sc);
 
 /* Iteration callbacks. */
 
@@ -205,6 +229,8 @@ void BKE_scene_collections_iterator_end(struct BLI_Iterator *iter);
 void BKE_scene_objects_iterator_begin(struct BLI_Iterator *iter, void *data_in);
 void BKE_scene_objects_iterator_next(struct BLI_Iterator *iter);
 void BKE_scene_objects_iterator_end(struct BLI_Iterator *iter);
+
+struct GSet *BKE_scene_objects_as_gset(struct Scene *scene, struct GSet *objects_gset);
 
 #define FOREACH_SCENE_COLLECTION_BEGIN(scene, _instance) \
   ITER_BEGIN (BKE_scene_collections_iterator_begin, \
@@ -256,5 +282,3 @@ void BKE_scene_objects_iterator_end(struct BLI_Iterator *iter);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BKE_COLLECTION_H__ */

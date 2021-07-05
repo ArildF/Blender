@@ -23,16 +23,11 @@
 
 #include <stdlib.h>
 
-#include "RNA_access.h"
-
 #include "WM_api.h"
-#include "WM_types.h"
 
-#include "ED_select_utils.h"
 #include "ED_physics.h"
-#include "ED_object.h"
 
-#include "physics_intern.h"  // own include
+#include "physics_intern.h" /* own include */
 
 /***************************** particles ***********************************/
 
@@ -43,6 +38,7 @@ static void operatortypes_particle(void)
   WM_operatortype_append(PARTICLE_OT_select_tips);
   WM_operatortype_append(PARTICLE_OT_select_random);
   WM_operatortype_append(PARTICLE_OT_select_linked);
+  WM_operatortype_append(PARTICLE_OT_select_linked_pick);
   WM_operatortype_append(PARTICLE_OT_select_less);
   WM_operatortype_append(PARTICLE_OT_select_more);
 

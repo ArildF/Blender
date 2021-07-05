@@ -23,8 +23,8 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "GHOST_C-api.h"
 #include "EventToBuf.h"
+#include "GHOST_C-api.h"
 
 char *eventtype_to_string(GHOST_TEventType type)
 {
@@ -41,7 +41,7 @@ char *eventtype_to_string(GHOST_TEventType type)
     case GHOST_kEventKeyUp:
       return "KeyUp";
 
-    case GHOST_kEventQuit:
+    case GHOST_kEventQuitRequest:
       return "Quit";
 
     case GHOST_kEventWindowClose:
@@ -203,7 +203,7 @@ static char *keytype_to_string(GHOST_TKey key)
 void event_to_buf(GHOST_EventHandle evt, char buf[128])
 {
   GHOST_TEventType type = GHOST_GetEventType(evt);
-  double time = (double)((GHOST_TInt64)GHOST_GetEventTime(evt)) / 1000;
+  double time = (double)((int64_t)GHOST_GetEventTime(evt)) / 1000;
   GHOST_WindowHandle win = GHOST_GetEventWindow(evt);
   void *data = GHOST_GetEventData(evt);
   char *pos = buf;

@@ -18,27 +18,27 @@
  * \ingroup edmesh
  */
 
-#include "BLI_utildefines.h"
 #include "BLI_array_utils.h"
-#include "BLI_math.h"
 #include "BLI_listbase.h"
+#include "BLI_math.h"
+#include "BLI_utildefines.h"
 
 #include "BKE_context.h"
 #include "BKE_global.h"
+#include "BKE_scene.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
 
 #include "WM_api.h"
-#include "WM_types.h"
 #include "WM_message.h"
 #include "WM_toolsystem.h"
+#include "WM_types.h"
 
-#include "ED_screen.h"
-#include "ED_transform.h"
-#include "ED_view3d.h"
 #include "ED_gizmo_library.h"
 #include "ED_gizmo_utils.h"
+#include "ED_screen.h"
+#include "ED_transform.h"
 
 #include "UI_resources.h"
 
@@ -89,7 +89,7 @@ typedef struct GizmoExtrudeGroup {
 
   struct {
     float normal_mat3[3][3]; /* use Z axis for normal. */
-    int orientation_type;
+    int orientation_index;
   } data;
 
   wmOperatorType *ot_extrude;
@@ -152,7 +152,7 @@ static void gizmo_mesh_extrude_setup(const bContext *C, wmGizmoGroup *gzgroup)
 
   {
     const char *op_idname = NULL;
-    /* grease pencil does not use obedit */
+    /* Grease pencil does not use `obedit`. */
     /* GPXX: Remove if OB_MODE_EDIT_GPENCIL is merged with OB_MODE_EDIT */
     const Object *obact = CTX_data_active_object(C);
     if (obact->type == OB_GPENCIL) {
@@ -214,7 +214,7 @@ static void gizmo_mesh_extrude_setup(const bContext *C, wmGizmoGroup *gzgroup)
     PointerRNA macroptr = RNA_pointer_get(ptr, "TRANSFORM_OT_translate");
     RNA_boolean_set(&macroptr, "release_confirm", true);
 
-    bool constraint[3] = {0, 0, 0};
+    const bool constraint[3] = {0, 0, 0};
     RNA_boolean_set_array(&macroptr, "constraint_axis", constraint);
   }
 
@@ -255,8 +255,8 @@ static void gizmo_mesh_extrude_refresh(const bContext *C, wmGizmoGroup *gzgroup)
     axis_type = RNA_property_enum_get(&ptr, ggd->gzgt_axis_type_prop);
   }
 
-  ggd->data.orientation_type = scene->orientation_slots[SCE_ORIENT_DEFAULT].type;
-  const bool use_normal = ((ggd->data.orientation_type != V3D_ORIENT_NORMAL) ||
+  ggd->data.orientation_index = BKE_scene_orientation_get_index(scene, SCE_ORIENT_DEFAULT);
+  const bool use_normal = ((ggd->data.orientation_index != V3D_ORIENT_NORMAL) ||
                            (axis_type == EXTRUDE_AXIS_NORMAL));
   const int axis_len_used = use_normal ? 4 : 3;
 
@@ -266,7 +266,7 @@ static void gizmo_mesh_extrude_refresh(const bContext *C, wmGizmoGroup *gzgroup)
     struct TransformBounds tbounds_normal;
     if (!ED_transform_calc_gizmo_stats(C,
                                        &(struct TransformCalcParams){
-                                           .orientation_type = V3D_ORIENT_NORMAL + 1,
+                                           .orientation_index = V3D_ORIENT_NORMAL + 1,
                                        },
                                        &tbounds_normal)) {
       unit_m3(tbounds_normal.axis);
@@ -277,7 +277,7 @@ static void gizmo_mesh_extrude_refresh(const bContext *C, wmGizmoGroup *gzgroup)
   /* TODO(campbell): run second since this modifies the 3D view, it should not. */
   if (!ED_transform_calc_gizmo_stats(C,
                                      &(struct TransformCalcParams){
-                                         .orientation_type = ggd->data.orientation_type + 1,
+                                         .orientation_index = ggd->data.orientation_index + 1,
                                      },
                                      &tbounds)) {
     return;
@@ -367,7 +367,7 @@ static void gizmo_mesh_extrude_refresh(const bContext *C, wmGizmoGroup *gzgroup)
     }
   }
 
-  /* TODO: skip calculating axis which wont be used (above). */
+  /* TODO: skip calculating axis which won't be used (above). */
   switch (axis_type) {
     case EXTRUDE_AXIS_NORMAL:
       for (int i = 0; i < 3; i++) {
@@ -392,7 +392,7 @@ static void gizmo_mesh_extrude_refresh(const bContext *C, wmGizmoGroup *gzgroup)
 static void gizmo_mesh_extrude_draw_prepare(const bContext *C, wmGizmoGroup *gzgroup)
 {
   GizmoExtrudeGroup *ggd = gzgroup->customdata;
-  switch (ggd->data.orientation_type) {
+  switch (ggd->data.orientation_index) {
     case V3D_ORIENT_VIEW: {
       RegionView3D *rv3d = CTX_wm_region_view3d(C);
       float mat[3][3];
@@ -452,7 +452,7 @@ static void gizmo_mesh_extrude_invoke_prepare(const bContext *UNUSED(C),
     if (i == 3) {
       use_normal_matrix = true;
     }
-    else if (ggd->data.orientation_type == V3D_ORIENT_NORMAL) {
+    else if (ggd->data.orientation_index == V3D_ORIENT_NORMAL) {
       use_normal_matrix = true;
     }
     if (use_normal_matrix) {
@@ -469,11 +469,11 @@ static void gizmo_mesh_extrude_message_subscribe(const bContext *C,
                                                  struct wmMsgBus *mbus)
 {
   GizmoExtrudeGroup *ggd = gzgroup->customdata;
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
 
   /* Subscribe to view properties */
   wmMsgSubscribeValue msg_sub_value_gz_tag_refresh = {
-      .owner = ar,
+      .owner = region,
       .user_data = gzgroup->parent_gzmap,
       .notify = WM_gizmo_do_msg_notify_tag_refresh,
   };

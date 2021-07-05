@@ -17,9 +17,9 @@
 # ##### END GPL LICENSE BLOCK #####
 
 # <pep8-80 compliant>
+from __future__ import annotations
 
 import bpy
-import nodeitems_utils
 from bpy.types import (
     Operator,
     PropertyGroup,
@@ -94,9 +94,16 @@ class NodeAddOperator:
         for setting in self.settings:
             # XXX catch exceptions here?
             value = eval(setting.value)
+            node_data = node
+            node_attr_name = setting.name
+
+            # Support path to nested data.
+            if '.' in node_attr_name:
+                node_data_path, node_attr_name = node_attr_name.rsplit(".", 1)
+                node_data = node.path_resolve(node_data_path)
 
             try:
-                setattr(node, setting.name, value)
+                setattr(node_data, node_attr_name, value)
             except AttributeError as e:
                 self.report(
                     {'ERROR_INVALID_INPUT'},
@@ -113,7 +120,7 @@ class NodeAddOperator:
     def poll(cls, context):
         space = context.space_data
         # needs active node editor and a tree to add nodes to
-        return ((space.type == 'NODE_EDITOR') and
+        return (space and (space.type == 'NODE_EDITOR') and
                 space.edit_tree and not space.edit_tree.library)
 
     # Default execute simply adds a node
@@ -187,6 +194,8 @@ class NODE_OT_add_search(NodeAddOperator, Operator):
 
     # Create an enum list from node items
     def node_enum_items(self, context):
+        import nodeitems_utils
+
         enum_items = NODE_OT_add_search._enum_item_hack
         enum_items.clear()
 
@@ -202,6 +211,8 @@ class NODE_OT_add_search(NodeAddOperator, Operator):
 
     # Look up the item based on index
     def find_node_item(self, context):
+        import nodeitems_utils
+
         node_item = int(self.node_item)
         for index, item in enumerate(nodeitems_utils.node_items_iter(context)):
             if index == node_item:
@@ -211,7 +222,7 @@ class NODE_OT_add_search(NodeAddOperator, Operator):
     node_item: EnumProperty(
         name="Node Type",
         description="Node type",
-        items=node_enum_items,
+        items=NODE_OT_add_search.node_enum_items,
     )
 
     def execute(self, context):
@@ -254,7 +265,7 @@ class NODE_OT_collapse_hide_unused_toggle(Operator):
     def poll(cls, context):
         space = context.space_data
         # needs active node editor and a tree
-        return ((space.type == 'NODE_EDITOR') and
+        return (space and (space.type == 'NODE_EDITOR') and
                 (space.edit_tree and not space.edit_tree.library))
 
     def execute(self, context):
@@ -285,7 +296,7 @@ class NODE_OT_tree_path_parent(Operator):
     def poll(cls, context):
         space = context.space_data
         # needs active node editor and a tree
-        return (space.type == 'NODE_EDITOR' and len(space.path) > 1)
+        return (space and (space.type == 'NODE_EDITOR') and len(space.path) > 1)
 
     def execute(self, context):
         space = context.space_data

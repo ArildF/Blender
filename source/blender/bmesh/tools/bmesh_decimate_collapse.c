@@ -24,14 +24,14 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
-#include "BLI_quadric.h"
+#include "BLI_alloca.h"
 #include "BLI_heap.h"
 #include "BLI_linklist.h"
-#include "BLI_alloca.h"
+#include "BLI_math.h"
 #include "BLI_memarena.h"
 #include "BLI_polyfill_2d.h"
 #include "BLI_polyfill_2d_beautify.h"
+#include "BLI_quadric.h"
 #include "BLI_utildefines_stack.h"
 
 #include "BKE_customdata.h"
@@ -117,7 +117,7 @@ static void bm_decim_build_quadrics(BMesh *bm, Quadric *vquadrics)
       cross_v3_v3v3(edge_plane, edge_vector, f->no);
       copy_v3db_v3fl(edge_plane_db, edge_plane);
 
-      if (normalize_v3_d(edge_plane_db) > (double)FLT_EPSILON) {
+      if (normalize_v3_db(edge_plane_db) > (double)FLT_EPSILON) {
         Quadric q;
         float center[3];
 
@@ -137,7 +137,7 @@ static void bm_decim_build_quadrics(BMesh *bm, Quadric *vquadrics)
 static void bm_decim_calc_target_co_db(BMEdge *e, double optimize_co[3], const Quadric *vquadrics)
 {
   /* compute an edge contraction target for edge 'e'
-   * this is computed by summing it's vertices quadrics and
+   * this is computed by summing its vertices quadrics and
    * optimizing the result. */
   Quadric q;
 
@@ -148,11 +148,10 @@ static void bm_decim_calc_target_co_db(BMEdge *e, double optimize_co[3], const Q
     /* all is good */
     return;
   }
-  else {
-    optimize_co[0] = 0.5 * ((double)e->v1->co[0] + (double)e->v2->co[0]);
-    optimize_co[1] = 0.5 * ((double)e->v1->co[1] + (double)e->v2->co[1]);
-    optimize_co[2] = 0.5 * ((double)e->v1->co[2] + (double)e->v2->co[2]);
-  }
+
+  optimize_co[0] = 0.5 * ((double)e->v1->co[0] + (double)e->v2->co[0]);
+  optimize_co[1] = 0.5 * ((double)e->v1->co[1] + (double)e->v2->co[1]);
+  optimize_co[2] = 0.5 * ((double)e->v1->co[2] + (double)e->v2->co[2]);
 }
 
 static void bm_decim_calc_target_co_fl(BMEdge *e, float optimize_co[3], const Quadric *vquadrics)
@@ -203,7 +202,7 @@ static bool bm_edge_collapse_is_degenerate_flip(BMEdge *e, const float optimize_
         normal_tri_v3(cross_exist, v->co, co_prev, co_next);
         normal_tri_v3(cross_optim, optimize_co, co_prev, co_next);
 
-        /* use a small value rather then zero so we don't flip a face in multiple steps
+        /* use a small value rather than zero so we don't flip a face in multiple steps
          * (first making it zero area, then flipping again) */
         if (dot_v3v3(cross_exist, cross_optim) <= FLT_EPSILON) {
           // printf("no flip\n");
@@ -286,8 +285,8 @@ static void bm_decim_build_edge_cost_single(BMEdge *e,
     cost = (BLI_quadric_evaluate(q1, optimize_co) + BLI_quadric_evaluate(q2, optimize_co));
   }
 
-  /* note, 'cost' shouldn't be negative but happens sometimes with small values.
-   * this can cause faces that make up a flat surface to over-collapse, see [#37121] */
+  /* NOTE: 'cost' shouldn't be negative but happens sometimes with small values.
+   * this can cause faces that make up a flat surface to over-collapse, see T37121. */
   cost = fabsf(cost);
 
 #ifdef USE_TOPOLOGY_FALLBACK
@@ -295,8 +294,7 @@ static void bm_decim_build_edge_cost_single(BMEdge *e,
     /* subtract existing cost to further differentiate edges from one another
      *
      * keep topology cost below 0.0 so their values don't interfere with quadric cost,
-     * (and they get handled first).
-     * */
+     * (and they get handled first). */
     if (vweights == NULL) {
       cost = bm_decim_build_edge_cost_single_squared__topology(e) - cost;
     }
@@ -305,7 +303,7 @@ static void bm_decim_build_edge_cost_single(BMEdge *e,
       const float e_weight = (vweights[BM_elem_index_get(e->v1)] +
                               vweights[BM_elem_index_get(e->v2)]);
       cost = bm_decim_build_edge_cost_single__topology(e) - cost;
-      /* note, this is rather arbitrary max weight is 2 here,
+      /* NOTE: this is rather arbitrary max weight is 2 here,
        * allow for skipping edges 4x the length, based on weights */
       if (e_weight) {
         cost *= 1.0f + (e_weight * vweight_factor);
@@ -411,7 +409,7 @@ static int *bm_edge_symmetry_map(BMesh *bm, uint symmetry_axis, float limit)
   BMEdge *e, **etable;
   uint i;
   int *edge_symmetry_map;
-  const float limit_sq = SQUARE(limit);
+  const float limit_sq = square_f(limit);
   KDTree_3d *tree;
 
   tree = BLI_kdtree_3d_new(bm->totedge);
@@ -570,9 +568,9 @@ static bool bm_decim_triangulate_begin(BMesh *bm, int *r_edges_tri_tot)
       pf_heap = NULL;
     }
 
-    /* adding new faces as we loop over faces
+    /* Adding new faces as we loop over faces
      * is normally best avoided, however in this case its not so bad because any face touched twice
-     * will already be triangulated*/
+     * will already be triangulated. */
     BM_ITER_MESH (f, &iter, bm, BM_FACES_OF_MESH) {
       if (f->len > 3) {
         has_cut |= bm_face_triangulate(bm,
@@ -941,7 +939,7 @@ static bool bm_edge_collapse_is_degenerate_topology(BMEdge *e_first)
  * intended for speed over flexibility.
  * can only collapse edges connected to (1, 2) tris.
  *
- * Important - dont add vert/edge/face data on collapsing!
+ * Important - don't add vert/edge/face data on collapsing!
  *
  * \param r_e_clear_other: Let caller know what edges we remove besides \a e_clear
  * \param customdata_flag: Merge factor, scales from 0 - 1 ('v_clear' -> 'v_other')
@@ -1059,7 +1057,7 @@ static bool bm_edge_collapse(BMesh *bm,
 
     return true;
   }
-  else if (BM_edge_is_boundary(e_clear)) {
+  if (BM_edge_is_boundary(e_clear)) {
     /* same as above but only one triangle */
     BMLoop *l_a;
     BMEdge *e_a_other[2];
@@ -1115,9 +1113,7 @@ static bool bm_edge_collapse(BMesh *bm,
 
     return true;
   }
-  else {
-    return false;
-  }
+  return false;
 }
 
 /**
@@ -1273,11 +1269,9 @@ static bool bm_decim_edge_collapse(BMesh *bm,
     return true;
 #endif
   }
-  else {
-    /* add back with a high cost */
-    bm_decim_invalid_edge_cost_single(e, eheap, eheap_table);
-    return false;
-  }
+  /* add back with a high cost */
+  bm_decim_invalid_edge_cost_single(e, eheap, eheap_table);
+  return false;
 }
 
 /* Main Decimate Function
@@ -1291,6 +1285,11 @@ static bool bm_decim_edge_collapse(BMesh *bm,
  *        a vertex group is the usual source for this.
  * \param symmetry_axis: Axis of symmetry, -1 to disable mirror decimate.
  * \param symmetry_eps: Threshold when matching mirror verts.
+ *
+ * \note The caller is responsible for recalculating face and vertex normals.
+ * - Vertex normals are maintained while decimating,
+ *   although they won't necessarily match the final recalculated normals.
+ * - Face normals are not maintained at all.
  */
 void BM_mesh_decimate_collapse(BMesh *bm,
                                const float factor,
@@ -1324,9 +1323,9 @@ void BM_mesh_decimate_collapse(BMesh *bm,
   UNUSED_VARS(do_triangulate);
 #endif
 
-  /* alloc vars */
+  /* Allocate variables. */
   vquadrics = MEM_callocN(sizeof(Quadric) * bm->totvert, __func__);
-  /* since some edges may be degenerate, we might be over allocing a little here */
+  /* Since some edges may be degenerate, we might be over allocating a little here. */
   eheap = BLI_heap_new_ex(bm->totedge);
   eheap_table = MEM_mallocN(sizeof(HeapNode *) * bm->totedge, __func__);
   tot_edge_orig = bm->totedge;
@@ -1373,7 +1372,7 @@ void BM_mesh_decimate_collapse(BMesh *bm,
       /* handy to detect corruptions elsewhere */
       BLI_assert(BM_elem_index_get(e) < tot_edge_orig);
 
-      /* Under normal conditions wont be accessed again,
+      /* Under normal conditions won't be accessed again,
        * but NULL just in case so we don't use freed node. */
       eheap_table[BM_elem_index_get(e)] = NULL;
 
@@ -1400,7 +1399,7 @@ void BM_mesh_decimate_collapse(BMesh *bm,
        * \note
        * - `eheap_table[e_index_mirr]` is only removed from the heap at the last moment
        *   since its possible (in theory) for collapsing `e` to remove `e_mirr`.
-       * - edges sharing a vertex are ignored, so the pivot vertex isnt moved to one side.
+       * - edges sharing a vertex are ignored, so the pivot vertex isn't moved to one side.
        */
 
       BMEdge *e = BLI_heap_pop_min(eheap);

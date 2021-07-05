@@ -69,10 +69,10 @@ void main(void)
   vec4 P3 = gl_in[3].gl_Position;
 
   /* get the four vertices passed to the shader */
-  vec2 sp0 = toScreenSpace(P0);  // start of previous segment
-  vec2 sp1 = toScreenSpace(P1);  // end of previous segment, start of current segment
-  vec2 sp2 = toScreenSpace(P2);  // end of current segment, start of next segment
-  vec2 sp3 = toScreenSpace(P3);  // end of next segment
+  vec2 sp0 = toScreenSpace(P0); /* start of previous segment */
+  vec2 sp1 = toScreenSpace(P1); /* end of previous segment, start of current segment */
+  vec2 sp2 = toScreenSpace(P2); /* end of current segment, start of next segment */
+  vec2 sp3 = toScreenSpace(P3); /* end of next segment */
 
   /* culling outside viewport */
   vec2 area = Viewport * 4.0;
@@ -100,8 +100,8 @@ void main(void)
   vec2 n2 = vec2(-v2.y, v2.x);
 
   /* determine miter lines by averaging the normals of the 2 segments */
-  vec2 miter_a = normalize(n0 + n1);  // miter at start of current segment
-  vec2 miter_b = normalize(n1 + n2);  // miter at end of current segment
+  vec2 miter_a = normalize(n0 + n1); /* miter at start of current segment */
+  vec2 miter_b = normalize(n1 + n2); /* miter at end of current segment */
 
   /* determine the length of the miter by projecting it onto normal and then inverse it */
   float an1 = dot(miter_a, n1);
@@ -170,7 +170,7 @@ void main(void)
     length_b = finalThickness[2];
   }
 
-  /* generate the start endcap (alpha < 0 used as endcap flag)*/
+  /* Generate the start end-cap (alpha < 0 used as end-cap flag). */
   float extend = (fill_stroke > 0) ? 2 : 1;
   if ((caps_start != GPENCIL_FLATCAP) && is_equal(P0, P2)) {
     mTexCoord = vec2(1, 0.5);
@@ -211,7 +211,7 @@ void main(void)
   gl_Position = vec4((sp2 - length_b * miter_b) / Viewport, getZdepth(P2), 1.0);
   EmitVertex();
 
-  /* generate the end endcap (alpha < 0 used as endcap flag)*/
+  /* Generate the end end-cap (alpha < 0 used as end-cap flag). */
   if ((caps_end != GPENCIL_FLATCAP) && is_equal(P1, P3)) {
     mTexCoord = vec2(0, 1);
     mColor = vec4(finalColor[2].rgb, finalColor[2].a * -1.0);

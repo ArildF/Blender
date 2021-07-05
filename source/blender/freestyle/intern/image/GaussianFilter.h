@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GAUSSIANFILTER_H__
-#define __GAUSSIANFILTER_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -27,9 +26,7 @@
 
 #include "../system/FreestyleConfig.h"
 
-extern "C" {
 #include "BLI_math.h"
-}
 
 #ifdef WITH_CXX_GUARDEDALLOC
 #  include "MEM_guardedalloc.h"
@@ -57,7 +54,7 @@ class GaussianFilter {
   GaussianFilter &operator=(const GaussianFilter &);
   virtual ~GaussianFilter();
 
-  /*! Returns the value for pixel x,y of image "map" after a gaussian blur, made using the sigma
+  /** Returns the value for pixel x,y of image "map" after a gaussian blur, made using the sigma
    * value. The sigma value determines the mask size (~ 2 x sigma).
    * \param map: The image we wish to work on.
    * The Map template must implement the following methods:
@@ -73,12 +70,12 @@ class GaussianFilter {
    */
   template<class Map> float getSmoothedPixel(Map *map, int x, int y);
 
-  /*! Compute the mask size and returns the REAL mask size ((2*_maskSize)-1)
+  /** Compute the mask size and returns the REAL mask size ((2*_maskSize)-1)
    *  This method is provided for convenience.
    */
   static int computeMaskSize(float sigma);
 
-  /*! accessors */
+  /** accessors */
   inline float sigma() const
   {
     return _sigma;
@@ -94,7 +91,7 @@ class GaussianFilter {
     return _bound;
   }
 
-  /*! modifiers */
+  /** modifiers */
   void setSigma(float sigma);
 #if 0
   void SetMaskSize(int size)
@@ -153,5 +150,3 @@ template<class Map> float GaussianFilter::getSmoothedPixel(Map *map, int x, int 
 }
 
 } /* namespace Freestyle */
-
-#endif  // __GAUSSIANFILTER_H__

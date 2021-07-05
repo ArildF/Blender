@@ -21,8 +21,8 @@
  * \ingroup spimage
  */
 
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "DNA_node_types.h"
 #include "DNA_scene_types.h"
@@ -37,8 +37,8 @@
 #include "BKE_context.h"
 #include "BKE_image.h"
 #include "BKE_node.h"
-#include "BKE_screen.h"
 #include "BKE_scene.h"
+#include "BKE_screen.h"
 
 #include "RE_pipeline.h"
 
@@ -47,8 +47,8 @@
 #include "IMB_imbuf_types.h"
 
 #include "ED_gpencil.h"
-#include "ED_screen.h"
 #include "ED_image.h"
+#include "ED_screen.h"
 
 #include "RNA_access.h"
 
@@ -86,26 +86,9 @@ static void ui_imageuser_slot_menu(bContext *UNUSED(C), uiLayout *layout, void *
 {
   uiBlock *block = uiLayoutGetBlock(layout);
   Image *image = image_p;
+
   int slot_id;
-
-  uiDefBut(block,
-           UI_BTYPE_LABEL,
-           0,
-           IFACE_("Slot"),
-           0,
-           0,
-           UI_UNIT_X * 5,
-           UI_UNIT_Y,
-           NULL,
-           0.0,
-           0.0,
-           0,
-           0,
-           "");
-  uiItemS(layout);
-
-  slot_id = BLI_listbase_count(&image->renderslots) - 1;
-  for (RenderSlot *slot = image->renderslots.last; slot; slot = slot->prev) {
+  LISTBASE_FOREACH_INDEX (RenderSlot *, slot, &image->renderslots, slot_id) {
     char str[64];
     if (slot->name[0] != '\0') {
       BLI_strncpy(str, slot->name, sizeof(str));
@@ -127,8 +110,23 @@ static void ui_imageuser_slot_menu(bContext *UNUSED(C), uiLayout *layout, void *
               0,
               -1,
               "");
-    slot_id--;
   }
+
+  uiItemS(layout);
+  uiDefBut(block,
+           UI_BTYPE_LABEL,
+           0,
+           IFACE_("Slot"),
+           0,
+           0,
+           UI_UNIT_X * 5,
+           UI_UNIT_Y,
+           NULL,
+           0.0,
+           0.0,
+           0,
+           0,
+           "");
 }
 
 static bool ui_imageuser_slot_menu_step(bContext *C, int direction, void *image_p)
@@ -139,9 +137,7 @@ static bool ui_imageuser_slot_menu_step(bContext *C, int direction, void *image_
     WM_event_add_notifier(C, NC_IMAGE | ND_DRAW, NULL);
     return true;
   }
-  else {
-    return true;
-  }
+  return true;
 }
 
 static const char *ui_imageuser_layer_fake_name(RenderResult *rr)
@@ -150,12 +146,10 @@ static const char *ui_imageuser_layer_fake_name(RenderResult *rr)
   if (rv->rectf) {
     return IFACE_("Composite");
   }
-  else if (rv->rect32) {
+  if (rv->rect32) {
     return IFACE_("Sequence");
   }
-  else {
-    return NULL;
-  }
+  return NULL;
 }
 
 /* workaround for passing many args */
@@ -179,14 +173,9 @@ static void ui_imageuser_layer_menu(bContext *UNUSED(C), uiLayout *layout, void 
   Image *image = rnd_data->image;
   ImageUser *iuser = rnd_data->iuser;
   Scene *scene = iuser->scene;
-  RenderResult *rr;
-  RenderLayer *rl;
-  RenderLayer rl_fake = {NULL};
-  const char *fake_name;
-  int nr;
 
-  /* may have been freed since drawing */
-  rr = BKE_image_acquire_renderresult(scene, image);
+  /* May have been freed since drawing. */
+  RenderResult *rr = BKE_image_acquire_renderresult(scene, image);
   if (UNLIKELY(rr == NULL)) {
     return;
   }
@@ -194,32 +183,26 @@ static void ui_imageuser_layer_menu(bContext *UNUSED(C), uiLayout *layout, void 
   UI_block_layout_set_current(block, layout);
   uiLayoutColumn(layout, false);
 
-  uiDefBut(block,
-           UI_BTYPE_LABEL,
-           0,
-           IFACE_("Layer"),
-           0,
-           0,
-           UI_UNIT_X * 5,
-           UI_UNIT_Y,
-           NULL,
-           0.0,
-           0.0,
-           0,
-           0,
-           "");
-  uiItemS(layout);
-
-  nr = BLI_listbase_count(&rr->layers) - 1;
-  fake_name = ui_imageuser_layer_fake_name(rr);
-
+  const char *fake_name = ui_imageuser_layer_fake_name(rr);
   if (fake_name) {
-    BLI_strncpy(rl_fake.name, fake_name, sizeof(rl_fake.name));
-    nr += 1;
+    uiDefButS(block,
+              UI_BTYPE_BUT_MENU,
+              B_NOP,
+              fake_name,
+              0,
+              0,
+              UI_UNIT_X * 5,
+              UI_UNIT_X,
+              &iuser->layer,
+              0.0,
+              0.0,
+              0,
+              -1,
+              "");
   }
 
-  for (rl = rr->layers.last; rl; rl = rl->prev, nr--) {
-  final:
+  int nr = fake_name ? 1 : 0;
+  for (RenderLayer *rl = rr->layers.first; rl; rl = rl->next, nr++) {
     uiDefButS(block,
               UI_BTYPE_BUT_MENU,
               B_NOP,
@@ -236,13 +219,21 @@ static void ui_imageuser_layer_menu(bContext *UNUSED(C), uiLayout *layout, void 
               "");
   }
 
-  if (fake_name) {
-    fake_name = NULL;
-    rl = &rl_fake;
-    goto final;
-  }
-
-  BLI_assert(nr == -1);
+  uiItemS(layout);
+  uiDefBut(block,
+           UI_BTYPE_LABEL,
+           0,
+           IFACE_("Layer"),
+           0,
+           0,
+           UI_UNIT_X * 5,
+           UI_UNIT_Y,
+           NULL,
+           0.0,
+           0.0,
+           0,
+           0,
+           "");
 
   BKE_image_release_renderresult(scene, image);
 }
@@ -271,23 +262,6 @@ static void ui_imageuser_pass_menu(bContext *UNUSED(C), uiLayout *layout, void *
 
   UI_block_layout_set_current(block, layout);
   uiLayoutColumn(layout, false);
-
-  uiDefBut(block,
-           UI_BTYPE_LABEL,
-           0,
-           IFACE_("Pass"),
-           0,
-           0,
-           UI_UNIT_X * 5,
-           UI_UNIT_Y,
-           NULL,
-           0.0,
-           0.0,
-           0,
-           0,
-           "");
-
-  uiItemS(layout);
 
   nr = (rl == NULL) ? 1 : 0;
 
@@ -318,6 +292,22 @@ static void ui_imageuser_pass_menu(bContext *UNUSED(C), uiLayout *layout, void *
               -1,
               "");
   }
+
+  uiItemS(layout);
+  uiDefBut(block,
+           UI_BTYPE_LABEL,
+           0,
+           IFACE_("Pass"),
+           0,
+           0,
+           UI_UNIT_X * 5,
+           UI_UNIT_Y,
+           NULL,
+           0.0,
+           0.0,
+           0,
+           0,
+           "");
 
   BLI_freelistN(&added_passes);
 
@@ -521,7 +511,7 @@ static bool ui_imageuser_pass_menu_step(bContext *C, int direction, void *rnd_pt
     return false;
   }
 
-  /* note, this looks reversed, but matches menu direction */
+  /* NOTE: this looks reversed, but matches menu direction. */
   if (direction == -1) {
     RenderPass *rp;
     int rp_index = iuser->pass + 1;
@@ -576,8 +566,12 @@ static void image_multiview_cb(bContext *C, void *rnd_pt, void *UNUSED(arg_v))
   WM_event_add_notifier(C, NC_IMAGE | ND_DRAW, NULL);
 }
 
-static void uiblock_layer_pass_buttons(
-    uiLayout *layout, Image *image, RenderResult *rr, ImageUser *iuser, int w, short *render_slot)
+static void uiblock_layer_pass_buttons(uiLayout *layout,
+                                       Image *image,
+                                       RenderResult *rr,
+                                       ImageUser *iuser,
+                                       int w,
+                                       const short *render_slot)
 {
   struct ImageUI_Data rnd_pt_local, *rnd_pt = NULL;
   uiBlock *block = uiLayoutGetBlock(layout);
@@ -656,8 +650,8 @@ static void uiblock_layer_pass_buttons(
     /* pass */
     rpass = (rl ? BLI_findlink(&rl->passes, iuser->pass) : NULL);
 
-    if (rpass && RE_passes_have_name(rl)) {
-      display_name = rpass->name;
+    if (rl && RE_passes_have_name(rl)) {
+      display_name = rpass ? rpass->name : "";
       rnd_pt = ui_imageuser_data_copy(&rnd_pt_local);
       but = uiDefMenuBut(block,
                          ui_imageuser_pass_menu,
@@ -725,9 +719,6 @@ static void uiblock_layer_pass_buttons(
   }
 }
 
-// XXX HACK!
-// static int packdummy=0;
-
 typedef struct RNAUpdateCb {
   PointerRNA ptr;
   PropertyRNA *prop;
@@ -743,7 +734,7 @@ static void rna_update_cb(bContext *C, void *arg_cb, void *UNUSED(arg))
   cb->iuser->ok = 1;
 
   /* we call update here on the pointer property, this way the
-   * owner of the image pointer can still define it's own update
+   * owner of the image pointer can still define its own update
    * and notifier */
   RNA_property_update(C, &cb->ptr, cb->prop);
 }
@@ -979,6 +970,16 @@ void uiTemplateImage(uiLayout *layout,
 
           bool is_data = IMB_colormanagement_space_name_is_data(ima->colorspace_settings.name);
           uiLayoutSetActive(sub, !is_data);
+        }
+
+        if (ima && iuser) {
+          void *lock;
+          ImBuf *ibuf = BKE_image_acquire_ibuf(ima, iuser, &lock);
+
+          if (ibuf && ibuf->rect_float && (ibuf->flags & IB_halffloat) == 0) {
+            uiItemR(col, &imaptr, "use_half_precision", 0, NULL, ICON_NONE);
+          }
+          BKE_image_release_ibuf(ima, ibuf, lock);
         }
       }
 
@@ -1217,11 +1218,12 @@ void uiTemplateImageInfo(uiLayout *layout, bContext *C, Image *ima, ImageUser *i
     const int len = MAX_IMAGE_INFO_LEN;
     int ofs = 0;
 
-    ofs += BLI_snprintf(str + ofs, len - ofs, TIP_("%d x %d, "), ibuf->x, ibuf->y);
+    ofs += BLI_snprintf_rlen(str + ofs, len - ofs, TIP_("%d x %d, "), ibuf->x, ibuf->y);
 
     if (ibuf->rect_float) {
       if (ibuf->channels != 4) {
-        ofs += BLI_snprintf(str + ofs, len - ofs, TIP_("%d float channel(s)"), ibuf->channels);
+        ofs += BLI_snprintf_rlen(
+            str + ofs, len - ofs, TIP_("%d float channel(s)"), ibuf->channels);
       }
       else if (ibuf->planes == R_IMF_PLANES_RGBA) {
         ofs += BLI_strncpy_rlen(str + ofs, TIP_(" RGBA float"), len - ofs);
@@ -1266,7 +1268,7 @@ void uiTemplateImageInfo(uiLayout *layout, bContext *C, Image *ima, ImageUser *i
     }
     else if (ima->source == IMA_SRC_SEQUENCE && ibuf) {
       /* Image sequence frame number + filename */
-      const char *filename = BLI_last_slash(ibuf->name);
+      const char *filename = BLI_path_slash_rfind(ibuf->name);
       filename = (filename == NULL) ? ibuf->name : filename + 1;
       BLI_snprintf(str, MAX_IMAGE_INFO_LEN, TIP_("Frame %d: %s"), framenr, filename);
     }
@@ -1313,6 +1315,6 @@ void image_buttons_register(ARegionType *art)
   pt->order = 10;
   pt->poll = metadata_panel_context_poll;
   pt->draw = metadata_panel_context_draw;
-  pt->flag |= PNL_DEFAULT_CLOSED;
+  pt->flag |= PANEL_TYPE_DEFAULT_CLOSED;
   BLI_addtail(&art->paneltypes, pt);
 }

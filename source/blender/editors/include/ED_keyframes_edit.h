@@ -21,8 +21,13 @@
  * \ingroup editors
  */
 
-#ifndef __ED_KEYFRAMES_EDIT_H__
-#define __ED_KEYFRAMES_EDIT_H__
+#pragma once
+
+#include "ED_anim_api.h" /* for enum eAnimFilter_Flags */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct BezTriple;
 struct FCurve;
@@ -100,8 +105,8 @@ typedef enum eEditKeyframes_Mirror {
 typedef struct KeyframeEdit_LassoData {
   rctf *rectf_scaled;
   const rctf *rectf_view;
-  const int (*mcords)[2];
-  int mcords_tot;
+  const int (*mcoords)[2];
+  int mcoords_len;
 } KeyframeEdit_LassoData;
 
 /* use with BEZT_OK_REGION_CIRCLE */
@@ -113,7 +118,7 @@ typedef struct KeyframeEdit_CircleData {
 } KeyframeEdit_CircleData;
 
 /* ************************************************ */
-/* Non-Destuctive Editing API (keyframes_edit.c) */
+/* Non-Destructive Editing API (keyframes_edit.c) */
 
 /* --- Defines for 'OK' polls + KeyframeEditData Flags --------- */
 
@@ -155,7 +160,7 @@ typedef struct KeyframeEditData {
   /* generic properties/data access */
   /** temp list for storing custom list of data to check */
   ListBase list;
-  /** pointer to current scene - many tools need access to cfra/etc.  */
+  /** pointer to current scene - many tools need access to cfra/etc. */
   struct Scene *scene;
   /** pointer to custom data - usually 'Object' but also 'rectf', but could be other types too */
   void *data;
@@ -247,6 +252,12 @@ short ANIM_animchanneldata_keyframes_loop(KeyframeEditData *ked,
                                           KeyframeEditFunc key_cb,
                                           FcuEditFunc fcu_cb);
 
+/* Calls callback_fn() for each keyframe in each fcurve in the filtered animation context.
+ * Assumes the callback updates keys. */
+void ANIM_animdata_keyframe_callback(struct bAnimContext *ac,
+                                     eAnimFilter_Flags filter,
+                                     KeyframeEditFunc callback_fn);
+
 /* functions for making sure all keyframes are in good order */
 void ANIM_editkeyframes_refresh(struct bAnimContext *ac);
 
@@ -289,7 +300,7 @@ short bezt_to_cfraelem(KeyframeEditData *ked, struct BezTriple *bezt);
  */
 void bezt_remap_times(KeyframeEditData *ked, struct BezTriple *bezt);
 
-/* ------ 1.5-D Region Testing Uitls (Lasso/Circle Select) ------- */
+/* ------ 1.5-D Region Testing Utilities (Lasso/Circle Select) ------- */
 /* XXX: These are temporary,
  * until we can unify GP/Mask Keyframe handling and standard FCurve Keyframe handling */
 
@@ -325,4 +336,6 @@ short paste_animedit_keys(struct bAnimContext *ac,
 
 /* ************************************************ */
 
-#endif /* __ED_KEYFRAMES_EDIT_H__ */
+#ifdef __cplusplus
+}
+#endif

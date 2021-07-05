@@ -25,7 +25,6 @@ from bpy.props import (
     BoolProperty,
     EnumProperty,
     FloatProperty,
-    FloatVectorProperty,
     IntProperty,
 )
 
@@ -134,7 +133,7 @@ class QuickExplode(ObjectModeOperator, Operator):
         default='EXPLODE',
     )
     amount: IntProperty(
-        name="Amount of pieces",
+        name="Number of Pieces",
         min=2, max=10000,
         soft_min=2, soft_max=10000,
         default=100,
@@ -337,7 +336,7 @@ class QuickSmoke(ObjectModeOperator, Operator):
         items=(
             ('SMOKE', "Smoke", ""),
             ('FIRE', "Fire", ""),
-            ('BOTH', "Smoke + Fire", ""),
+            ('BOTH', "Smoke & Fire", ""),
         ),
         default='SMOKE',
     )
@@ -399,8 +398,9 @@ class QuickSmoke(ObjectModeOperator, Operator):
         if self.style == 'FIRE' or self.style == 'BOTH':
             obj.modifiers[-1].domain_settings.use_noise = True
 
-        # set correct cache file format for smoke
-        obj.modifiers[-1].domain_settings.cache_data_format = 'UNI'
+        # ensure correct cache file format for smoke
+        if bpy.app.build_options.openvdb:
+            obj.modifiers[-1].domain_settings.cache_data_format = 'OPENVDB'
 
         # Setup material
 
@@ -441,15 +441,16 @@ class QuickSmoke(ObjectModeOperator, Operator):
 
 
 class QuickLiquid(Operator):
+    """Make selected objects liquid"""
     bl_idname = "object.quick_liquid"
     bl_label = "Quick Liquid"
     bl_options = {'REGISTER', 'UNDO'}
 
     show_flows: BoolProperty(
-            name="Render Liquid Objects",
-            description="Keep the liquid objects visible during rendering",
-            default=False,
-            )
+        name="Render Liquid Objects",
+        description="Keep the liquid objects visible during rendering",
+        default=False,
+    )
 
     def execute(self, context):
         if not bpy.app.build_options.fluid:
@@ -495,7 +496,7 @@ class QuickLiquid(Operator):
             obj_bb_minmax(obj, min_co, max_co)
 
         # add the liquid domain object
-        bpy.ops.mesh.primitive_cube_add()
+        bpy.ops.mesh.primitive_cube_add(align='WORLD')
         obj = context.active_object
         obj.name = "Liquid Domain"
 
@@ -514,11 +515,24 @@ class QuickLiquid(Operator):
         obj.modifiers[-1].domain_settings.use_collision_border_top = True
         obj.modifiers[-1].domain_settings.use_collision_border_bottom = True
 
-        # set correct cache file format for liquid
+        # ensure correct cache file formats for liquid
+        if bpy.app.build_options.openvdb:
+            obj.modifiers[-1].domain_settings.cache_data_format = 'OPENVDB'
         obj.modifiers[-1].domain_settings.cache_mesh_format = 'BOBJECT'
 
         # change domain type, will also allocate and show particle system for FLIP
         obj.modifiers[-1].domain_settings.domain_type = 'LIQUID'
+
+        liquid_domain = obj.modifiers[-2]
+
+        # set color mapping field to show phi grid for liquid
+        liquid_domain.domain_settings.color_ramp_field = 'PHI'
+
+        # perform a single slice of the domain
+        liquid_domain.domain_settings.use_slice = True
+
+        # set display thickness to a lower value for more detailed display of phi grids
+        liquid_domain.domain_settings.display_thickness = 0.02
 
         # make the domain smooth so it renders nicely
         bpy.ops.object.shade_smooth()

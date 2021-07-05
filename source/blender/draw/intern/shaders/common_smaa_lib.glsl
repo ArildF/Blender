@@ -1,9 +1,9 @@
 /**
- * Copyright (C) 2013 Jorge Jimenez (jorge@iryoku.com)
- * Copyright (C) 2013 Jose I. Echevarria (joseignacioechevarria@gmail.com)
- * Copyright (C) 2013 Belen Masia (bmasia@unizar.es)
- * Copyright (C) 2013 Fernando Navarro (fernandn@microsoft.com)
- * Copyright (C) 2013 Diego Gutierrez (diegog@unizar.es)
+ * Copyright (C) 2013 Jorge Jimenez <jorge@iryoku.com>
+ * Copyright (C) 2013 Jose I. Echevarria <joseignacioechevarria@gmail.com>
+ * Copyright (C) 2013 Belen Masia <bmasia@unizar.es>
+ * Copyright (C) 2013 Fernando Navarro <fernandn@microsoft.com>
+ * Copyright (C) 2013 Diego Gutierrez <diegog@unizar.es>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * this software and associated documentation files (the "Software"), to deal in
@@ -118,7 +118,7 @@
  *     half-rate linear filtering on GCN.
  *
  *     If SMAA is applied to 64-bit color buffers, switching to point filtering
- *     when accesing them will increase the performance. Search for
+ *     when accessing them will increase the performance. Search for
  *     'SMAASamplePoint' to see which textures may benefit from point
  *     filtering, and where (which is basically the color input in the edge
  *     detection and resolve passes).
@@ -240,7 +240,7 @@
  *      - SMAA::detectMSAAOrder and
  *      - SMAA::msaaReorder
  *
- *    These functions allow to match the standard multisample patterns by
+ *    These functions allow matching the standard multisample patterns by
  *    detecting the subsample order for a specific GPU, and reordering
  *    them appropriately.
  *
@@ -529,8 +529,9 @@
 #  define SMAATexturePass2D(tex) tex
 #  define SMAASampleLevelZero(tex, coord) tex2Dlod(tex, float4(coord, 0.0, 0.0))
 #  define SMAASampleLevelZeroPoint(tex, coord) tex2Dlod(tex, float4(coord, 0.0, 0.0))
-#  define SMAASampleLevelZeroOffset(tex, coord, offset) \
-    tex2Dlod(tex, float4(coord + offset * SMAA_RT_METRICS.xy, 0.0, 0.0))
+/* clang-format off */
+#  define SMAASampleLevelZeroOffset(tex, coord, offset) tex2Dlod(tex, float4(coord + offset * SMAA_RT_METRICS.xy, 0.0, 0.0))
+/* clang-format on */
 #  define SMAASample(tex, coord) tex2D(tex, coord)
 #  define SMAASamplePoint(tex, coord) tex2D(tex, coord)
 #  define SMAASampleOffset(tex, coord, offset) tex2D(tex, coord + offset * SMAA_RT_METRICS.xy)
@@ -554,8 +555,9 @@ SamplerState PointSampler
 #  define SMAATexturePass2D(tex) tex
 #  define SMAASampleLevelZero(tex, coord) tex.SampleLevel(LinearSampler, coord, 0)
 #  define SMAASampleLevelZeroPoint(tex, coord) tex.SampleLevel(PointSampler, coord, 0)
-#  define SMAASampleLevelZeroOffset(tex, coord, offset) \
-    tex.SampleLevel(LinearSampler, coord, 0, offset)
+/* clang-format off */
+#  define SMAASampleLevelZeroOffset(tex, coord, offset) tex.SampleLevel(LinearSampler, coord, 0, offset)
+/* clang-format on */
 #  define SMAASample(tex, coord) tex.Sample(LinearSampler, coord)
 #  define SMAASamplePoint(tex, coord) tex.Sample(PointSampler, coord)
 #  define SMAASampleOffset(tex, coord, offset) tex.Sample(LinearSampler, coord, offset)
@@ -597,10 +599,11 @@ SamplerState PointSampler
 #  define bool4 bvec4
 #endif
 
-#if !defined(SMAA_HLSL_3) && !defined(SMAA_HLSL_4) && !defined(SMAA_HLSL_4_1) && \
-    !defined(SMAA_GLSL_3) && !defined(SMAA_GLSL_4) && !defined(SMAA_CUSTOM_SL)
+/* clang-format off */
+#if !defined(SMAA_HLSL_3) && !defined(SMAA_HLSL_4) && !defined(SMAA_HLSL_4_1) && !defined(SMAA_GLSL_3) && !defined(SMAA_GLSL_4) && !defined(SMAA_CUSTOM_SL)
 #  error you must define the shading language: SMAA_HLSL_*, SMAA_GLSL_* or SMAA_CUSTOM_SL
 #endif
+/* clang-format on */
 
 //-----------------------------------------------------------------------------
 // Misc functions
@@ -692,6 +695,10 @@ void SMAANeighborhoodBlendingVS(float2 texcoord, out float4 offset)
 //-----------------------------------------------------------------------------
 // Edge Detection Pixel Shaders (First Pass)
 
+#  ifndef SMAA_LUMA_WEIGHT
+#    define SMAA_LUMA_WEIGHT float4(0.2126, 0.7152, 0.0722, 0.0)
+#  endif
+
 /**
  * Luma Edge Detection
  *
@@ -716,7 +723,8 @@ float2 SMAALumaEdgeDetectionPS(float2 texcoord,
 #  endif
 
   // Calculate lumas:
-  float4 weights = float4(0.2126 * 0.5, 0.7152 * 0.5, 0.0722 * 0.5, 0.5);
+  // float4 weights = float4(0.2126, 0.7152, 0.0722, 0.0);
+  float4 weights = SMAA_LUMA_WEIGHT;
   float L = dot(SMAASamplePoint(colorTex, texcoord).rgba, weights);
 
   float Lleft = dot(SMAASamplePoint(colorTex, offset[0].xy).rgba, weights);
@@ -727,9 +735,11 @@ float2 SMAALumaEdgeDetectionPS(float2 texcoord,
   delta.xy = abs(L - float2(Lleft, Ltop));
   float2 edges = step(threshold, delta.xy);
 
+#  ifndef SMAA_NO_DISCARD
   // Then discard if there is no edge:
   if (dot(edges, float2(1.0, 1.0)) == 0.0)
     discard;
+#  endif
 
   // Calculate right and bottom deltas:
   float Lright = dot(SMAASamplePoint(colorTex, offset[1].xy).rgba, weights);
@@ -793,9 +803,11 @@ float2 SMAAColorEdgeDetectionPS(float2 texcoord,
   // We do the usual threshold:
   float2 edges = step(threshold, delta.xy);
 
+#  ifndef SMAA_NO_DISCARD
   // Then discard if there is no edge:
   if (dot(edges, float2(1.0, 1.0)) == 0.0)
     discard;
+#  endif
 
   // Calculate right and bottom deltas:
   float3 Cright = SMAASamplePoint(colorTex, offset[1].xy).rgb;
@@ -1246,8 +1258,8 @@ float4 SMAABlendingWeightCalculationPS(float2 texcoord,
           SMAATexturePass2D(edgesTex), SMAATexturePass2D(searchTex), offset[0].zw, offset[2].y);
       d.y = coords.z;
 
-      // We want the distances to be in pixel units (doing this here allow to
-      // better interleave arithmetic and memory accesses):
+      // We want the distances to be in pixel units (doing this here allows
+      // better interleaving of arithmetic and memory accesses):
       d = abs(round(mad(SMAA_RT_METRICS.zz, d, -pixcoord.xx)));
 
       // SMAAArea below needs a sqrt, as the areas texture is compressed

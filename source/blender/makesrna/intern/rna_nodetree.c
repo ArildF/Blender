@@ -18,9 +18,9 @@
  * \ingroup RNA
  */
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
 
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
@@ -29,6 +29,7 @@
 
 #include "DNA_material_types.h"
 #include "DNA_mesh_types.h"
+#include "DNA_modifier_types.h"
 #include "DNA_node_types.h"
 #include "DNA_object_types.h"
 #include "DNA_particle_types.h"
@@ -36,8 +37,10 @@
 #include "DNA_texture_types.h"
 
 #include "BKE_animsys.h"
-#include "BKE_node.h"
+#include "BKE_attribute.h"
+#include "BKE_cryptomatte.h"
 #include "BKE_image.h"
+#include "BKE_node.h"
 #include "BKE_texture.h"
 
 #include "RNA_access.h"
@@ -54,13 +57,29 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "RE_render_ext.h"
+#include "RE_texture.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
 
 const EnumPropertyItem rna_enum_node_socket_in_out_items[] = {
     {SOCK_IN, "IN", 0, "Input", ""}, {SOCK_OUT, "OUT", 0, "Output", ""}, {0, NULL, 0, NULL, NULL}};
+
+static const EnumPropertyItem node_socket_data_type_items[] = {
+    {SOCK_FLOAT, "FLOAT", 0, "Float", ""},
+    {SOCK_INT, "INT", 0, "Integer", ""},
+    {SOCK_BOOLEAN, "BOOLEAN", 0, "Boolean", ""},
+    {SOCK_VECTOR, "VECTOR", 0, "Vector", ""},
+    {SOCK_STRING, "STRING", 0, "String", ""},
+    {SOCK_RGBA, "RGBA", 0, "Color", ""},
+    {SOCK_OBJECT, "OBJECT", 0, "Object", ""},
+    {SOCK_IMAGE, "IMAGE", 0, "Image", ""},
+    {SOCK_GEOMETRY, "GEOMETRY", 0, "Geometry", ""},
+    {SOCK_COLLECTION, "COLLECTION", 0, "Collection", ""},
+    {SOCK_TEXTURE, "TEXTURE", 0, "Texture", ""},
+    {SOCK_MATERIAL, "MATERIAL", 0, "Material", ""},
+    {0, NULL, 0, NULL, NULL},
+};
 
 #ifndef RNA_RUNTIME
 static const EnumPropertyItem rna_enum_node_socket_display_shape_items[] = {
@@ -75,12 +94,18 @@ static const EnumPropertyItem rna_enum_node_socket_display_shape_items[] = {
 static const EnumPropertyItem node_socket_type_items[] = {
     {SOCK_CUSTOM, "CUSTOM", 0, "Custom", ""},
     {SOCK_FLOAT, "VALUE", 0, "Value", ""},
-    {SOCK_INT, "INT", 0, "Int", ""},
+    {SOCK_INT, "INT", 0, "Integer", ""},
     {SOCK_BOOLEAN, "BOOLEAN", 0, "Boolean", ""},
     {SOCK_VECTOR, "VECTOR", 0, "Vector", ""},
     {SOCK_STRING, "STRING", 0, "String", ""},
     {SOCK_RGBA, "RGBA", 0, "RGBA", ""},
     {SOCK_SHADER, "SHADER", 0, "Shader", ""},
+    {SOCK_OBJECT, "OBJECT", 0, "Object", ""},
+    {SOCK_IMAGE, "IMAGE", 0, "Image", ""},
+    {SOCK_GEOMETRY, "GEOMETRY", 0, "Geometry", ""},
+    {SOCK_COLLECTION, "COLLECTION", 0, "Collection", ""},
+    {SOCK_TEXTURE, "TEXTURE", 0, "Texture", ""},
+    {SOCK_MATERIAL, "MATERIAL", 0, "Material", ""},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -102,6 +127,20 @@ static const EnumPropertyItem node_chunksize_items[] = {
 };
 #endif
 
+static const EnumPropertyItem rna_enum_execution_mode_items[] = {
+    {NTREE_EXECUTION_MODE_TILED,
+     "TILED",
+     0,
+     "Tiled",
+     "Compositing is tiled, having as priority to display first tiles as fast as possible"},
+    {NTREE_EXECUTION_MODE_FULL_FRAME,
+     "FULL_FRAME",
+     0,
+     "Full Frame",
+     "Composites full image result as fast as possible"},
+    {0, NULL, 0, NULL, NULL},
+};
+
 const EnumPropertyItem rna_enum_mapping_type_items[] = {
     {NODE_MAPPING_TYPE_POINT, "POINT", 0, "Point", "Transform a point"},
     {NODE_MAPPING_TYPE_TEXTURE,
@@ -119,6 +158,19 @@ const EnumPropertyItem rna_enum_mapping_type_items[] = {
      0,
      "Normal",
      "Transform a unit normal vector. Location is ignored"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+static const EnumPropertyItem rna_enum_vector_rotate_type_items[] = {
+    {NODE_VECTOR_ROTATE_TYPE_AXIS,
+     "AXIS_ANGLE",
+     0,
+     "Axis Angle",
+     "Rotate a point using axis angle"},
+    {NODE_VECTOR_ROTATE_TYPE_AXIS_X, "X_AXIS", 0, "X Axis", "Rotate a point using X axis"},
+    {NODE_VECTOR_ROTATE_TYPE_AXIS_Y, "Y_AXIS", 0, "Y Axis", "Rotate a point using Y axis"},
+    {NODE_VECTOR_ROTATE_TYPE_AXIS_Z, "Z_AXIS", 0, "Z Axis", "Rotate a point using Z axis"},
+    {NODE_VECTOR_ROTATE_TYPE_EULER_XYZ, "EULER_XYZ", 0, "Euler", "Rotate a point using XYZ order"},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -161,16 +213,16 @@ const EnumPropertyItem rna_enum_node_math_items[] = {
      "Round A to the nearest integer. Round upward if the fraction part is 0.5"},
     {NODE_MATH_FLOOR, "FLOOR", 0, "Floor", "The largest integer smaller than or equal A"},
     {NODE_MATH_CEIL, "CEIL", 0, "Ceil", "The smallest integer greater than or equal A"},
-    {NODE_MATH_TRUNC, "TRUNC", 0, "Truncate", "trunc(A)"},
+    {NODE_MATH_TRUNC, "TRUNC", 0, "Truncate", "The integer part of A, removing fractional digits"},
     {0, "", ICON_NONE, NULL, NULL},
     {NODE_MATH_FRACTION, "FRACT", 0, "Fraction", "The fraction part of A"},
-    {NODE_MATH_MODULO, "MODULO", 0, "Modulo", "A mod B"},
-    {NODE_MATH_SNAP, "SNAP", 0, "Snap", "Snap to increment, snap(A,B)"},
+    {NODE_MATH_MODULO, "MODULO", 0, "Modulo", "Modulo using fmod(A,B)"},
     {NODE_MATH_WRAP, "WRAP", 0, "Wrap", "Wrap value to range, wrap(A,B)"},
+    {NODE_MATH_SNAP, "SNAP", 0, "Snap", "Snap to increment, snap(A,B)"},
     {NODE_MATH_PINGPONG,
      "PINGPONG",
      0,
-     "Pingpong",
+     "Ping-Pong",
      "Wraps a value and reverses every other cycle (A,B)"},
     {0, "", 0, N_("Trigonometric"), ""},
     {NODE_MATH_SINE, "SINE", 0, "Sine", "sin(A)"},
@@ -194,8 +246,9 @@ const EnumPropertyItem rna_enum_node_math_items[] = {
 const EnumPropertyItem rna_enum_node_vec_math_items[] = {
     {NODE_VECTOR_MATH_ADD, "ADD", 0, "Add", "A + B"},
     {NODE_VECTOR_MATH_SUBTRACT, "SUBTRACT", 0, "Subtract", "A - B"},
-    {NODE_VECTOR_MATH_MULTIPLY, "MULTIPLY", 0, "Multiply", "Entrywise multiply"},
-    {NODE_VECTOR_MATH_DIVIDE, "DIVIDE", 0, "Divide", "Entrywise divide"},
+    {NODE_VECTOR_MATH_MULTIPLY, "MULTIPLY", 0, "Multiply", "Entry-wise multiply"},
+    {NODE_VECTOR_MATH_DIVIDE, "DIVIDE", 0, "Divide", "Entry-wise divide"},
+    {NODE_VECTOR_MATH_MULTIPLY_ADD, "MULTIPLY_ADD", 0, "Multiply Add", "A * B + C"},
     {0, "", ICON_NONE, NULL, NULL},
     {NODE_VECTOR_MATH_CROSS_PRODUCT, "CROSS_PRODUCT", 0, "Cross Product", "A cross B"},
     {NODE_VECTOR_MATH_PROJECT, "PROJECT", 0, "Project", "Project A onto B"},
@@ -203,7 +256,19 @@ const EnumPropertyItem rna_enum_node_vec_math_items[] = {
      "REFLECT",
      0,
      "Reflect",
-     "Reflect A around the normal B. B needn't be normalized"},
+     "Reflect A around the normal B. B doesn't need to be normalized"},
+    {NODE_VECTOR_MATH_REFRACT,
+     "REFRACT",
+     0,
+     "Refract",
+     "For a given incident vector A, surface normal B and ratio of indices of refraction, Ior, "
+     "refract returns the refraction vector, R"},
+    {NODE_VECTOR_MATH_FACEFORWARD,
+     "FACEFORWARD",
+     0,
+     "Faceforward",
+     "Orients a vector A to point away from a surface B as defined by its normal C. "
+     "Returns (dot(B, C) < 0) ? A : -A"},
     {NODE_VECTOR_MATH_DOT_PRODUCT, "DOT_PRODUCT", 0, "Dot Product", "A dot B"},
     {0, "", ICON_NONE, NULL, NULL},
     {NODE_VECTOR_MATH_DISTANCE, "DISTANCE", 0, "Distance", "Distance between A and B"},
@@ -211,18 +276,89 @@ const EnumPropertyItem rna_enum_node_vec_math_items[] = {
     {NODE_VECTOR_MATH_SCALE, "SCALE", 0, "Scale", "A multiplied by Scale"},
     {NODE_VECTOR_MATH_NORMALIZE, "NORMALIZE", 0, "Normalize", "Normalize A"},
     {0, "", ICON_NONE, NULL, NULL},
+    {NODE_VECTOR_MATH_ABSOLUTE, "ABSOLUTE", 0, "Absolute", "Entry-wise absolute"},
+    {NODE_VECTOR_MATH_MINIMUM, "MINIMUM", 0, "Minimum", "Entry-wise minimum"},
+    {NODE_VECTOR_MATH_MAXIMUM, "MAXIMUM", 0, "Maximum", "Entry-wise maximum"},
+    {NODE_VECTOR_MATH_FLOOR, "FLOOR", 0, "Floor", "Entry-wise floor"},
+    {NODE_VECTOR_MATH_CEIL, "CEIL", 0, "Ceil", "Entry-wise ceil"},
+    {NODE_VECTOR_MATH_FRACTION, "FRACTION", 0, "Fraction", "The fraction part of A entry-wise"},
+    {NODE_VECTOR_MATH_MODULO, "MODULO", 0, "Modulo", "Entry-wise modulo using fmod(A,B)"},
+    {NODE_VECTOR_MATH_WRAP, "WRAP", 0, "Wrap", "Entry-wise wrap(A,B)"},
     {NODE_VECTOR_MATH_SNAP,
      "SNAP",
      0,
      "Snap",
      "Round A to the largest integer multiple of B less than or equal A"},
-    {NODE_VECTOR_MATH_FLOOR, "FLOOR", 0, "Floor", "Entrywise floor"},
-    {NODE_VECTOR_MATH_CEIL, "CEIL", 0, "Ceil", "Entrywise ceil"},
-    {NODE_VECTOR_MATH_MODULO, "MODULO", 0, "Modulo", "Entrywise modulo"},
-    {NODE_VECTOR_MATH_FRACTION, "FRACTION", 0, "Fraction", "The fraction part of A entrywise"},
-    {NODE_VECTOR_MATH_ABSOLUTE, "ABSOLUTE", 0, "Absolute", "Entrywise absolute"},
-    {NODE_VECTOR_MATH_MINIMUM, "MINIMUM", 0, "Minimum", "Entrywise minimum"},
-    {NODE_VECTOR_MATH_MAXIMUM, "MAXIMUM", 0, "Maximum", "Entrywise maximum"},
+    {0, "", ICON_NONE, NULL, NULL},
+    {NODE_VECTOR_MATH_SINE, "SINE", 0, "Sine", "Entry-wise sin(A)"},
+    {NODE_VECTOR_MATH_COSINE, "COSINE", 0, "Cosine", "Entry-wise cos(A)"},
+    {NODE_VECTOR_MATH_TANGENT, "TANGENT", 0, "Tangent", "Entry-wise tan(A)"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_node_boolean_math_items[] = {
+    {NODE_BOOLEAN_MATH_AND, "AND", 0, "And", "Outputs true only when both inputs are true"},
+    {NODE_BOOLEAN_MATH_OR, "OR", 0, "Or", "Outputs or when at least one of the inputs is true"},
+    {NODE_BOOLEAN_MATH_NOT, "NOT", 0, "Not", "Outputs the opposite of the input"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_node_float_compare_items[] = {
+    {NODE_FLOAT_COMPARE_LESS_THAN,
+     "LESS_THAN",
+     0,
+     "Less Than",
+     "True when the first input is smaller than second input"},
+    {NODE_FLOAT_COMPARE_LESS_EQUAL,
+     "LESS_EQUAL",
+     0,
+     "Less Than or Equal",
+     "True when the first input is smaller than the second input or equal"},
+    {NODE_FLOAT_COMPARE_GREATER_THAN,
+     "GREATER_THAN",
+     0,
+     "Greater Than",
+     "True when the first input is greater than the second input"},
+    {NODE_FLOAT_COMPARE_GREATER_EQUAL,
+     "GREATER_EQUAL",
+     0,
+     "Greater Than or Equal",
+     "True when the first input is greater than the second input or equal"},
+    {NODE_FLOAT_COMPARE_EQUAL,
+     "EQUAL",
+     0,
+     "Equal",
+     "True when both inputs are approximately equal"},
+    {NODE_FLOAT_COMPARE_NOT_EQUAL,
+     "NOT_EQUAL",
+     0,
+     "Not Equal",
+     "True when both inputs are not approximately equal"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_node_float_to_int_items[] = {
+    {FN_NODE_FLOAT_TO_INT_ROUND,
+     "ROUND",
+     0,
+     "Round",
+     "Round the float up or down to the nearest integer"},
+    {FN_NODE_FLOAT_TO_INT_FLOOR,
+     "FLOOR",
+     0,
+     "Floor",
+     "Round the float down to the next smallest integer"},
+    {FN_NODE_FLOAT_TO_INT_CEIL,
+     "CEILING",
+     0,
+     "Ceiling",
+     "Round the float up to the next largest integer"},
+    {FN_NODE_FLOAT_TO_INT_TRUNCATE,
+     "TRUNCATE",
+     0,
+     "Truncate",
+     "Round the float to the closest integer in the direction of zero (floor if positive; ceiling "
+     "if negative)"},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -240,26 +376,30 @@ const EnumPropertyItem rna_enum_node_map_range_items[] = {
     {NODE_MAP_RANGE_SMOOTHSTEP,
      "SMOOTHSTEP",
      0,
-     "Smoothstep",
-     "Smooth hermite edge interpolation between From Min and From Max values"},
+     "Smooth Step",
+     "Smooth Hermite edge interpolation between From Min and From Max values"},
     {NODE_MAP_RANGE_SMOOTHERSTEP,
      "SMOOTHERSTEP",
      0,
-     "Smootherstep",
-     "Smoother hermite edge interpolation between From Min and From Max values"},
+     "Smoother Step",
+     "Smoother Hermite edge interpolation between From Min and From Max values"},
     {0, NULL, 0, NULL, NULL},
 };
 
 const EnumPropertyItem rna_enum_node_clamp_items[] = {
-    {NODE_CLAMP_MINMAX, "MINMAX", 0, "Min Max", "Clamp values using Min and Max values"},
-    {NODE_CLAMP_RANGE, "RANGE", 0, "Range", "Clamp values between Min and Max range"},
+    {NODE_CLAMP_MINMAX, "MINMAX", 0, "Min Max", "Constrain value between min and max"},
+    {NODE_CLAMP_RANGE,
+     "RANGE",
+     0,
+     "Range",
+     "Constrain value between min and max, swapping arguments when min > max"},
     {0, NULL, 0, NULL, NULL},
 };
 
 static const EnumPropertyItem rna_enum_node_tex_dimensions_items[] = {
     {1, "1D", 0, "1D", "Use the scalar value W as input"},
     {2, "2D", 0, "2D", "Use the 2D vector (x, y) as input. The z component is ignored"},
-    {3, "3D", 0, "3D", "Use the 3D vector Vector as input"},
+    {3, "3D", 0, "3D", "Use the 3D vector (x, y, z) as input"},
     {4, "4D", 0, "4D", "Use the 4D vector (x, y, z, w) as input"},
     {0, NULL, 0, NULL, NULL},
 };
@@ -272,6 +412,30 @@ const EnumPropertyItem rna_enum_node_filter_items[] = {
     {4, "PREWITT", 0, "Prewitt", ""},
     {5, "KIRSCH", 0, "Kirsch", ""},
     {6, "SHADOW", 0, "Shadow", ""},
+    {0, NULL, 0, NULL, NULL},
+};
+
+static const EnumPropertyItem rna_node_geometry_attribute_randomize_operation_items[] = {
+    {GEO_NODE_ATTRIBUTE_RANDOMIZE_REPLACE_CREATE,
+     "REPLACE_CREATE",
+     ICON_NONE,
+     "Replace/Create",
+     "Replace the value and data type of an existing attribute, or create a new one"},
+    {GEO_NODE_ATTRIBUTE_RANDOMIZE_ADD,
+     "ADD",
+     ICON_NONE,
+     "Add",
+     "Add the random values to the existing attribute values"},
+    {GEO_NODE_ATTRIBUTE_RANDOMIZE_SUBTRACT,
+     "SUBTRACT",
+     ICON_NONE,
+     "Subtract",
+     "Subtract random values from the existing attribute values"},
+    {GEO_NODE_ATTRIBUTE_RANDOMIZE_MULTIPLY,
+     "MULTIPLY",
+     ICON_NONE,
+     "Multiply",
+     "Multiply the existing attribute values with the random values"},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -293,7 +457,96 @@ static const EnumPropertyItem prop_shader_output_target_items[] = {
     {SHD_OUTPUT_CYCLES, "CYCLES", 0, "Cycles", "Use shaders for Cycles renderer"},
     {0, NULL, 0, NULL, NULL},
 };
+
+static const EnumPropertyItem node_cryptomatte_layer_name_items[] = {
+    {0, "CryptoObject", 0, "Object", "Use Object layer"},
+    {1, "CryptoMaterial", 0, "Material", "Use Material layer"},
+    {2, "CryptoAsset", 0, "Asset", "Use Asset layer"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+static EnumPropertyItem rna_node_geometry_mesh_circle_fill_type_items[] = {
+    {GEO_NODE_MESH_CIRCLE_FILL_NONE, "NONE", 0, "None", ""},
+    {GEO_NODE_MESH_CIRCLE_FILL_NGON, "NGON", 0, "N-Gon", ""},
+    {GEO_NODE_MESH_CIRCLE_FILL_TRIANGLE_FAN, "TRIANGLE_FAN", 0, "Triangles", ""},
+    {0, NULL, 0, NULL, NULL},
+};
 #endif
+
+#define ITEM_ATTRIBUTE \
+  { \
+    GEO_NODE_ATTRIBUTE_INPUT_ATTRIBUTE, "ATTRIBUTE", 0, "Attribute", "" \
+  }
+#define ITEM_FLOAT \
+  { \
+    GEO_NODE_ATTRIBUTE_INPUT_FLOAT, "FLOAT", 0, "Float", "" \
+  }
+#define ITEM_VECTOR \
+  { \
+    GEO_NODE_ATTRIBUTE_INPUT_VECTOR, "VECTOR", 0, "Vector", "" \
+  }
+#define ITEM_COLOR \
+  { \
+    GEO_NODE_ATTRIBUTE_INPUT_COLOR, "COLOR", 0, "Color", "" \
+  }
+#define ITEM_INTEGER \
+  { \
+    GEO_NODE_ATTRIBUTE_INPUT_INTEGER, "INTEGER", 0, "Integer", "" \
+  }
+#define ITEM_BOOLEAN \
+  { \
+    GEO_NODE_ATTRIBUTE_INPUT_BOOLEAN, "BOOLEAN", 0, "Boolean", "" \
+  }
+
+/* Used in both runtime and static code. */
+static const EnumPropertyItem rna_node_geometry_attribute_input_type_items_any[] = {
+    ITEM_ATTRIBUTE,
+    ITEM_FLOAT,
+    ITEM_VECTOR,
+    ITEM_COLOR,
+    ITEM_INTEGER,
+    ITEM_BOOLEAN,
+    {0, NULL, 0, NULL, NULL},
+};
+
+#ifndef RNA_RUNTIME
+
+static const EnumPropertyItem rna_node_geometry_attribute_input_type_items_vector[] = {
+    ITEM_ATTRIBUTE,
+    ITEM_VECTOR,
+    {0, NULL, 0, NULL, NULL},
+};
+static const EnumPropertyItem rna_node_geometry_attribute_input_type_items_float_vector[] = {
+    ITEM_ATTRIBUTE,
+    ITEM_FLOAT,
+    ITEM_VECTOR,
+    {0, NULL, 0, NULL, NULL},
+};
+static const EnumPropertyItem rna_node_geometry_attribute_input_type_items_float[] = {
+    ITEM_ATTRIBUTE,
+    ITEM_FLOAT,
+    {0, NULL, 0, NULL, NULL},
+};
+static const EnumPropertyItem rna_node_geometry_attribute_input_type_items_int[] = {
+    ITEM_ATTRIBUTE,
+    ITEM_INTEGER,
+    {0, NULL, 0, NULL, NULL},
+};
+static const EnumPropertyItem rna_node_geometry_attribute_input_type_items_no_boolean[] = {
+    ITEM_ATTRIBUTE,
+    ITEM_FLOAT,
+    ITEM_VECTOR,
+    ITEM_COLOR,
+    {0, NULL, 0, NULL, NULL},
+};
+
+#endif
+
+#undef ITEM_ATTRIBUTE
+#undef ITEM_FLOAT
+#undef ITEM_VECTOR
+#undef ITEM_COLOR
+#undef ITEM_BOOLEAN
 
 #ifdef RNA_RUNTIME
 
@@ -311,15 +564,18 @@ static const EnumPropertyItem prop_shader_output_target_items[] = {
 #  include "GPU_material.h"
 
 #  include "NOD_common.h"
-#  include "NOD_socket.h"
-#  include "NOD_shader.h"
 #  include "NOD_composite.h"
+#  include "NOD_geometry.h"
+#  include "NOD_shader.h"
+#  include "NOD_socket.h"
 
 #  include "RE_engine.h"
 #  include "RE_pipeline.h"
 
 #  include "DNA_scene_types.h"
 #  include "WM_api.h"
+
+static void rna_Node_socket_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *ptr);
 
 int rna_node_tree_type_to_enum(bNodeTreeType *typeinfo)
 {
@@ -651,6 +907,34 @@ static const EnumPropertyItem *rna_node_static_type_itemf(bContext *UNUSED(C),
 #  undef DefNode
   }
 
+  if (RNA_struct_is_a(ptr->type, &RNA_GeometryNode)) {
+#  define DefNode(Category, ID, DefFunc, EnumName, StructName, UIName, UIDesc) \
+    if (STREQ(#Category, "GeometryNode")) { \
+      tmp.value = ID; \
+      tmp.identifier = EnumName; \
+      tmp.name = UIName; \
+      tmp.description = UIDesc; \
+      tmp.icon = ICON_NONE; \
+      RNA_enum_item_add(&item, &totitem, &tmp); \
+    }
+#  include "../../nodes/NOD_static_types.h"
+#  undef DefNode
+  }
+
+  if (RNA_struct_is_a(ptr->type, &RNA_FunctionNode)) {
+#  define DefNode(Category, ID, DefFunc, EnumName, StructName, UIName, UIDesc) \
+    if (STREQ(#Category, "FunctionNode")) { \
+      tmp.value = ID; \
+      tmp.identifier = EnumName; \
+      tmp.name = UIName; \
+      tmp.description = UIDesc; \
+      tmp.icon = ICON_NONE; \
+      RNA_enum_item_add(&item, &totitem, &tmp); \
+    }
+#  include "../../nodes/NOD_static_types.h"
+#  undef DefNode
+  }
+
   RNA_enum_item_end(&item, &totitem);
   *r_free = true;
 
@@ -663,8 +947,8 @@ static StructRNA *rna_NodeTree_refine(struct PointerRNA *ptr)
 {
   bNodeTree *ntree = (bNodeTree *)ptr->data;
 
-  if (ntree->typeinfo->ext.srna) {
-    return ntree->typeinfo->ext.srna;
+  if (ntree->typeinfo->rna_ext.srna) {
+    return ntree->typeinfo->rna_ext.srna;
   }
   else {
     return &RNA_NodeTree;
@@ -681,12 +965,12 @@ static bool rna_NodeTree_poll(const bContext *C, bNodeTreeType *ntreetype)
   void *ret;
   bool visible;
 
-  RNA_pointer_create(NULL, ntreetype->ext.srna, NULL, &ptr); /* dummy */
+  RNA_pointer_create(NULL, ntreetype->rna_ext.srna, NULL, &ptr); /* dummy */
   func = &rna_NodeTree_poll_func; /* RNA_struct_find_function(&ptr, "poll"); */
 
   RNA_parameter_list_create(&list, &ptr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
-  ntreetype->ext.call((bContext *)C, &ptr, func, &list);
+  ntreetype->rna_ext.call((bContext *)C, &ptr, func, &list);
 
   RNA_parameter_get_lookup(&list, "visible", &ret);
   visible = *(bool *)ret;
@@ -708,7 +992,7 @@ static void rna_NodeTree_update_reg(bNodeTree *ntree)
   func = &rna_NodeTree_update_func; /* RNA_struct_find_function(&ptr, "update"); */
 
   RNA_parameter_list_create(&list, &ptr, func);
-  ntree->typeinfo->ext.call(NULL, &ptr, func, &list);
+  ntree->typeinfo->rna_ext.call(NULL, &ptr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -723,13 +1007,13 @@ static void rna_NodeTree_get_from_context(
   FunctionRNA *func;
   void *ret1, *ret2, *ret3;
 
-  RNA_pointer_create(NULL, ntreetype->ext.srna, NULL, &ptr); /* dummy */
+  RNA_pointer_create(NULL, ntreetype->rna_ext.srna, NULL, &ptr); /* dummy */
   /* RNA_struct_find_function(&ptr, "get_from_context"); */
   func = &rna_NodeTree_get_from_context_func;
 
   RNA_parameter_list_create(&list, &ptr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
-  ntreetype->ext.call((bContext *)C, &ptr, func, &list);
+  ntreetype->rna_ext.call((bContext *)C, &ptr, func, &list);
 
   RNA_parameter_get_lookup(&list, "result_1", &ret1);
   RNA_parameter_get_lookup(&list, "result_2", &ret2);
@@ -741,6 +1025,32 @@ static void rna_NodeTree_get_from_context(
   RNA_parameter_list_free(&list);
 }
 
+static bool rna_NodeTree_valid_socket_type(eNodeSocketDatatype socket_type,
+                                           bNodeTreeType *ntreetype)
+{
+  extern FunctionRNA rna_NodeTree_valid_socket_type_func;
+
+  PointerRNA ptr;
+  ParameterList list;
+  FunctionRNA *func;
+  void *ret;
+  bool valid;
+
+  RNA_pointer_create(NULL, ntreetype->rna_ext.srna, NULL, &ptr); /* dummy */
+  func = &rna_NodeTree_valid_socket_type_func;
+
+  RNA_parameter_list_create(&list, &ptr, func);
+  RNA_parameter_set_lookup(&list, "type", &socket_type);
+  ntreetype->rna_ext.call(NULL, &ptr, func, &list);
+
+  RNA_parameter_get_lookup(&list, "valid", &ret);
+  valid = *(bool *)ret;
+
+  RNA_parameter_list_free(&list);
+
+  return valid;
+}
+
 static void rna_NodeTree_unregister(Main *UNUSED(bmain), StructRNA *type)
 {
   bNodeTreeType *nt = RNA_struct_blender_type_get(type);
@@ -749,7 +1059,7 @@ static void rna_NodeTree_unregister(Main *UNUSED(bmain), StructRNA *type)
     return;
   }
 
-  RNA_struct_free_extension(type, &nt->ext);
+  RNA_struct_free_extension(type, &nt->rna_ext);
   RNA_struct_free(&BLENDER_RNA, type);
 
   ntreeTypeFreeLink(nt);
@@ -769,7 +1079,7 @@ static StructRNA *rna_NodeTree_register(Main *bmain,
   bNodeTreeType *nt, dummynt;
   bNodeTree dummyntree;
   PointerRNA dummyptr;
-  int have_function[3];
+  int have_function[4];
 
   /* setup dummy tree & tree type to store static properties in */
   memset(&dummynt, 0, sizeof(bNodeTreeType));
@@ -794,34 +1104,35 @@ static StructRNA *rna_NodeTree_register(Main *bmain,
   /* check if we have registered this tree type before, and remove it */
   nt = ntreeTypeFind(dummynt.idname);
   if (nt) {
-    rna_NodeTree_unregister(bmain, nt->ext.srna);
+    rna_NodeTree_unregister(bmain, nt->rna_ext.srna);
   }
 
   /* create a new node tree type */
-  nt = MEM_callocN(sizeof(bNodeTreeType), "node tree type");
+  nt = MEM_mallocN(sizeof(bNodeTreeType), "node tree type");
   memcpy(nt, &dummynt, sizeof(dummynt));
 
   nt->type = NTREE_CUSTOM;
 
-  nt->ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, nt->idname, &RNA_NodeTree);
-  nt->ext.data = data;
-  nt->ext.call = call;
-  nt->ext.free = free;
-  RNA_struct_blender_type_set(nt->ext.srna, nt);
+  nt->rna_ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, nt->idname, &RNA_NodeTree);
+  nt->rna_ext.data = data;
+  nt->rna_ext.call = call;
+  nt->rna_ext.free = free;
+  RNA_struct_blender_type_set(nt->rna_ext.srna, nt);
 
-  RNA_def_struct_ui_text(nt->ext.srna, nt->ui_name, nt->ui_description);
-  RNA_def_struct_ui_icon(nt->ext.srna, nt->ui_icon);
+  RNA_def_struct_ui_text(nt->rna_ext.srna, nt->ui_name, nt->ui_description);
+  RNA_def_struct_ui_icon(nt->rna_ext.srna, nt->ui_icon);
 
   nt->poll = (have_function[0]) ? rna_NodeTree_poll : NULL;
   nt->update = (have_function[1]) ? rna_NodeTree_update_reg : NULL;
   nt->get_from_context = (have_function[2]) ? rna_NodeTree_get_from_context : NULL;
+  nt->valid_socket_type = (have_function[3]) ? rna_NodeTree_valid_socket_type : NULL;
 
   ntreeTypeAdd(nt);
 
   /* update while blender is running */
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 
-  return nt->ext.srna;
+  return nt->rna_ext.srna;
 }
 
 static bool rna_NodeTree_check(bNodeTree *ntree, ReportList *reports)
@@ -844,12 +1155,11 @@ static bool rna_NodeTree_check(bNodeTree *ntree, ReportList *reports)
 static void rna_NodeTree_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *ptr)
 {
   bNodeTree *ntree = (bNodeTree *)ptr->owner_id;
-  bNode *node = (bNode *)ptr->data;
 
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
   WM_main_add_notifier(NC_SCENE | ND_NODES, &ntree->id);
 
-  ED_node_tag_update_nodetree(bmain, ntree, node);
+  ED_node_tag_update_nodetree(bmain, ntree, NULL);
 }
 
 static bNode *rna_NodeTree_node_new(bNodeTree *ntree,
@@ -870,13 +1180,25 @@ static bNode *rna_NodeTree_node_new(bNodeTree *ntree,
     return NULL;
   }
 
-  if (ntype->poll && !ntype->poll(ntype, ntree)) {
-    BKE_reportf(reports,
-                RPT_ERROR,
-                "Cannot add node of type %s to node tree '%s'",
-                type,
-                ntree->id.name + 2);
-    return NULL;
+  const char *disabled_hint = NULL;
+  if (ntype->poll && !ntype->poll(ntype, ntree, &disabled_hint)) {
+    if (disabled_hint) {
+      BKE_reportf(reports,
+                  RPT_ERROR,
+                  "Cannot add node of type %s to node tree '%s'\n  %s",
+                  type,
+                  ntree->id.name + 2,
+                  disabled_hint);
+      return NULL;
+    }
+    else {
+      BKE_reportf(reports,
+                  RPT_ERROR,
+                  "Cannot add node of type %s to node tree '%s'",
+                  type,
+                  ntree->id.name + 2);
+      return NULL;
+    }
   }
 
   node = nodeAddNode(C, ntree, type);
@@ -990,11 +1312,18 @@ static bNodeLink *rna_NodeTree_link_new(bNodeTree *ntree,
 
   if (verify_limits) {
     /* remove other socket links if limit is exceeded */
-    if (nodeCountSocketLinks(ntree, fromsock) + 1 > fromsock->limit) {
+    if (nodeCountSocketLinks(ntree, fromsock) + 1 > nodeSocketLinkLimit(fromsock)) {
       nodeRemSocketLinks(ntree, fromsock);
     }
-    if (nodeCountSocketLinks(ntree, tosock) + 1 > tosock->limit) {
+    if (nodeCountSocketLinks(ntree, tosock) + 1 > nodeSocketLinkLimit(tosock)) {
       nodeRemSocketLinks(ntree, tosock);
+    }
+    if (tosock->flag & SOCK_MULTI_INPUT) {
+      LISTBASE_FOREACH_MUTABLE (bNodeLink *, link, &ntree->links) {
+        if (link->fromsock == fromsock && link->tosock == tosock) {
+          nodeRemLink(ntree, link);
+        }
+      }
     }
   }
 
@@ -1064,11 +1393,9 @@ static void rna_NodeTree_link_clear(bNodeTree *ntree, Main *bmain, ReportList *r
 static int rna_NodeTree_active_input_get(PointerRNA *ptr)
 {
   bNodeTree *ntree = (bNodeTree *)ptr->data;
-  bNodeSocket *gsock;
-  int index;
-
-  for (gsock = ntree->inputs.first, index = 0; gsock; gsock = gsock->next, index++) {
-    if (gsock->flag & SELECT) {
+  int index = 0;
+  LISTBASE_FOREACH_INDEX (bNodeSocket *, socket, &ntree->inputs, index) {
+    if (socket->flag & SELECT) {
       return index;
     }
   }
@@ -1078,30 +1405,19 @@ static int rna_NodeTree_active_input_get(PointerRNA *ptr)
 static void rna_NodeTree_active_input_set(PointerRNA *ptr, int value)
 {
   bNodeTree *ntree = (bNodeTree *)ptr->data;
-  bNodeSocket *gsock;
-  int index;
 
-  for (gsock = ntree->inputs.first, index = 0; gsock; gsock = gsock->next, index++) {
-    if (index == value) {
-      gsock->flag |= SELECT;
-    }
-    else {
-      gsock->flag &= ~SELECT;
-    }
-  }
-  for (gsock = ntree->outputs.first; gsock; gsock = gsock->next) {
-    gsock->flag &= ~SELECT;
+  int index = 0;
+  LISTBASE_FOREACH_INDEX (bNodeSocket *, socket, &ntree->inputs, index) {
+    SET_FLAG_FROM_TEST(socket->flag, index == value, SELECT);
   }
 }
 
 static int rna_NodeTree_active_output_get(PointerRNA *ptr)
 {
   bNodeTree *ntree = (bNodeTree *)ptr->data;
-  bNodeSocket *gsock;
-  int index;
-
-  for (gsock = ntree->outputs.first, index = 0; gsock; gsock = gsock->next, index++) {
-    if (gsock->flag & SELECT) {
+  int index = 0;
+  LISTBASE_FOREACH_INDEX (bNodeSocket *, socket, &ntree->outputs, index) {
+    if (socket->flag & SELECT) {
       return index;
     }
   }
@@ -1111,32 +1427,21 @@ static int rna_NodeTree_active_output_get(PointerRNA *ptr)
 static void rna_NodeTree_active_output_set(PointerRNA *ptr, int value)
 {
   bNodeTree *ntree = (bNodeTree *)ptr->data;
-  bNodeSocket *gsock;
-  int index;
 
-  for (gsock = ntree->inputs.first; gsock; gsock = gsock->next) {
-    gsock->flag &= ~SELECT;
-  }
-  for (gsock = ntree->outputs.first, index = 0; gsock; gsock = gsock->next, index++) {
-    if (index == value) {
-      gsock->flag |= SELECT;
-    }
-    else {
-      gsock->flag &= ~SELECT;
-    }
+  int index = 0;
+  LISTBASE_FOREACH_INDEX (bNodeSocket *, socket, &ntree->outputs, index) {
+    SET_FLAG_FROM_TEST(socket->flag, index == value, SELECT);
   }
 }
 
 static bNodeSocket *rna_NodeTree_inputs_new(
     bNodeTree *ntree, Main *bmain, ReportList *reports, const char *type, const char *name)
 {
-  bNodeSocket *sock;
-
   if (!rna_NodeTree_check(ntree, reports)) {
     return NULL;
   }
 
-  sock = ntreeAddSocketInterface(ntree, SOCK_IN, type, name);
+  bNodeSocket *sock = ntreeAddSocketInterface(ntree, SOCK_IN, type, name);
 
   ntreeUpdateTree(bmain, ntree);
   WM_main_add_notifier(NC_NODE | NA_EDITED, ntree);
@@ -1147,13 +1452,11 @@ static bNodeSocket *rna_NodeTree_inputs_new(
 static bNodeSocket *rna_NodeTree_outputs_new(
     bNodeTree *ntree, Main *bmain, ReportList *reports, const char *type, const char *name)
 {
-  bNodeSocket *sock;
-
   if (!rna_NodeTree_check(ntree, reports)) {
     return NULL;
   }
 
-  sock = ntreeAddSocketInterface(ntree, SOCK_OUT, type, name);
+  bNodeSocket *sock = ntreeAddSocketInterface(ntree, SOCK_OUT, type, name);
 
   ntreeUpdateTree(bmain, ntree);
   WM_main_add_notifier(NC_NODE | NA_EDITED, ntree);
@@ -1177,21 +1480,19 @@ static void rna_NodeTree_socket_remove(bNodeTree *ntree,
     ntreeRemoveSocketInterface(ntree, sock);
 
     ntreeUpdateTree(bmain, ntree);
+    DEG_id_tag_update(&ntree->id, 0);
     WM_main_add_notifier(NC_NODE | NA_EDITED, ntree);
   }
 }
 
 static void rna_NodeTree_inputs_clear(bNodeTree *ntree, Main *bmain, ReportList *reports)
 {
-  bNodeSocket *sock, *nextsock;
-
   if (!rna_NodeTree_check(ntree, reports)) {
     return;
   }
 
-  for (sock = ntree->inputs.first; sock; sock = nextsock) {
-    nextsock = sock->next;
-    ntreeRemoveSocketInterface(ntree, sock);
+  LISTBASE_FOREACH_MUTABLE (bNodeSocket *, socket, &ntree->inputs) {
+    ntreeRemoveSocketInterface(ntree, socket);
   }
 
   ntreeUpdateTree(bmain, ntree);
@@ -1200,15 +1501,12 @@ static void rna_NodeTree_inputs_clear(bNodeTree *ntree, Main *bmain, ReportList 
 
 static void rna_NodeTree_outputs_clear(bNodeTree *ntree, Main *bmain, ReportList *reports)
 {
-  bNodeSocket *sock, *nextsock;
-
   if (!rna_NodeTree_check(ntree, reports)) {
     return;
   }
 
-  for (sock = ntree->outputs.first; sock; sock = nextsock) {
-    nextsock = sock->next;
-    ntreeRemoveSocketInterface(ntree, sock);
+  LISTBASE_FOREACH_MUTABLE (bNodeSocket *, socket, &ntree->outputs) {
+    ntreeRemoveSocketInterface(ntree, socket);
   }
 
   ntreeUpdateTree(bmain, ntree);
@@ -1217,8 +1515,6 @@ static void rna_NodeTree_outputs_clear(bNodeTree *ntree, Main *bmain, ReportList
 
 static void rna_NodeTree_inputs_move(bNodeTree *ntree, Main *bmain, int from_index, int to_index)
 {
-  bNodeSocket *sock;
-
   if (from_index == to_index) {
     return;
   }
@@ -1226,7 +1522,7 @@ static void rna_NodeTree_inputs_move(bNodeTree *ntree, Main *bmain, int from_ind
     return;
   }
 
-  sock = BLI_findlink(&ntree->inputs, from_index);
+  bNodeSocket *sock = BLI_findlink(&ntree->inputs, from_index);
   if (to_index < from_index) {
     bNodeSocket *nextsock = BLI_findlink(&ntree->inputs, to_index);
     if (nextsock) {
@@ -1250,8 +1546,6 @@ static void rna_NodeTree_inputs_move(bNodeTree *ntree, Main *bmain, int from_ind
 
 static void rna_NodeTree_outputs_move(bNodeTree *ntree, Main *bmain, int from_index, int to_index)
 {
-  bNodeSocket *sock;
-
   if (from_index == to_index) {
     return;
   }
@@ -1259,7 +1553,7 @@ static void rna_NodeTree_outputs_move(bNodeTree *ntree, Main *bmain, int from_in
     return;
   }
 
-  sock = BLI_findlink(&ntree->outputs, from_index);
+  bNodeSocket *sock = BLI_findlink(&ntree->outputs, from_index);
   if (to_index < from_index) {
     bNodeSocket *nextsock = BLI_findlink(&ntree->outputs, to_index);
     if (nextsock) {
@@ -1305,8 +1599,8 @@ static StructRNA *rna_Node_refine(struct PointerRNA *ptr)
 {
   bNode *node = (bNode *)ptr->data;
 
-  if (node->typeinfo->ext.srna) {
-    return node->typeinfo->ext.srna;
+  if (node->typeinfo->rna_ext.srna) {
+    return node->typeinfo->rna_ext.srna;
   }
   else {
     return ptr->type;
@@ -1318,7 +1612,7 @@ static char *rna_Node_path(PointerRNA *ptr)
   bNode *node = (bNode *)ptr->data;
   char name_esc[sizeof(node->name) * 2];
 
-  BLI_strescape(name_esc, node->name, sizeof(name_esc));
+  BLI_str_escape(name_esc, node->name, sizeof(name_esc));
   return BLI_sprintfN("nodes[\"%s\"]", name_esc);
 }
 
@@ -1345,14 +1639,14 @@ char *rna_Node_ImageUser_path(PointerRNA *ptr)
       continue;
     }
 
-    BLI_strescape(name_esc, node->name, sizeof(name_esc));
+    BLI_str_escape(name_esc, node->name, sizeof(name_esc));
     return BLI_sprintfN("nodes[\"%s\"].image_user", name_esc);
   }
 
   return NULL;
 }
 
-static bool rna_Node_poll(bNodeType *ntype, bNodeTree *ntree)
+static bool rna_Node_poll(bNodeType *ntype, bNodeTree *ntree, const char **UNUSED(r_disabled_hint))
 {
   extern FunctionRNA rna_Node_poll_func;
 
@@ -1362,12 +1656,12 @@ static bool rna_Node_poll(bNodeType *ntype, bNodeTree *ntree)
   void *ret;
   bool visible;
 
-  RNA_pointer_create(NULL, ntype->ext.srna, NULL, &ptr); /* dummy */
+  RNA_pointer_create(NULL, ntype->rna_ext.srna, NULL, &ptr); /* dummy */
   func = &rna_Node_poll_func; /* RNA_struct_find_function(&ptr, "poll"); */
 
   RNA_parameter_list_create(&list, &ptr, func);
   RNA_parameter_set_lookup(&list, "node_tree", &ntree);
-  ntype->ext.call(NULL, &ptr, func, &list);
+  ntype->rna_ext.call(NULL, &ptr, func, &list);
 
   RNA_parameter_get_lookup(&list, "visible", &ret);
   visible = *(bool *)ret;
@@ -1377,7 +1671,9 @@ static bool rna_Node_poll(bNodeType *ntype, bNodeTree *ntree)
   return visible;
 }
 
-static bool rna_Node_poll_instance(bNode *node, bNodeTree *ntree)
+static bool rna_Node_poll_instance(bNode *node,
+                                   bNodeTree *ntree,
+                                   const char **UNUSED(disabled_info))
 {
   extern FunctionRNA rna_Node_poll_instance_func;
 
@@ -1387,12 +1683,12 @@ static bool rna_Node_poll_instance(bNode *node, bNodeTree *ntree)
   void *ret;
   bool visible;
 
-  RNA_pointer_create(NULL, node->typeinfo->ext.srna, node, &ptr); /* dummy */
+  RNA_pointer_create(NULL, node->typeinfo->rna_ext.srna, node, &ptr); /* dummy */
   func = &rna_Node_poll_instance_func; /* RNA_struct_find_function(&ptr, "poll_instance"); */
 
   RNA_parameter_list_create(&list, &ptr, func);
   RNA_parameter_set_lookup(&list, "node_tree", &ntree);
-  node->typeinfo->ext.call(NULL, &ptr, func, &list);
+  node->typeinfo->rna_ext.call(NULL, &ptr, func, &list);
 
   RNA_parameter_get_lookup(&list, "visible", &ret);
   visible = *(bool *)ret;
@@ -1402,10 +1698,12 @@ static bool rna_Node_poll_instance(bNode *node, bNodeTree *ntree)
   return visible;
 }
 
-static bool rna_Node_poll_instance_default(bNode *node, bNodeTree *ntree)
+static bool rna_Node_poll_instance_default(bNode *node,
+                                           bNodeTree *ntree,
+                                           const char **disabled_info)
 {
   /* use the basic poll function */
-  return rna_Node_poll(node->typeinfo, ntree);
+  return rna_Node_poll(node->typeinfo, ntree, disabled_info);
 }
 
 static void rna_Node_update_reg(bNodeTree *ntree, bNode *node)
@@ -1416,11 +1714,11 @@ static void rna_Node_update_reg(bNodeTree *ntree, bNode *node)
   ParameterList list;
   FunctionRNA *func;
 
-  RNA_pointer_create((ID *)ntree, node->typeinfo->ext.srna, node, &ptr);
+  RNA_pointer_create((ID *)ntree, node->typeinfo->rna_ext.srna, node, &ptr);
   func = &rna_Node_update_func; /* RNA_struct_find_function(&ptr, "update"); */
 
   RNA_parameter_list_create(&list, &ptr, func);
-  node->typeinfo->ext.call(NULL, &ptr, func, &list);
+  node->typeinfo->rna_ext.call(NULL, &ptr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1433,12 +1731,12 @@ static void rna_Node_insert_link(bNodeTree *ntree, bNode *node, bNodeLink *link)
   ParameterList list;
   FunctionRNA *func;
 
-  RNA_pointer_create((ID *)ntree, node->typeinfo->ext.srna, node, &ptr);
+  RNA_pointer_create((ID *)ntree, node->typeinfo->rna_ext.srna, node, &ptr);
   func = &rna_Node_insert_link_func;
 
   RNA_parameter_list_create(&list, &ptr, func);
   RNA_parameter_set_lookup(&list, "link", &link);
-  node->typeinfo->ext.call(NULL, &ptr, func, &list);
+  node->typeinfo->rna_ext.call(NULL, &ptr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1454,7 +1752,7 @@ static void rna_Node_init(const bContext *C, PointerRNA *ptr)
   func = &rna_Node_init_func; /* RNA_struct_find_function(&ptr, "init"); */
 
   RNA_parameter_list_create(&list, ptr, func);
-  node->typeinfo->ext.call((bContext *)C, ptr, func, &list);
+  node->typeinfo->rna_ext.call((bContext *)C, ptr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1471,7 +1769,7 @@ static void rna_Node_copy(PointerRNA *ptr, const struct bNode *copynode)
 
   RNA_parameter_list_create(&list, ptr, func);
   RNA_parameter_set_lookup(&list, "node", &copynode);
-  node->typeinfo->ext.call(NULL, ptr, func, &list);
+  node->typeinfo->rna_ext.call(NULL, ptr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1487,7 +1785,7 @@ static void rna_Node_free(PointerRNA *ptr)
   func = &rna_Node_free_func; /* RNA_struct_find_function(&ptr, "free"); */
 
   RNA_parameter_list_create(&list, ptr, func);
-  node->typeinfo->ext.call(NULL, ptr, func, &list);
+  node->typeinfo->rna_ext.call(NULL, ptr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1505,7 +1803,7 @@ static void rna_Node_draw_buttons(struct uiLayout *layout, bContext *C, PointerR
   RNA_parameter_list_create(&list, ptr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
   RNA_parameter_set_lookup(&list, "layout", &layout);
-  node->typeinfo->ext.call(C, ptr, func, &list);
+  node->typeinfo->rna_ext.call(C, ptr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1523,7 +1821,7 @@ static void rna_Node_draw_buttons_ext(struct uiLayout *layout, bContext *C, Poin
   RNA_parameter_list_create(&list, ptr, func);
   RNA_parameter_set_lookup(&list, "context", &C);
   RNA_parameter_set_lookup(&list, "layout", &layout);
-  node->typeinfo->ext.call(C, ptr, func, &list);
+  node->typeinfo->rna_ext.call(C, ptr, func, &list);
 
   RNA_parameter_list_free(&list);
 }
@@ -1542,7 +1840,7 @@ static void rna_Node_draw_label(bNodeTree *ntree, bNode *node, char *label, int 
 
   RNA_pointer_create(&ntree->id, &RNA_Node, node, &ptr);
   RNA_parameter_list_create(&list, &ptr, func);
-  node->typeinfo->ext.call(NULL, &ptr, func, &list);
+  node->typeinfo->rna_ext.call(NULL, &ptr, func, &list);
 
   RNA_parameter_get_lookup(&list, "label", &ret);
   rlabel = (char *)ret;
@@ -1573,7 +1871,7 @@ static void rna_Node_unregister(Main *UNUSED(bmain), StructRNA *type)
     return;
   }
 
-  RNA_struct_free_extension(type, &nt->ext);
+  RNA_struct_free_extension(type, &nt->rna_ext);
   RNA_struct_free(&BLENDER_RNA, type);
 
   /* this also frees the allocated nt pointer, no MEM_free call needed! */
@@ -1628,26 +1926,25 @@ static bNodeType *rna_Node_register_base(Main *bmain,
   /* check if we have registered this node type before, and remove it */
   nt = nodeTypeFind(dummynt.idname);
   if (nt) {
-    rna_Node_unregister(bmain, nt->ext.srna);
+    rna_Node_unregister(bmain, nt->rna_ext.srna);
   }
 
   /* create a new node type */
-  nt = MEM_callocN(sizeof(bNodeType), "node type");
+  nt = MEM_mallocN(sizeof(bNodeType), "node type");
   memcpy(nt, &dummynt, sizeof(dummynt));
-  /* make sure the node type struct is freed on unregister */
-  nt->needs_free = 1;
+  nt->free_self = (void (*)(bNodeType *))MEM_freeN;
 
-  nt->ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, nt->idname, basetype);
-  nt->ext.data = data;
-  nt->ext.call = call;
-  nt->ext.free = free;
-  RNA_struct_blender_type_set(nt->ext.srna, nt);
+  nt->rna_ext.srna = RNA_def_struct_ptr(&BLENDER_RNA, nt->idname, basetype);
+  nt->rna_ext.data = data;
+  nt->rna_ext.call = call;
+  nt->rna_ext.free = free;
+  RNA_struct_blender_type_set(nt->rna_ext.srna, nt);
 
-  RNA_def_struct_ui_text(nt->ext.srna, nt->ui_name, nt->ui_description);
-  RNA_def_struct_ui_icon(nt->ext.srna, nt->ui_icon);
+  RNA_def_struct_ui_text(nt->rna_ext.srna, nt->ui_name, nt->ui_description);
+  RNA_def_struct_ui_icon(nt->rna_ext.srna, nt->ui_icon);
 
   func = RNA_def_function_runtime(
-      nt->ext.srna, "is_registered_node_type", rna_Node_is_registered_node_type_runtime);
+      nt->rna_ext.srna, "is_registered_node_type", rna_Node_is_registered_node_type_runtime);
   RNA_def_function_ui_description(func, "True if a registered node type");
   RNA_def_function_flag(func, FUNC_NO_SELF | FUNC_USE_SELF_TYPE);
   parm = RNA_def_boolean(func, "result", false, "Result", "");
@@ -1699,7 +1996,265 @@ static StructRNA *rna_Node_register(Main *bmain,
   /* update while blender is running */
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 
-  return nt->ext.srna;
+  return nt->rna_ext.srna;
+}
+
+static const EnumPropertyItem *itemf_function_check(
+    const EnumPropertyItem *original_item_array,
+    bool (*value_supported)(const EnumPropertyItem *item))
+{
+  EnumPropertyItem *item_array = NULL;
+  int items_len = 0;
+
+  for (const EnumPropertyItem *item = original_item_array; item->identifier != NULL; item++) {
+    if (value_supported(item)) {
+      RNA_enum_item_add(&item_array, &items_len, item);
+    }
+  }
+
+  RNA_enum_item_end(&item_array, &items_len);
+  return item_array;
+}
+
+static bool switch_type_supported(const EnumPropertyItem *item)
+{
+  return ELEM(item->value,
+              SOCK_FLOAT,
+              SOCK_INT,
+              SOCK_BOOLEAN,
+              SOCK_VECTOR,
+              SOCK_STRING,
+              SOCK_RGBA,
+              SOCK_GEOMETRY,
+              SOCK_OBJECT,
+              SOCK_COLLECTION,
+              SOCK_TEXTURE,
+              SOCK_MATERIAL);
+}
+
+static const EnumPropertyItem *rna_GeometryNodeSwitch_type_itemf(bContext *UNUSED(C),
+                                                                 PointerRNA *UNUSED(ptr),
+                                                                 PropertyRNA *UNUSED(prop),
+                                                                 bool *r_free)
+{
+  *r_free = true;
+  return itemf_function_check(node_socket_data_type_items, switch_type_supported);
+}
+
+static bool attribute_clamp_type_supported(const EnumPropertyItem *item)
+{
+  return ELEM(item->value, CD_PROP_FLOAT, CD_PROP_FLOAT3, CD_PROP_INT32, CD_PROP_COLOR);
+}
+static const EnumPropertyItem *rna_GeometryNodeAttributeClamp_type_itemf(bContext *UNUSED(C),
+                                                                         PointerRNA *UNUSED(ptr),
+                                                                         PropertyRNA *UNUSED(prop),
+                                                                         bool *r_free)
+{
+  *r_free = true;
+  return itemf_function_check(rna_enum_attribute_type_items, attribute_clamp_type_supported);
+}
+
+static bool attribute_random_type_supported(const EnumPropertyItem *item)
+{
+  return ELEM(item->value, CD_PROP_FLOAT, CD_PROP_FLOAT3, CD_PROP_BOOL, CD_PROP_INT32);
+}
+static const EnumPropertyItem *rna_GeometryNodeAttributeRandom_type_itemf(
+    bContext *UNUSED(C), PointerRNA *UNUSED(ptr), PropertyRNA *UNUSED(prop), bool *r_free)
+{
+  *r_free = true;
+  return itemf_function_check(rna_enum_attribute_type_items, attribute_random_type_supported);
+}
+
+static const EnumPropertyItem *rna_GeometryNodeAttributeRandomize_operation_itemf(
+    bContext *UNUSED(C), PointerRNA *ptr, PropertyRNA *UNUSED(prop), bool *r_free)
+{
+  bNode *node = ptr->data;
+  const NodeAttributeRandomize *node_storage = (NodeAttributeRandomize *)node->storage;
+  const CustomDataType data_type = (CustomDataType)node_storage->data_type;
+
+  EnumPropertyItem *item_array = NULL;
+  int items_len = 0;
+  for (const EnumPropertyItem *item = rna_node_geometry_attribute_randomize_operation_items;
+       item->identifier != NULL;
+       item++) {
+    if (data_type == CD_PROP_BOOL) {
+      if (item->value == GEO_NODE_ATTRIBUTE_RANDOMIZE_REPLACE_CREATE) {
+        RNA_enum_item_add(&item_array, &items_len, item);
+      }
+    }
+    else {
+      RNA_enum_item_add(&item_array, &items_len, item);
+    }
+  }
+  RNA_enum_item_end(&item_array, &items_len);
+
+  *r_free = true;
+  return item_array;
+}
+
+static void rna_GeometryNodeAttributeRandomize_data_type_update(Main *bmain,
+                                                                Scene *scene,
+                                                                PointerRNA *ptr)
+{
+  bNode *node = ptr->data;
+  NodeAttributeRandomize *node_storage = (NodeAttributeRandomize *)node->storage;
+
+  /* The boolean data type has no extra operations besides,
+   * replace, so make sure the enum value is set properly. */
+  if (node_storage->data_type == CD_PROP_BOOL) {
+    node_storage->operation = GEO_NODE_ATTRIBUTE_RANDOMIZE_REPLACE_CREATE;
+  }
+
+  rna_Node_socket_update(bmain, scene, ptr);
+}
+
+static bool attribute_convert_type_supported(const EnumPropertyItem *item)
+{
+  return ELEM(item->value,
+              CD_AUTO_FROM_NAME,
+              CD_PROP_FLOAT,
+              CD_PROP_FLOAT2,
+              CD_PROP_FLOAT3,
+              CD_PROP_COLOR,
+              CD_PROP_BOOL,
+              CD_PROP_INT32);
+}
+static const EnumPropertyItem *rna_GeometryNodeAttributeConvert_type_itemf(
+    bContext *UNUSED(C), PointerRNA *UNUSED(ptr), PropertyRNA *UNUSED(prop), bool *r_free)
+{
+  *r_free = true;
+  return itemf_function_check(rna_enum_attribute_type_with_auto_items,
+                              attribute_convert_type_supported);
+}
+
+static bool attribute_fill_type_supported(const EnumPropertyItem *item)
+{
+  return ELEM(
+      item->value, CD_PROP_FLOAT, CD_PROP_FLOAT3, CD_PROP_COLOR, CD_PROP_BOOL, CD_PROP_INT32);
+}
+static const EnumPropertyItem *rna_GeometryNodeAttributeFill_type_itemf(bContext *UNUSED(C),
+                                                                        PointerRNA *UNUSED(ptr),
+                                                                        PropertyRNA *UNUSED(prop),
+                                                                        bool *r_free)
+{
+  *r_free = true;
+  return itemf_function_check(rna_enum_attribute_type_items, attribute_fill_type_supported);
+}
+
+/**
+ * This bit of ugly code makes sure the float / attribute option shows up instead of
+ * vector / attribute if the node uses an operation that uses a float for input B or C.
+ */
+static const EnumPropertyItem *rna_GeometryNodeAttributeVectorMath_input_type_b_itemf(
+    bContext *UNUSED(C), PointerRNA *ptr, PropertyRNA *UNUSED(prop), bool *r_free)
+{
+  bNode *node = ptr->data;
+  NodeAttributeVectorMath *node_storage = (NodeAttributeVectorMath *)node->storage;
+
+  EnumPropertyItem *item_array = NULL;
+  int items_len = 0;
+  for (const EnumPropertyItem *item = rna_node_geometry_attribute_input_type_items_any;
+       item->identifier != NULL;
+       item++) {
+    if (item->value == GEO_NODE_ATTRIBUTE_INPUT_ATTRIBUTE) {
+      RNA_enum_item_add(&item_array, &items_len, item);
+    }
+    else if (item->value == GEO_NODE_ATTRIBUTE_INPUT_FLOAT) {
+      if (node_storage->operation == NODE_VECTOR_MATH_SCALE) {
+        RNA_enum_item_add(&item_array, &items_len, item);
+      }
+    }
+    else if (item->value == GEO_NODE_ATTRIBUTE_INPUT_VECTOR) {
+      if (node_storage->operation != NODE_VECTOR_MATH_SCALE) {
+        RNA_enum_item_add(&item_array, &items_len, item);
+      }
+    }
+  }
+  RNA_enum_item_end(&item_array, &items_len);
+
+  *r_free = true;
+  return item_array;
+}
+
+static const EnumPropertyItem *rna_GeometryNodeAttributeVectorMath_input_type_c_itemf(
+    bContext *UNUSED(C), PointerRNA *ptr, PropertyRNA *UNUSED(prop), bool *r_free)
+{
+  bNode *node = ptr->data;
+  NodeAttributeVectorMath *node_storage = (NodeAttributeVectorMath *)node->storage;
+
+  EnumPropertyItem *item_array = NULL;
+  int items_len = 0;
+  for (const EnumPropertyItem *item = rna_node_geometry_attribute_input_type_items_any;
+       item->identifier != NULL;
+       item++) {
+    if (item->value == GEO_NODE_ATTRIBUTE_INPUT_ATTRIBUTE) {
+      RNA_enum_item_add(&item_array, &items_len, item);
+    }
+    else if (item->value == GEO_NODE_ATTRIBUTE_INPUT_FLOAT) {
+      if (node_storage->operation == NODE_VECTOR_MATH_REFRACT) {
+        RNA_enum_item_add(&item_array, &items_len, item);
+      }
+    }
+    else if (item->value == GEO_NODE_ATTRIBUTE_INPUT_VECTOR) {
+      if (node_storage->operation != NODE_VECTOR_MATH_REFRACT) {
+        RNA_enum_item_add(&item_array, &items_len, item);
+      }
+    }
+  }
+  RNA_enum_item_end(&item_array, &items_len);
+
+  *r_free = true;
+  return item_array;
+}
+
+static void rna_GeometryNodeAttributeVectorMath_operation_update(Main *bmain,
+                                                                 Scene *scene,
+                                                                 PointerRNA *ptr)
+{
+  bNode *node = ptr->data;
+  NodeAttributeVectorMath *node_storage = (NodeAttributeVectorMath *)node->storage;
+
+  const NodeVectorMathOperation operation = (NodeVectorMathOperation)node_storage->operation;
+
+  /* The scale operation can't use a vector input, so reset
+   * the input type enum in case it's set to vector. */
+  if (operation == NODE_VECTOR_MATH_SCALE) {
+    if (node_storage->input_type_b == GEO_NODE_ATTRIBUTE_INPUT_VECTOR) {
+      node_storage->input_type_b = GEO_NODE_ATTRIBUTE_INPUT_FLOAT;
+    }
+  }
+
+  /* Scale is also the only operation that uses the float input type, so a
+   * a check is also necessary for the other direction. */
+  if (operation != NODE_VECTOR_MATH_SCALE) {
+    if (node_storage->input_type_b == GEO_NODE_ATTRIBUTE_INPUT_FLOAT) {
+      node_storage->input_type_b = GEO_NODE_ATTRIBUTE_INPUT_VECTOR;
+    }
+  }
+
+  rna_Node_socket_update(bmain, scene, ptr);
+}
+
+static bool attribute_map_range_type_supported(const EnumPropertyItem *item)
+{
+  return ELEM(item->value, CD_PROP_FLOAT, CD_PROP_FLOAT3);
+}
+static const EnumPropertyItem *rna_GeometryNodeAttributeMapRange_type_itemf(
+    bContext *UNUSED(C), PointerRNA *UNUSED(ptr), PropertyRNA *UNUSED(prop), bool *r_free)
+{
+  *r_free = true;
+  return itemf_function_check(rna_enum_attribute_type_items, attribute_map_range_type_supported);
+}
+
+static bool attribute_curve_map_type_supported(const EnumPropertyItem *item)
+{
+  return ELEM(item->value, CD_PROP_FLOAT, CD_PROP_FLOAT3, CD_PROP_COLOR);
+}
+static const EnumPropertyItem *rna_GeometryNodeAttributeCurveMap_type_itemf(
+    bContext *UNUSED(C), PointerRNA *UNUSED(ptr), PropertyRNA *UNUSED(prop), bool *r_free)
+{
+  *r_free = true;
+  return itemf_function_check(rna_enum_attribute_type_items, attribute_curve_map_type_supported);
 }
 
 static StructRNA *rna_ShaderNode_register(Main *bmain,
@@ -1721,7 +2276,7 @@ static StructRNA *rna_ShaderNode_register(Main *bmain,
   /* update while blender is running */
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 
-  return nt->ext.srna;
+  return nt->rna_ext.srna;
 }
 
 static StructRNA *rna_CompositorNode_register(Main *bmain,
@@ -1743,7 +2298,7 @@ static StructRNA *rna_CompositorNode_register(Main *bmain,
   /* update while blender is running */
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 
-  return nt->ext.srna;
+  return nt->rna_ext.srna;
 }
 
 static StructRNA *rna_TextureNode_register(Main *bmain,
@@ -1765,7 +2320,51 @@ static StructRNA *rna_TextureNode_register(Main *bmain,
   /* update while blender is running */
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 
-  return nt->ext.srna;
+  return nt->rna_ext.srna;
+}
+
+static StructRNA *rna_GeometryNode_register(Main *bmain,
+                                            ReportList *reports,
+                                            void *data,
+                                            const char *identifier,
+                                            StructValidateFunc validate,
+                                            StructCallbackFunc call,
+                                            StructFreeFunc free)
+{
+  bNodeType *nt = rna_Node_register_base(
+      bmain, reports, &RNA_GeometryNode, data, identifier, validate, call, free);
+  if (!nt) {
+    return NULL;
+  }
+
+  nodeRegisterType(nt);
+
+  /* update while blender is running */
+  WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
+
+  return nt->rna_ext.srna;
+}
+
+static StructRNA *rna_FunctionNode_register(Main *bmain,
+                                            ReportList *reports,
+                                            void *data,
+                                            const char *identifier,
+                                            StructValidateFunc validate,
+                                            StructCallbackFunc call,
+                                            StructFreeFunc free)
+{
+  bNodeType *nt = rna_Node_register_base(
+      bmain, reports, &RNA_FunctionNode, data, identifier, validate, call, free);
+  if (!nt) {
+    return NULL;
+  }
+
+  nodeRegisterType(nt);
+
+  /* update while blender is running */
+  WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
+
+  return nt->rna_ext.srna;
 }
 
 static IDProperty *rna_Node_idprops(PointerRNA *ptr, bool create)
@@ -1876,6 +2475,11 @@ static bNodeSocket *rna_Node_inputs_new(ID *id,
                                         const char *name,
                                         const char *identifier)
 {
+
+  if (ELEM(node->type, NODE_GROUP_INPUT, NODE_FRAME)) {
+    BKE_report(reports, RPT_ERROR, "Unable to create socket");
+    return NULL;
+  }
   /* Adding an input to a group node is not working,
    * simpler to add it to its underlying nodetree. */
   if (ELEM(node->type, NODE_GROUP, NODE_CUSTOM_GROUP) && node->id != NULL) {
@@ -1906,6 +2510,10 @@ static bNodeSocket *rna_Node_outputs_new(ID *id,
                                          const char *name,
                                          const char *identifier)
 {
+  if (ELEM(node->type, NODE_GROUP_OUTPUT, NODE_FRAME)) {
+    BKE_report(reports, RPT_ERROR, "Unable to create socket");
+    return NULL;
+  }
   /* Adding an output to a group node is not working,
    * simpler to add it to its underlying nodetree. */
   if (ELEM(node->type, NODE_GROUP, NODE_CUSTOM_GROUP) && node->id != NULL) {
@@ -2161,11 +2769,13 @@ static StructRNA *rna_NodeSocket_register(Main *UNUSED(bmain),
   st = nodeSocketTypeFind(dummyst.idname);
   if (!st) {
     /* create a new node socket type */
-    st = MEM_callocN(sizeof(bNodeSocketType), "node socket type");
+    st = MEM_mallocN(sizeof(bNodeSocketType), "node socket type");
     memcpy(st, &dummyst, sizeof(dummyst));
 
     nodeRegisterSocketType(st);
   }
+
+  st->free_self = (void (*)(bNodeSocketType * stype)) MEM_freeN;
 
   /* if RNA type is already registered, unregister first */
   if (st->ext_socket.srna) {
@@ -2215,7 +2825,7 @@ static char *rna_NodeSocket_path(PointerRNA *ptr)
     return NULL;
   }
 
-  BLI_strescape(name_esc, node->name, sizeof(name_esc));
+  BLI_str_escape(name_esc, node->name, sizeof(name_esc));
 
   if (sock->in_out == SOCK_IN) {
     return BLI_sprintfN("nodes[\"%s\"].inputs[%d]", name_esc, socketindex);
@@ -2277,6 +2887,7 @@ static bool rna_NodeSocket_is_output_get(PointerRNA *ptr)
 
 static void rna_NodeSocket_link_limit_set(PointerRNA *ptr, int value)
 {
+  /* Does not have any effect if the link limit is defined in the socket type. */
   bNodeSocket *sock = ptr->data;
   sock->limit = (value == 0 ? 0xFFF : value);
 }
@@ -2475,11 +3086,13 @@ static StructRNA *rna_NodeSocketInterface_register(Main *UNUSED(bmain),
   }
   else {
     /* create a new node socket type */
-    st = MEM_callocN(sizeof(bNodeSocketType), "node socket type");
+    st = MEM_mallocN(sizeof(bNodeSocketType), "node socket type");
     memcpy(st, &dummyst, sizeof(dummyst));
 
     nodeRegisterSocketType(st);
   }
+
+  st->free_self = (void (*)(bNodeSocketType * stype)) MEM_freeN;
 
   /* if RNA type is already registered, unregister first */
   if (st->ext_interface.srna) {
@@ -2580,7 +3193,7 @@ static void rna_NodeSocketStandard_draw(ID *id,
 }
 
 static void rna_NodeSocketStandard_draw_color(
-    ID *id, bNodeSocket *sock, struct bContext *C, PointerRNA *nodeptr, float *r_color)
+    ID *id, bNodeSocket *sock, struct bContext *C, PointerRNA *nodeptr, float r_color[4])
 {
   PointerRNA ptr;
   RNA_pointer_create(id, &RNA_NodeSocket, sock, &ptr);
@@ -2600,7 +3213,7 @@ static void rna_NodeSocketInterfaceStandard_draw(ID *id,
 static void rna_NodeSocketInterfaceStandard_draw_color(ID *id,
                                                        bNodeSocket *sock,
                                                        struct bContext *C,
-                                                       float *r_color)
+                                                       float r_color[4])
 {
   PointerRNA ptr;
   RNA_pointer_create(id, &RNA_NodeSocket, sock, &ptr);
@@ -2676,6 +3289,15 @@ static void rna_NodeSocketStandard_value_update(struct bContext *C, PointerRNA *
   }
 }
 
+static void rna_NodeSocketStandard_value_and_relation_update(struct bContext *C, PointerRNA *ptr)
+{
+  rna_NodeSocketStandard_value_update(C, ptr);
+  bNodeTree *ntree = (bNodeTree *)ptr->owner_id;
+  Main *bmain = CTX_data_main(C);
+  ntreeUpdateTree(bmain, ntree);
+  DEG_relations_tag_update(bmain);
+}
+
 /* ******** Node Types ******** */
 
 static void rna_NodeInternalSocketTemplate_name_get(PointerRNA *ptr, char *value)
@@ -2749,18 +3371,20 @@ static PointerRNA rna_NodeInternal_output_template(StructRNA *srna, int index)
 static bool rna_NodeInternal_poll(StructRNA *srna, bNodeTree *ntree)
 {
   bNodeType *ntype = RNA_struct_blender_type_get(srna);
-  return ntype && (!ntype->poll || ntype->poll(ntype, ntree));
+  const char *disabled_hint;
+  return ntype && (!ntype->poll || ntype->poll(ntype, ntree, &disabled_hint));
 }
 
 static bool rna_NodeInternal_poll_instance(bNode *node, bNodeTree *ntree)
 {
   bNodeType *ntype = node->typeinfo;
+  const char *disabled_hint;
   if (ntype->poll_instance) {
-    return ntype->poll_instance(node, ntree);
+    return ntype->poll_instance(node, ntree, &disabled_hint);
   }
   else {
     /* fall back to basic poll function */
-    return !ntype->poll || ntype->poll(ntype, ntree);
+    return !ntype->poll || ntype->poll(ntype, ntree, &disabled_hint);
   }
 }
 
@@ -2823,8 +3447,37 @@ static StructRNA *rna_NodeCustomGroup_register(Main *bmain,
   /* update while blender is running */
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 
-  return nt->ext.srna;
+  return nt->rna_ext.srna;
 }
+
+static StructRNA *rna_GeometryNodeCustomGroup_register(Main *bmain,
+                                                       ReportList *reports,
+                                                       void *data,
+                                                       const char *identifier,
+                                                       StructValidateFunc validate,
+                                                       StructCallbackFunc call,
+                                                       StructFreeFunc free)
+{
+  bNodeType *nt = rna_Node_register_base(
+      bmain, reports, &RNA_GeometryNodeCustomGroup, data, identifier, validate, call, free);
+
+  if (!nt) {
+    return NULL;
+  }
+
+  nt->group_update_func = node_group_update;
+  nt->type = NODE_CUSTOM_GROUP;
+
+  register_node_type_geo_custom_group(nt);
+
+  nodeRegisterType(nt);
+
+  WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
+
+  return nt->rna_ext.srna;
+}
+
+void register_node_type_geo_custom_group(bNodeType *ntype);
 
 static StructRNA *rna_ShaderNodeCustomGroup_register(Main *bmain,
                                                      ReportList *reports,
@@ -2850,7 +3503,7 @@ static StructRNA *rna_ShaderNodeCustomGroup_register(Main *bmain,
 
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 
-  return nt->ext.srna;
+  return nt->rna_ext.srna;
 }
 
 static StructRNA *rna_CompositorNodeCustomGroup_register(Main *bmain,
@@ -2876,7 +3529,7 @@ static StructRNA *rna_CompositorNodeCustomGroup_register(Main *bmain,
 
   WM_main_add_notifier(NC_NODE | NA_EDITED, NULL);
 
-  return nt->ext.srna;
+  return nt->rna_ext.srna;
 }
 
 static void rna_CompositorNode_tag_need_exec(bNode *node)
@@ -2903,6 +3556,7 @@ static void rna_NodeGroup_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *
   }
 
   ED_node_tag_update_nodetree(bmain, ntree, node);
+  DEG_relations_tag_update(bmain);
 }
 
 static void rna_NodeGroup_node_tree_set(PointerRNA *ptr,
@@ -2913,7 +3567,8 @@ static void rna_NodeGroup_node_tree_set(PointerRNA *ptr,
   bNode *node = ptr->data;
   bNodeTree *ngroup = value.data;
 
-  if (nodeGroupPoll(ntree, ngroup)) {
+  const char *disabled_hint = NULL;
+  if (nodeGroupPoll(ntree, ngroup, &disabled_hint)) {
     if (node->id) {
       id_us_min(node->id);
     }
@@ -2935,7 +3590,8 @@ static bool rna_NodeGroup_node_tree_poll(PointerRNA *ptr, const PointerRNA value
     return false;
   }
 
-  return nodeGroupPoll(ntree, ngroup);
+  const char *disabled_hint = NULL;
+  return nodeGroupPoll(ntree, ngroup, &disabled_hint);
 }
 
 static StructRNA *rna_NodeGroup_interface_typef(PointerRNA *ptr)
@@ -3044,6 +3700,10 @@ static void rna_Node_image_layer_update(Main *bmain, Scene *scene, PointerRNA *p
   Image *ima = (Image *)node->id;
   ImageUser *iuser = node->storage;
 
+  if (node->type == CMP_NODE_CRYPTOMATTE && node->custom1 != CMP_CRYPTOMATTE_SRC_IMAGE) {
+    return;
+  }
+
   BKE_image_multilayer_index(ima->rr, iuser);
   BKE_image_signal(bmain, ima, iuser, IMA_SIGNAL_SRC_CHANGE);
 
@@ -3063,7 +3723,7 @@ static const EnumPropertyItem *renderresult_layers_add_enum(RenderLayer *rl)
   while (rl) {
     tmp.identifier = rl->name;
     /* Little trick: using space char instead empty string
-     * makes the item selectable in the dropdown. */
+     * makes the item selectable in the drop-down. */
     if (rl->name[0] == '\0') {
       tmp.name = " ";
     }
@@ -3090,6 +3750,10 @@ static const EnumPropertyItem *rna_Node_image_layer_itemf(bContext *UNUSED(C),
   const EnumPropertyItem *item = NULL;
   RenderLayer *rl;
 
+  if (node->type == CMP_NODE_CRYPTOMATTE && node->custom1 != CMP_CRYPTOMATTE_SRC_IMAGE) {
+    return DummyRNA_NULL_items;
+  }
+
   if (ima == NULL || ima->rr == NULL) {
     *r_free = false;
     return DummyRNA_NULL_items;
@@ -3108,8 +3772,12 @@ static bool rna_Node_image_has_layers_get(PointerRNA *ptr)
   bNode *node = (bNode *)ptr->data;
   Image *ima = (Image *)node->id;
 
+  if (node->type == CMP_NODE_CRYPTOMATTE && node->custom1 != CMP_CRYPTOMATTE_SRC_IMAGE) {
+    return false;
+  }
+
   if (!ima || !(ima->rr)) {
-    return 0;
+    return false;
   }
 
   return RE_layers_have_name(ima->rr);
@@ -3120,8 +3788,12 @@ static bool rna_Node_image_has_views_get(PointerRNA *ptr)
   bNode *node = (bNode *)ptr->data;
   Image *ima = (Image *)node->id;
 
+  if (node->type == CMP_NODE_CRYPTOMATTE && node->custom1 != CMP_CRYPTOMATTE_SRC_IMAGE) {
+    return false;
+  }
+
   if (!ima || !(ima->rr)) {
-    return 0;
+    return false;
   }
 
   return BLI_listbase_count_at_most(&ima->rr->views, 2) > 1;
@@ -3139,7 +3811,7 @@ static const EnumPropertyItem *renderresult_views_add_enum(RenderView *rv)
   while (rv) {
     tmp.identifier = rv->name;
     /* Little trick: using space char instead empty string
-     * makes the item selectable in the dropdown. */
+     * makes the item selectable in the drop-down. */
     if (rv->name[0] == '\0') {
       tmp.name = " ";
     }
@@ -3165,6 +3837,10 @@ static const EnumPropertyItem *rna_Node_image_view_itemf(bContext *UNUSED(C),
   Image *ima = (Image *)node->id;
   const EnumPropertyItem *item = NULL;
   RenderView *rv;
+
+  if (node->type == CMP_NODE_CRYPTOMATTE && node->custom1 != CMP_CRYPTOMATTE_SRC_IMAGE) {
+    return DummyRNA_NULL_items;
+  }
 
   if (ima == NULL || ima->rr == NULL) {
     *r_free = false;
@@ -3322,48 +3998,150 @@ static void rna_NodeColorBalance_update_cdl(Main *bmain, Scene *scene, PointerRN
   rna_Node_update(bmain, scene, ptr);
 }
 
+static void rna_NodeCryptomatte_source_set(PointerRNA *ptr, int value)
+{
+  bNode *node = (bNode *)ptr->data;
+  if (node->id && node->custom1 != value) {
+    id_us_min((ID *)node->id);
+    node->id = NULL;
+  }
+  node->custom1 = value;
+}
+
+static int rna_NodeCryptomatte_layer_name_get(PointerRNA *ptr)
+{
+  int index = 0;
+  bNode *node = (bNode *)ptr->data;
+  NodeCryptomatte *storage = node->storage;
+  LISTBASE_FOREACH_INDEX (CryptomatteLayer *, layer, &storage->runtime.layers, index) {
+    if (STREQLEN(storage->layer_name, layer->name, sizeof(storage->layer_name))) {
+      return index;
+    }
+  }
+  return 0;
+}
+
+static void rna_NodeCryptomatte_layer_name_set(PointerRNA *ptr, int new_value)
+{
+  bNode *node = (bNode *)ptr->data;
+  NodeCryptomatte *storage = node->storage;
+
+  CryptomatteLayer *layer = BLI_findlink(&storage->runtime.layers, new_value);
+  if (layer) {
+    STRNCPY(storage->layer_name, layer->name);
+  }
+}
+
+static const EnumPropertyItem *rna_NodeCryptomatte_layer_name_itemf(bContext *C,
+                                                                    PointerRNA *ptr,
+                                                                    PropertyRNA *UNUSED(prop),
+                                                                    bool *r_free)
+{
+  bNode *node = (bNode *)ptr->data;
+  NodeCryptomatte *storage = node->storage;
+  EnumPropertyItem *item = NULL;
+  EnumPropertyItem template = {0, "", 0, "", ""};
+  int totitem = 0;
+
+  ntreeCompositCryptomatteUpdateLayerNames(CTX_data_scene(C), node);
+  int layer_index;
+  LISTBASE_FOREACH_INDEX (CryptomatteLayer *, layer, &storage->runtime.layers, layer_index) {
+    template.value = layer_index;
+    template.identifier = layer->name;
+    template.name = layer->name;
+    RNA_enum_item_add(&item, &totitem, &template);
+  }
+
+  RNA_enum_item_end(&item, &totitem);
+  *r_free = true;
+
+  return item;
+}
+
+static PointerRNA rna_NodeCryptomatte_scene_get(PointerRNA *ptr)
+{
+  bNode *node = (bNode *)ptr->data;
+
+  Scene *scene = (node->custom1 == CMP_CRYPTOMATTE_SRC_RENDER) ? (Scene *)node->id : NULL;
+  return rna_pointer_inherit_refine(ptr, &RNA_Scene, scene);
+}
+
+static void rna_NodeCryptomatte_scene_set(PointerRNA *ptr,
+                                          PointerRNA value,
+                                          struct ReportList *reports)
+{
+  bNode *node = (bNode *)ptr->data;
+
+  if (node->custom1 == CMP_CRYPTOMATTE_SRC_RENDER) {
+    rna_Node_scene_set(ptr, value, reports);
+  }
+}
+
+static PointerRNA rna_NodeCryptomatte_image_get(PointerRNA *ptr)
+{
+  bNode *node = (bNode *)ptr->data;
+
+  Image *image = (node->custom1 == CMP_CRYPTOMATTE_SRC_IMAGE) ? (Image *)node->id : NULL;
+  return rna_pointer_inherit_refine(ptr, &RNA_Image, image);
+}
+
+static void rna_NodeCryptomatte_image_set(PointerRNA *ptr,
+                                          PointerRNA value,
+                                          struct ReportList *UNUSED(reports))
+{
+  bNode *node = (bNode *)ptr->data;
+
+  if (node->custom1 == CMP_CRYPTOMATTE_SRC_IMAGE) {
+    if (node->id)
+      id_us_min((ID *)node->id);
+    if (value.data)
+      id_us_plus((ID *)value.data);
+
+    node->id = value.data;
+  }
+}
+
+static bool rna_NodeCryptomatte_image_poll(PointerRNA *UNUSED(ptr), PointerRNA value)
+{
+  Image *image = (Image *)value.owner_id;
+  return image->type == IMA_TYPE_MULTILAYER;
+}
+
 static void rna_NodeCryptomatte_matte_get(PointerRNA *ptr, char *value)
 {
   bNode *node = (bNode *)ptr->data;
   NodeCryptomatte *nc = node->storage;
-
-  strcpy(value, (nc->matte_id) ? nc->matte_id : "");
+  char *matte_id = BKE_cryptomatte_entries_to_matte_id(nc);
+  strcpy(value, matte_id);
+  MEM_freeN(matte_id);
 }
 
 static int rna_NodeCryptomatte_matte_length(PointerRNA *ptr)
 {
   bNode *node = (bNode *)ptr->data;
   NodeCryptomatte *nc = node->storage;
-
-  return (nc->matte_id) ? strlen(nc->matte_id) : 0;
+  char *matte_id = BKE_cryptomatte_entries_to_matte_id(nc);
+  int result = strlen(matte_id);
+  MEM_freeN(matte_id);
+  return result;
 }
 
 static void rna_NodeCryptomatte_matte_set(PointerRNA *ptr, const char *value)
 {
   bNode *node = (bNode *)ptr->data;
   NodeCryptomatte *nc = node->storage;
-
-  if (nc->matte_id) {
-    MEM_freeN(nc->matte_id);
-  }
-
-  if (value && value[0]) {
-    nc->matte_id = BLI_strdup(value);
-  }
-  else {
-    nc->matte_id = NULL;
-  }
+  BKE_cryptomatte_matte_id_to_entries(nc, value);
 }
 
 static void rna_NodeCryptomatte_update_add(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
-  ntreeCompositCryptomatteSyncFromAdd((bNodeTree *)ptr->owner_id, ptr->data);
+  ntreeCompositCryptomatteSyncFromAdd(scene, ptr->data);
   rna_Node_update(bmain, scene, ptr);
 }
 
 static void rna_NodeCryptomatte_update_remove(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
-  ntreeCompositCryptomatteSyncFromRemove((bNodeTree *)ptr->owner_id, ptr->data);
+  ntreeCompositCryptomatteSyncFromRemove(ptr->data);
   rna_Node_update(bmain, scene, ptr);
 }
 
@@ -3457,8 +4235,8 @@ static void rna_ShaderNodeTexIES_mode_set(PointerRNA *ptr, int value)
     if (node->id) {
       Text *text = (Text *)node->id;
 
-      if (value == NODE_IES_EXTERNAL && text->name) {
-        BLI_strncpy(nss->filepath, text->name, sizeof(nss->filepath));
+      if (value == NODE_IES_EXTERNAL && text->filepath) {
+        BLI_strncpy(nss->filepath, text->filepath, sizeof(nss->filepath));
         BLI_path_rel(nss->filepath, BKE_main_blendfile_path_from_global());
       }
 
@@ -3482,8 +4260,8 @@ static void rna_ShaderNodeScript_mode_set(PointerRNA *ptr, int value)
     if (node->id) {
       Text *text = (Text *)node->id;
 
-      if (value == NODE_SCRIPT_EXTERNAL && text->name) {
-        BLI_strncpy(nss->filepath, text->name, sizeof(nss->filepath));
+      if (value == NODE_SCRIPT_EXTERNAL && text->filepath) {
+        BLI_strncpy(nss->filepath, text->filepath, sizeof(nss->filepath));
         BLI_path_rel(nss->filepath, BKE_main_blendfile_path_from_global());
       }
 
@@ -3551,6 +4329,24 @@ static void rna_ShaderNodeScript_update(Main *bmain, Scene *scene, PointerRNA *p
 }
 
 static void rna_ShaderNode_socket_update(Main *bmain, Scene *scene, PointerRNA *ptr)
+{
+  bNodeTree *ntree = (bNodeTree *)ptr->owner_id;
+  bNode *node = (bNode *)ptr->data;
+
+  nodeUpdate(ntree, node);
+  rna_Node_update(bmain, scene, ptr);
+}
+
+static void rna_Node_socket_update(Main *bmain, Scene *scene, PointerRNA *ptr)
+{
+  bNodeTree *ntree = (bNodeTree *)ptr->owner_id;
+  bNode *node = (bNode *)ptr->data;
+
+  nodeUpdate(ntree, node);
+  rna_Node_update(bmain, scene, ptr);
+}
+
+static void rna_GeometryNode_socket_update(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
   bNodeTree *ntree = (bNodeTree *)ptr->owner_id;
   bNode *node = (bNode *)ptr->data;
@@ -3719,6 +4515,13 @@ void rna_ShaderNodePointDensity_density_minmax(bNode *self,
   RE_point_density_minmax(depsgraph, pd, r_min, r_max);
 }
 
+bool rna_NodeSocketMaterial_default_value_poll(PointerRNA *UNUSED(ptr), PointerRNA value)
+{
+  /* Do not show grease pencil materials for now. */
+  Material *ma = (Material *)value.data;
+  return ma->gp_style == NULL;
+}
+
 #else
 
 static const EnumPropertyItem prop_image_layer_items[] = {
@@ -3805,19 +4608,19 @@ static const EnumPropertyItem node_principled_hair_items[] = {
     {SHD_PRINCIPLED_HAIR_DIRECT_ABSORPTION,
      "ABSORPTION",
      0,
-     "Absorption coefficient",
-     "Directly set the absorption coefficient sigma_a (this is not the most intuitive way to "
+     "Absorption Coefficient",
+     "Directly set the absorption coefficient \"sigma_a\" (this is not the most intuitive way to "
      "color hair)"},
     {SHD_PRINCIPLED_HAIR_PIGMENT_CONCENTRATION,
      "MELANIN",
      0,
-     "Melanin concentration",
-     "Define the melanin concentrations below to get the most realistic-looking hair"
+     "Melanin Concentration",
+     "Define the melanin concentrations below to get the most realistic-looking hair "
      "(you can get the concentrations for different types of hair online)"},
     {SHD_PRINCIPLED_HAIR_REFLECTANCE,
      "COLOR",
      0,
-     "Direct coloring",
+     "Direct Coloring",
      "Choose the color of your preference, and the shader will approximate the absorption "
      "coefficient to render lookalike hair"},
     {0, NULL, 0, NULL, NULL},
@@ -3830,7 +4633,7 @@ static const EnumPropertyItem node_script_mode_items[] = {
 };
 
 static EnumPropertyItem node_ies_mode_items[] = {
-    {NODE_IES_INTERNAL, "INTERNAL", 0, "Internal", "Use internal text datablock"},
+    {NODE_IES_INTERNAL, "INTERNAL", 0, "Internal", "Use internal text data-block"},
     {NODE_IES_EXTERNAL, "EXTERNAL", 0, "External", "Use external .ies file"},
     {0, NULL, 0, NULL, NULL},
 };
@@ -3990,7 +4793,41 @@ static void def_math(StructRNA *srna)
 
   prop = RNA_def_property(srna, "use_clamp", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom2", SHD_MATH_CLAMP);
-  RNA_def_property_ui_text(prop, "Clamp", "Clamp result of the node to 0..1 range");
+  RNA_def_property_ui_text(prop, "Clamp", "Clamp result of the node to 0.0 to 1.0 range");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_boolean_math(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, rna_enum_node_boolean_math_items);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_float_compare(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, rna_enum_node_float_compare_items);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_float_to_int(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  prop = RNA_def_property(srna, "rounding_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, rna_enum_node_float_to_int_items);
+  RNA_def_property_ui_text(
+      prop, "Rounding Mode", "Method used to convert the float to an integer");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -4076,7 +4913,7 @@ static void def_mix_rgb(StructRNA *srna)
 
   prop = RNA_def_property(srna, "use_clamp", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom2", SHD_MIXRGB_CLAMP);
-  RNA_def_property_ui_text(prop, "Clamp", "Clamp result of the node to 0..1 range");
+  RNA_def_property_ui_text(prop, "Clamp", "Clamp result of the node to 0.0 to 1.0 range");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -4096,6 +4933,30 @@ static void def_texture(StructRNA *srna)
   RNA_def_property_int_sdna(prop, NULL, "custom1");
   RNA_def_property_ui_text(
       prop, "Node Output", "For node-based textures, which output node to use");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_fn_input_vector(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeInputVector", "storage");
+
+  prop = RNA_def_property(srna, "vector", PROP_FLOAT, PROP_XYZ);
+  RNA_def_property_array(prop, 3);
+  RNA_def_property_float_sdna(prop, NULL, "vector");
+  RNA_def_property_ui_text(prop, "Vector", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_fn_input_string(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeInputString", "storage");
+
+  prop = RNA_def_property(srna, "string", PROP_STRING, PROP_NONE);
+  RNA_def_property_ui_text(prop, "String", "");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -4136,11 +4997,55 @@ static void def_sh_mapping(StructRNA *srna)
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_ShaderNode_socket_update");
 }
 
-static void def_sh_attribute(StructRNA *srna)
+static void def_sh_vector_rotate(StructRNA *srna)
 {
   PropertyRNA *prop;
 
+  prop = RNA_def_property(srna, "rotation_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, rna_enum_vector_rotate_type_items);
+  RNA_def_property_ui_text(prop, "Type", "Type of rotation");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_ShaderNode_socket_update");
+
+  prop = RNA_def_property(srna, "invert", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "custom2", 0);
+  RNA_def_property_ui_text(prop, "Invert", "Invert angle");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_sh_attribute(StructRNA *srna)
+{
+  static const EnumPropertyItem prop_attribute_type[] = {
+      {SHD_ATTRIBUTE_GEOMETRY,
+       "GEOMETRY",
+       0,
+       "Geometry",
+       "The attribute is associated with the object geometry, and its value "
+       "varies from vertex to vertex, or within the object volume"},
+      {SHD_ATTRIBUTE_OBJECT,
+       "OBJECT",
+       0,
+       "Object",
+       "The attribute is associated with the object or mesh data-block itself, "
+       "and its value is uniform"},
+      {SHD_ATTRIBUTE_INSTANCER,
+       "INSTANCER",
+       0,
+       "Instancer",
+       "The attribute is associated with the instancer particle system or object, "
+       "falling back to the Object mode if the attribute isn't found, or the object "
+       "is not instanced"},
+      {0, NULL, 0, NULL, NULL},
+  };
+  PropertyRNA *prop;
+
   RNA_def_struct_sdna_from(srna, "NodeShaderAttribute", "storage");
+
+  prop = RNA_def_property(srna, "attribute_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "type");
+  RNA_def_property_enum_items(prop, prop_attribute_type);
+  RNA_def_property_ui_text(prop, "Attribute Type", "General type of the attribute");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "attribute_name", PROP_STRING, PROP_NONE);
   RNA_def_property_string_sdna(prop, NULL, "name");
@@ -4166,8 +5071,9 @@ static void def_sh_tex(StructRNA *srna)
 static void def_sh_tex_sky(StructRNA *srna)
 {
   static const EnumPropertyItem prop_sky_type[] = {
-      {SHD_SKY_OLD, "PREETHAM", 0, "Preetham", ""},
-      {SHD_SKY_NEW, "HOSEK_WILKIE", 0, "Hosek / Wilkie", ""},
+      {SHD_SKY_PREETHAM, "PREETHAM", 0, "Preetham", "Preetham 1999"},
+      {SHD_SKY_HOSEK, "HOSEK_WILKIE", 0, "Hosek / Wilkie", "Hosek / Wilkie 2012"},
+      {SHD_SKY_NISHITA, "NISHITA", 0, "Nishita", "Nishita 1993 improved"},
       {0, NULL, 0, NULL, NULL},
   };
   static float default_dir[3] = {0.0f, 0.0f, 1.0f};
@@ -4180,8 +5086,8 @@ static void def_sh_tex_sky(StructRNA *srna)
   prop = RNA_def_property(srna, "sky_type", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "sky_model");
   RNA_def_property_enum_items(prop, prop_sky_type);
-  RNA_def_property_ui_text(prop, "Sky Type", "");
-  RNA_def_property_update(prop, 0, "rna_Node_update");
+  RNA_def_property_ui_text(prop, "Sky Type", "Which sky model should be used");
+  RNA_def_property_update(prop, 0, "rna_ShaderNode_socket_update");
 
   prop = RNA_def_property(srna, "sun_direction", PROP_FLOAT, PROP_DIRECTION);
   RNA_def_property_ui_text(prop, "Sun Direction", "Direction from where the sun is shining");
@@ -4199,6 +5105,60 @@ static void def_sh_tex_sky(StructRNA *srna)
   RNA_def_property_range(prop, 0.0f, 1.0f);
   RNA_def_property_ui_text(
       prop, "Ground Albedo", "Ground color that is subtly reflected in the sky");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "sun_disc", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_ui_text(prop, "Sun Disc", "Include the sun itself in the output");
+  RNA_def_property_boolean_sdna(prop, NULL, "sun_disc", 1);
+  RNA_def_property_boolean_default(prop, true);
+  RNA_def_property_update(prop, 0, "rna_ShaderNode_socket_update");
+
+  prop = RNA_def_property(srna, "sun_size", PROP_FLOAT, PROP_ANGLE);
+  RNA_def_property_ui_text(prop, "Sun Size", "Size of sun disc");
+  RNA_def_property_range(prop, 0.0f, M_PI_2);
+  RNA_def_property_float_default(prop, DEG2RADF(0.545));
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "sun_intensity", PROP_FLOAT, PROP_NONE);
+  RNA_def_property_ui_text(prop, "Sun Intensity", "Strength of sun");
+  RNA_def_property_range(prop, 0.0f, 1000.0f);
+  RNA_def_property_float_default(prop, 1.0f);
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "sun_elevation", PROP_FLOAT, PROP_ANGLE);
+  RNA_def_property_ui_text(prop, "Sun Elevation", "Sun angle from horizon");
+  RNA_def_property_range(prop, -M_PI_2, M_PI_2);
+  RNA_def_property_float_default(prop, M_PI_2);
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "sun_rotation", PROP_FLOAT, PROP_ANGLE);
+  RNA_def_property_ui_text(prop, "Sun Rotation", "Rotation of sun around zenith");
+  RNA_def_property_float_default(prop, 0.0f);
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "altitude", PROP_FLOAT, PROP_DISTANCE);
+  RNA_def_property_ui_text(prop, "Altitude", "Height from sea level");
+  RNA_def_property_range(prop, 0.0f, 60000.0f);
+  RNA_def_property_ui_range(prop, 0.0f, 60000.0f, 10, 1);
+  RNA_def_property_float_default(prop, 0.0f);
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "air_density", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_ui_text(prop, "Air", "Density of air molecules");
+  RNA_def_property_range(prop, 0.0f, 10.0f);
+  RNA_def_property_float_default(prop, 1.0f);
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "dust_density", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_ui_text(prop, "Dust", "Density of dust molecules and water droplets");
+  RNA_def_property_range(prop, 0.0f, 10.0f);
+  RNA_def_property_float_default(prop, 1.0f);
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "ozone_density", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_ui_text(prop, "Ozone", "Density of ozone layer");
+  RNA_def_property_range(prop, 0.0f, 10.0f);
+  RNA_def_property_float_default(prop, 1.0f);
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -4365,7 +5325,7 @@ static void def_sh_tex_gradient(StructRNA *srna)
       {SHD_BLEND_QUADRATIC_SPHERE,
        "QUADRATIC_SPHERE",
        0,
-       "Quadratic sphere",
+       "Quadratic Sphere",
        "Create a quadratic progression in the shape of a sphere"},
       {SHD_BLEND_RADIAL, "RADIAL", 0, "Radial", "Create a radial progression"},
       {0, NULL, 0, NULL, NULL},
@@ -4510,7 +5470,7 @@ static void def_sh_tex_voronoi(StructRNA *srna)
       {SHD_VORONOI_DISTANCE_TO_EDGE,
        "DISTANCE_TO_EDGE",
        0,
-       "Distance To Edge",
+       "Distance to Edge",
        "Computes the distance to the edge of the voronoi cell"},
       {SHD_VORONOI_N_SPHERE_RADIUS,
        "N_SPHERE_RADIUS",
@@ -4533,7 +5493,7 @@ static void def_sh_tex_voronoi(StructRNA *srna)
   prop = RNA_def_property(srna, "distance", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "distance");
   RNA_def_property_enum_items(prop, prop_distance_items);
-  RNA_def_property_ui_text(prop, "Distance metric", "");
+  RNA_def_property_ui_text(prop, "Distance Metric", "");
   RNA_def_property_update(prop, 0, "rna_ShaderNode_socket_update");
 
   prop = RNA_def_property(srna, "feature", PROP_ENUM, PROP_NONE);
@@ -4551,9 +5511,30 @@ static void def_sh_tex_wave(StructRNA *srna)
       {0, NULL, 0, NULL, NULL},
   };
 
+  static EnumPropertyItem prop_wave_bands_direction_items[] = {
+      {SHD_WAVE_BANDS_DIRECTION_X, "X", 0, "X", "Bands across X axis"},
+      {SHD_WAVE_BANDS_DIRECTION_Y, "Y", 0, "Y", "Bands across Y axis"},
+      {SHD_WAVE_BANDS_DIRECTION_Z, "Z", 0, "Z", "Bands across Z axis"},
+      {SHD_WAVE_BANDS_DIRECTION_DIAGONAL, "DIAGONAL", 0, "Diagonal", "Bands across diagonal axis"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  static EnumPropertyItem prop_wave_rings_direction_items[] = {
+      {SHD_WAVE_RINGS_DIRECTION_X, "X", 0, "X", "Rings along X axis"},
+      {SHD_WAVE_RINGS_DIRECTION_Y, "Y", 0, "Y", "Rings along Y axis"},
+      {SHD_WAVE_RINGS_DIRECTION_Z, "Z", 0, "Z", "Rings along Z axis"},
+      {SHD_WAVE_RINGS_DIRECTION_SPHERICAL,
+       "SPHERICAL",
+       0,
+       "Spherical",
+       "Rings along spherical distance"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
   static const EnumPropertyItem prop_wave_profile_items[] = {
       {SHD_WAVE_PROFILE_SIN, "SIN", 0, "Sine", "Use a standard sine profile"},
       {SHD_WAVE_PROFILE_SAW, "SAW", 0, "Saw", "Use a sawtooth profile"},
+      {SHD_WAVE_PROFILE_TRI, "TRI", 0, "Triangle", "Use a triangle profile"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -4566,6 +5547,18 @@ static void def_sh_tex_wave(StructRNA *srna)
   RNA_def_property_enum_sdna(prop, NULL, "wave_type");
   RNA_def_property_enum_items(prop, prop_wave_type_items);
   RNA_def_property_ui_text(prop, "Wave Type", "");
+  RNA_def_property_update(prop, 0, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "bands_direction", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "bands_direction");
+  RNA_def_property_enum_items(prop, prop_wave_bands_direction_items);
+  RNA_def_property_ui_text(prop, "Bands Direction", "");
+  RNA_def_property_update(prop, 0, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "rings_direction", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "rings_direction");
+  RNA_def_property_enum_items(prop, prop_wave_rings_direction_items);
+  RNA_def_property_ui_text(prop, "Rings Direction", "");
   RNA_def_property_update(prop, 0, "rna_Node_update");
 
   prop = RNA_def_property(srna, "wave_profile", PROP_ENUM, PROP_NONE);
@@ -4603,7 +5596,7 @@ static void def_sh_tex_coord(StructRNA *srna)
   prop = RNA_def_property(srna, "from_instancer", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", 1);
   RNA_def_property_ui_text(
-      prop, "From Instancer", "Use the parent of the dupli object if possible");
+      prop, "From Instancer", "Use the parent of the instance object if possible");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -4697,12 +5690,12 @@ static void def_sh_tex_pointdensity(StructRNA *srna)
        "PARTICLE_AGE",
        0,
        "Particle Age",
-       "Lifetime mapped as 0.0 - 1.0 intensity"},
+       "Lifetime mapped as 0.0 to 1.0 intensity"},
       {SHD_POINTDENSITY_COLOR_PARTSPEED,
        "PARTICLE_SPEED",
        0,
        "Particle Speed",
-       "Particle speed (absolute magnitude of velocity) mapped as 0.0-1.0 intensity"},
+       "Particle speed (absolute magnitude of velocity) mapped as 0.0 to 1.0 intensity"},
       {SHD_POINTDENSITY_COLOR_PARTVEL,
        "PARTICLE_VELOCITY",
        0,
@@ -4798,7 +5791,7 @@ static void def_sh_tex_pointdensity(StructRNA *srna)
   func = RNA_def_function(srna, "calc_point_density", "rna_ShaderNodePointDensity_density_calc");
   RNA_def_function_ui_description(func, "Calculate point density");
   RNA_def_pointer(func, "depsgraph", "Depsgraph", "", "");
-  /* TODO, See how array size of 0 works, this shouldnt be used. */
+  /* TODO: See how array size of 0 works, this shouldn't be used. */
   parm = RNA_def_float_array(func, "rgba_values", 1, NULL, 0, 0, "", "RGBA Values", 0, 0);
   RNA_def_parameter_flags(parm, PROP_DYNAMIC, 0);
   RNA_def_function_output(func, parm);
@@ -4920,7 +5913,7 @@ static void def_hair_principled(StructRNA *srna)
   prop = RNA_def_property(srna, "parametrization", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "custom1");
   RNA_def_property_ui_text(
-      prop, "Color parametrization", "Select the shader's color parametrization");
+      prop, "Color Parametrization", "Select the shader's color parametrization");
   RNA_def_property_enum_items(prop, node_principled_hair_items);
   RNA_def_property_enum_default(prop, SHD_PRINCIPLED_HAIR_REFLECTANCE);
   /* Upon editing, update both the node data AND the UI representation */
@@ -4935,7 +5928,7 @@ static void def_sh_uvmap(StructRNA *srna)
   prop = RNA_def_property(srna, "from_instancer", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", 1);
   RNA_def_property_ui_text(
-      prop, "From Instancer", "Use the parent of the dupli object if possible");
+      prop, "From Instancer", "Use the parent of the instance object if possible");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   RNA_def_struct_sdna_from(srna, "NodeShaderUVMap", "storage");
@@ -5099,7 +6092,8 @@ static void def_sh_bevel(StructRNA *srna)
 
   prop = RNA_def_property(srna, "samples", PROP_INT, PROP_UNSIGNED);
   RNA_def_property_int_sdna(prop, NULL, "custom1");
-  RNA_def_property_range(prop, 2, 16);
+  RNA_def_property_range(prop, 2, 128);
+  RNA_def_property_ui_range(prop, 2, 16, 1, 1);
   RNA_def_property_ui_text(prop, "Samples", "Number of rays to trace per shader evaluation");
   RNA_def_property_update(prop, 0, "rna_Node_update");
 }
@@ -5181,7 +6175,7 @@ static void def_sh_tex_ies(StructRNA *srna)
   RNA_def_property_enum_funcs(prop, NULL, "rna_ShaderNodeTexIES_mode_set", NULL);
   RNA_def_property_enum_items(prop, node_ies_mode_items);
   RNA_def_property_ui_text(
-      prop, "Source", "Whether the IES file is loaded from disk or from a Text datablock");
+      prop, "Source", "Whether the IES file is loaded from disk or from a text data-block");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   RNA_def_struct_sdna_from(srna, "bNode", NULL);
@@ -5248,7 +6242,7 @@ static void def_sh_script(StructRNA *srna)
 
   /* API functions */
 
-#  if 0 /* XXX TODO use general node api for this */
+#  if 0 /* XXX TODO: use general node api for this. */
   func = RNA_def_function(srna, "find_socket", "rna_ShaderNodeScript_find_socket");
   RNA_def_function_ui_description(func, "Find a socket by name");
   parm = RNA_def_string(func, "name", NULL, 0, "Socket name", "");
@@ -5285,7 +6279,7 @@ static void def_cmp_alpha_over(StructRNA *srna)
   /* XXX: Tooltip */
   prop = RNA_def_property(srna, "use_premultiply", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", 1);
-  RNA_def_property_ui_text(prop, "Convert Premul", "");
+  RNA_def_property_ui_text(prop, "Convert Premultiplied", "");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   RNA_def_struct_sdna_from(srna, "NodeTwoFloats", "storage");
@@ -5293,7 +6287,7 @@ static void def_cmp_alpha_over(StructRNA *srna)
   prop = RNA_def_property(srna, "premul", PROP_FLOAT, PROP_FACTOR);
   RNA_def_property_float_sdna(prop, NULL, "x");
   RNA_def_property_range(prop, 0.0f, 1.0f);
-  RNA_def_property_ui_text(prop, "Premul", "Mix Factor");
+  RNA_def_property_ui_text(prop, "Premultiplied", "Mix Factor");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -5324,7 +6318,7 @@ static void def_cmp_blur(StructRNA *srna)
   prop = RNA_def_property(srna, "use_variable_size", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", CMP_NODEFLAG_BLUR_VARIABLE_SIZE);
   RNA_def_property_ui_text(
-      prop, "Variable Size", "Support variable blur per-pixel when using an image for size input");
+      prop, "Variable Size", "Support variable blur per pixel when using an image for size input");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "use_extended_bounds", PROP_BOOLEAN, PROP_NONE);
@@ -5456,7 +6450,7 @@ static void def_cmp_map_range(StructRNA *srna)
 
   prop = RNA_def_property(srna, "use_clamp", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", 1);
-  RNA_def_property_ui_text(prop, "Clamp", "Clamp result of the node to 0..1 range");
+  RNA_def_property_ui_text(prop, "Clamp", "Clamp result of the node to 0.0 to 1.0 range");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -5501,6 +6495,32 @@ static void def_cmp_vector_blur(StructRNA *srna)
   RNA_def_property_boolean_sdna(prop, NULL, "curved", 1);
   RNA_def_property_ui_text(
       prop, "Curved", "Interpolate between frames in a Bezier curve, rather than linearly");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_cmp_set_alpha(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem mode_items[] = {
+      {CMP_NODE_SETALPHA_MODE_APPLY,
+       "APPLY",
+       0,
+       "Apply Mask",
+       "Multiply the input image's RGBA channels by the alpha input value"},
+      {CMP_NODE_SETALPHA_MODE_REPLACE_ALPHA,
+       "REPLACE_ALPHA",
+       0,
+       "Replace Alpha",
+       "Replace the input image's alpha channels by the alpha input value"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  RNA_def_struct_sdna_from(srna, "NodeSetAlpha", "storage");
+
+  prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mode_items);
+  RNA_def_property_ui_text(prop, "Mode", "");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -5618,7 +6638,7 @@ static void def_cmp_image(StructRNA *srna)
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", CMP_NODE_IMAGE_USE_STRAIGHT_OUTPUT);
   RNA_def_property_ui_text(prop,
                            "Straight Alpha Output",
-                           "Put Node output buffer to straight alpha instead of premultiplied");
+                           "Put node output buffer to straight alpha instead of premultiplied");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   /* NB: image user properties used in the UI are redefined in def_node_image_user,
@@ -5664,6 +6684,12 @@ static void rna_def_cmp_output_file_slot_file(BlenderRNA *brna)
   prop = RNA_def_property(srna, "use_node_format", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "use_node_format", 1);
   RNA_def_property_ui_text(prop, "Use Node Format", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, NULL);
+
+  prop = RNA_def_property(srna, "save_as_render", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "save_as_render", 1);
+  RNA_def_property_ui_text(
+      prop, "Save as Render", "Apply render part of display transform when saving byte image");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, NULL);
 
   prop = RNA_def_property(srna, "format", PROP_POINTER, PROP_NONE);
@@ -5964,13 +6990,13 @@ static void def_cmp_color_matte(StructRNA *srna)
   prop = RNA_def_property(srna, "color_saturation", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "t2");
   RNA_def_property_range(prop, 0.0f, 1.0f);
-  RNA_def_property_ui_text(prop, "S", "Saturation Tolerance for the color");
+  RNA_def_property_ui_text(prop, "S", "Saturation tolerance for the color");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "color_value", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "t3");
   RNA_def_property_range(prop, 0.0f, 1.0f);
-  RNA_def_property_ui_text(prop, "V", "Value Tolerance for the color");
+  RNA_def_property_ui_text(prop, "V", "Value tolerance for the color");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -5980,7 +7006,7 @@ static void def_cmp_distance_matte(StructRNA *srna)
 
   static const EnumPropertyItem color_space_items[] = {
       {1, "RGB", 0, "RGB", "RGB color space"},
-      {2, "YCC", 0, "YCC", "YCbCr Suppression"},
+      {2, "YCC", 0, "YCC", "YCbCr suppression"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -6013,22 +7039,22 @@ static void def_cmp_color_spill(StructRNA *srna)
   PropertyRNA *prop;
 
   static const EnumPropertyItem channel_items[] = {
-      {1, "R", 0, "R", "Red Spill Suppression"},
-      {2, "G", 0, "G", "Green Spill Suppression"},
-      {3, "B", 0, "B", "Blue Spill Suppression"},
+      {1, "R", 0, "R", "Red spill suppression"},
+      {2, "G", 0, "G", "Green spill suppression"},
+      {3, "B", 0, "B", "Blue spill suppression"},
       {0, NULL, 0, NULL, NULL},
   };
 
   static const EnumPropertyItem limit_channel_items[] = {
-      {0, "R", 0, "R", "Limit by Red"},
-      {1, "G", 0, "G", "Limit by Green"},
-      {2, "B", 0, "B", "Limit by Blue"},
+      {0, "R", 0, "R", "Limit by red"},
+      {1, "G", 0, "G", "Limit by green"},
+      {2, "B", 0, "B", "Limit by blue"},
       {0, NULL, 0, NULL, NULL},
   };
 
   static const EnumPropertyItem algorithm_items[] = {
-      {0, "SIMPLE", 0, "Simple", "Simple Limit Algorithm"},
-      {1, "AVERAGE", 0, "Average", "Average Limit Algorithm"},
+      {0, "SIMPLE", 0, "Simple", "Simple limit algorithm"},
+      {1, "AVERAGE", 0, "Average", "Average limit algorithm"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -6109,7 +7135,7 @@ static void def_cmp_brightcontrast(StructRNA *srna)
 
   prop = RNA_def_property(srna, "use_premultiply", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", 1);
-  RNA_def_property_ui_text(prop, "Convert Premul", "Keep output image premultiplied alpha");
+  RNA_def_property_ui_text(prop, "Convert Premultiplied", "Keep output image premultiplied alpha");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -6160,16 +7186,16 @@ static void def_cmp_channel_matte(StructRNA *srna)
   PropertyRNA *prop;
 
   static const EnumPropertyItem color_space_items[] = {
-      {CMP_NODE_CHANNEL_MATTE_CS_RGB, "RGB", 0, "RGB", "RGB Color Space"},
-      {CMP_NODE_CHANNEL_MATTE_CS_HSV, "HSV", 0, "HSV", "HSV Color Space"},
-      {CMP_NODE_CHANNEL_MATTE_CS_YUV, "YUV", 0, "YUV", "YUV Color Space"},
-      {CMP_NODE_CHANNEL_MATTE_CS_YCC, "YCC", 0, "YCbCr", "YCbCr Color Space"},
+      {CMP_NODE_CHANNEL_MATTE_CS_RGB, "RGB", 0, "RGB", "RGB color space"},
+      {CMP_NODE_CHANNEL_MATTE_CS_HSV, "HSV", 0, "HSV", "HSV color space"},
+      {CMP_NODE_CHANNEL_MATTE_CS_YUV, "YUV", 0, "YUV", "YUV color space"},
+      {CMP_NODE_CHANNEL_MATTE_CS_YCC, "YCC", 0, "YCbCr", "YCbCr color space"},
       {0, NULL, 0, NULL, NULL},
   };
 
   static const EnumPropertyItem algorithm_items[] = {
       {0, "SINGLE", 0, "Single", "Limit by single channel"},
-      {1, "MAX", 0, "Max", "Limit by max of other channels "},
+      {1, "MAX", 0, "Max", "Limit by maximum of other channels"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -6356,8 +7382,8 @@ static void def_cmp_defocus(StructRNA *srna)
   RNA_def_property_range(prop, 0.0f, 128.0f);
   RNA_def_property_ui_text(
       prop,
-      "F-stop",
-      "Amount of focal blur, 128=infinity=perfect focus, half the value doubles "
+      "F-Stop",
+      "Amount of focal blur, 128 (infinity) is perfect focus, half the value doubles "
       "the blur radius");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
@@ -6373,7 +7399,7 @@ static void def_cmp_defocus(StructRNA *srna)
   RNA_def_property_ui_text(
       prop,
       "Threshold",
-      "CoC radius threshold, prevents background bleed on in-focus midground, 0=off");
+      "CoC radius threshold, prevents background bleed on in-focus midground, 0 is disabled");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "use_preview", PROP_BOOLEAN, PROP_NONE);
@@ -6564,8 +7590,8 @@ static void def_cmp_premul_key(StructRNA *srna)
   PropertyRNA *prop;
 
   static const EnumPropertyItem type_items[] = {
-      {0, "STRAIGHT_TO_PREMUL", 0, "Straight to Premul", ""},
-      {1, "PREMUL_TO_STRAIGHT", 0, "Premul to Straight", ""},
+      {0, "STRAIGHT_TO_PREMUL", 0, "To Premultiplied", "Convert straight to premultiplied"},
+      {1, "PREMUL_TO_STRAIGHT", 0, "To Straight", "Convert premultiplied to straight"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -6778,7 +7804,7 @@ static void def_cmp_lensdist(StructRNA *srna)
 static void def_cmp_colorbalance(StructRNA *srna)
 {
   PropertyRNA *prop;
-  static float default_1[3] = {1.f, 1.f, 1.f};
+  static float default_1[3] = {1.0f, 1.0f, 1.0f};
 
   static const EnumPropertyItem type_items[] = {
       {0, "LIFT_GAMMA_GAIN", 0, "Lift/Gamma/Gain", ""},
@@ -6803,7 +7829,7 @@ static void def_cmp_colorbalance(StructRNA *srna)
   RNA_def_property_array(prop, 3);
   RNA_def_property_float_array_default(prop, default_1);
   RNA_def_property_ui_range(prop, 0, 2, 0.1, 3);
-  RNA_def_property_ui_text(prop, "Lift", "Correction for Shadows");
+  RNA_def_property_ui_text(prop, "Lift", "Correction for shadows");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeColorBalance_update_lgg");
 
   prop = RNA_def_property(srna, "gamma", PROP_FLOAT, PROP_COLOR_GAMMA);
@@ -6811,7 +7837,7 @@ static void def_cmp_colorbalance(StructRNA *srna)
   RNA_def_property_array(prop, 3);
   RNA_def_property_float_array_default(prop, default_1);
   RNA_def_property_ui_range(prop, 0, 2, 0.1, 3);
-  RNA_def_property_ui_text(prop, "Gamma", "Correction for Midtones");
+  RNA_def_property_ui_text(prop, "Gamma", "Correction for midtones");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeColorBalance_update_lgg");
 
   prop = RNA_def_property(srna, "gain", PROP_FLOAT, PROP_COLOR_GAMMA);
@@ -6819,7 +7845,7 @@ static void def_cmp_colorbalance(StructRNA *srna)
   RNA_def_property_array(prop, 3);
   RNA_def_property_float_array_default(prop, default_1);
   RNA_def_property_ui_range(prop, 0, 2, 0.1, 3);
-  RNA_def_property_ui_text(prop, "Gain", "Correction for Highlights");
+  RNA_def_property_ui_text(prop, "Gain", "Correction for highlights");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeColorBalance_update_lgg");
 
   prop = RNA_def_property(srna, "offset", PROP_FLOAT, PROP_COLOR_GAMMA);
@@ -6833,18 +7859,18 @@ static void def_cmp_colorbalance(StructRNA *srna)
   RNA_def_property_float_sdna(prop, NULL, "power");
   RNA_def_property_array(prop, 3);
   RNA_def_property_float_array_default(prop, default_1);
-  RNA_def_property_range(prop, 0.f, FLT_MAX);
+  RNA_def_property_range(prop, 0.0f, FLT_MAX);
   RNA_def_property_ui_range(prop, 0, 2, 0.1, 3);
-  RNA_def_property_ui_text(prop, "Power", "Correction for Midtones");
+  RNA_def_property_ui_text(prop, "Power", "Correction for midtones");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeColorBalance_update_cdl");
 
   prop = RNA_def_property(srna, "slope", PROP_FLOAT, PROP_COLOR_GAMMA);
   RNA_def_property_float_sdna(prop, NULL, "slope");
   RNA_def_property_array(prop, 3);
   RNA_def_property_float_array_default(prop, default_1);
-  RNA_def_property_range(prop, 0.f, FLT_MAX);
+  RNA_def_property_range(prop, 0.0f, FLT_MAX);
   RNA_def_property_ui_range(prop, 0, 2, 0.1, 3);
-  RNA_def_property_ui_text(prop, "Slope", "Correction for Highlights");
+  RNA_def_property_ui_text(prop, "Slope", "Correction for highlights");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeColorBalance_update_cdl");
 
   prop = RNA_def_property(srna, "offset_basis", PROP_FLOAT, PROP_NONE);
@@ -6872,7 +7898,7 @@ static void def_cmp_zcombine(StructRNA *srna)
   prop = RNA_def_property(srna, "use_alpha", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", 0);
   RNA_def_property_ui_text(
-      prop, "Use Alpha", "Take Alpha channel into account when doing the Z operation");
+      prop, "Use Alpha", "Take alpha channel into account when doing the Z operation");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "use_antialias_z", PROP_BOOLEAN, PROP_NONE);
@@ -7144,7 +8170,7 @@ static void def_cmp_bokehblur(StructRNA *srna)
   prop = RNA_def_property(srna, "use_variable_size", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "custom1", CMP_NODEFLAG_BLUR_VARIABLE_SIZE);
   RNA_def_property_ui_text(
-      prop, "Variable Size", "Support variable blur per-pixel when using an image for size input");
+      prop, "Variable Size", "Support variable blur per pixel when using an image for size input");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "use_extended_bounds", PROP_BOOLEAN, PROP_NONE);
@@ -7159,8 +8185,8 @@ static void def_cmp_bokehblur(StructRNA *srna)
   RNA_def_property_range(prop, 0.0f, 128.0f);
   RNA_def_property_ui_text(
       prop,
-      "F-stop",
-      "Amount of focal blur, 128=infinity=perfect focus, half the value doubles "
+      "F-Stop",
+      "Amount of focal blur, 128 (infinity) is perfect focus, half the value doubles "
       "the blur radius");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 #  endif
@@ -7413,15 +8439,15 @@ static void def_cmp_viewer(StructRNA *srna)
   static const EnumPropertyItem tileorder_items[] = {
       {0, "CENTEROUT", 0, "Center", "Expand from center"},
       {1, "RANDOM", 0, "Random", "Random tiles"},
-      {2, "BOTTOMUP", 0, "Bottom up", "Expand from bottom"},
-      {3, "RULE_OF_THIRDS", 0, "Rule of thirds", "Expand from 9 places"},
+      {2, "BOTTOMUP", 0, "Bottom Up", "Expand from bottom"},
+      {3, "RULE_OF_THIRDS", 0, "Rule of Thirds", "Expand from 9 places"},
       {0, NULL, 0, NULL, NULL},
   };
 
   prop = RNA_def_property(srna, "tile_order", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "custom1");
   RNA_def_property_enum_items(prop, tileorder_items);
-  RNA_def_property_ui_text(prop, "Tile order", "Tile order");
+  RNA_def_property_ui_text(prop, "Tile Order", "Tile order");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "center_x", PROP_FLOAT, PROP_NONE);
@@ -7711,7 +8737,7 @@ static void def_cmp_sunbeams(StructRNA *srna)
   RNA_def_property_range(prop, -100.0f, 100.0f);
   RNA_def_property_ui_range(prop, -10.0f, 10.0f, 10, 3);
   RNA_def_property_ui_text(
-      prop, "Source", "Source point of rays as a factor of the image width & height");
+      prop, "Source", "Source point of rays as a factor of the image width and height");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "ray_length", PROP_FLOAT, PROP_UNSIGNED);
@@ -7722,12 +8748,29 @@ static void def_cmp_sunbeams(StructRNA *srna)
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
-static void def_cmp_cryptomatte(StructRNA *srna)
+static void def_cmp_cryptomatte_entry(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, "CryptomatteEntry", NULL);
+  RNA_def_struct_sdna(srna, "CryptomatteEntry");
+
+  prop = RNA_def_property(srna, "encoded_hash", PROP_FLOAT, PROP_NONE);
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_float_sdna(prop, NULL, "encoded_hash");
+
+  prop = RNA_def_property(srna, "name", PROP_STRING, PROP_NONE);
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(prop, "Name", "");
+  RNA_def_struct_name_property(srna, prop);
+}
+
+static void def_cmp_cryptomatte_common(StructRNA *srna)
 {
   PropertyRNA *prop;
-  static float default_1[3] = {1.f, 1.f, 1.f};
+  static float default_1[3] = {1.0f, 1.0f, 1.0f};
 
-  RNA_def_struct_sdna_from(srna, "NodeCryptomatte", "storage");
   prop = RNA_def_property(srna, "matte_id", PROP_STRING, PROP_NONE);
   RNA_def_property_string_funcs(prop,
                                 "rna_NodeCryptomatte_matte_get",
@@ -7738,6 +8781,7 @@ static void def_cmp_cryptomatte(StructRNA *srna)
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 
   prop = RNA_def_property(srna, "add", PROP_FLOAT, PROP_COLOR);
+  RNA_def_property_float_sdna(prop, NULL, "runtime.add");
   RNA_def_property_float_array_default(prop, default_1);
   RNA_def_property_range(prop, -FLT_MAX, FLT_MAX);
   RNA_def_property_ui_text(
@@ -7745,6 +8789,7 @@ static void def_cmp_cryptomatte(StructRNA *srna)
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeCryptomatte_update_add");
 
   prop = RNA_def_property(srna, "remove", PROP_FLOAT, PROP_COLOR);
+  RNA_def_property_float_sdna(prop, NULL, "runtime.remove");
   RNA_def_property_float_array_default(prop, default_1);
   RNA_def_property_range(prop, -FLT_MAX, FLT_MAX);
   RNA_def_property_ui_text(
@@ -7752,6 +8797,73 @@ static void def_cmp_cryptomatte(StructRNA *srna)
       "Remove",
       "Remove object or material from matte, by picking a color from the Pick output");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeCryptomatte_update_remove");
+}
+
+static void def_cmp_cryptomatte_legacy(StructRNA *srna)
+{
+  RNA_def_struct_sdna_from(srna, "NodeCryptomatte", "storage");
+  def_cmp_cryptomatte_common(srna);
+}
+
+static void def_cmp_cryptomatte(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem cryptomatte_source_items[] = {
+      {CMP_CRYPTOMATTE_SRC_RENDER, "RENDER", 0, "Render", "Use Cryptomatte passes from a render"},
+      {CMP_CRYPTOMATTE_SRC_IMAGE, "IMAGE", 0, "Image", "Use Cryptomatte passes from an image"},
+      {0, NULL, 0, NULL, NULL}};
+
+  prop = RNA_def_property(srna, "source", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, cryptomatte_source_items);
+  RNA_def_property_enum_funcs(prop, NULL, "rna_NodeCryptomatte_source_set", NULL);
+  RNA_def_property_ui_text(prop, "Source", "Where the Cryptomatte passes are loaded from");
+
+  prop = RNA_def_property(srna, "scene", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_funcs(
+      prop, "rna_NodeCryptomatte_scene_get", "rna_NodeCryptomatte_scene_set", NULL, NULL);
+  RNA_def_property_struct_type(prop, "Scene");
+  RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_REFCOUNT);
+  RNA_def_property_ui_text(prop, "Scene", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "image", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_funcs(prop,
+                                 "rna_NodeCryptomatte_image_get",
+                                 "rna_NodeCryptomatte_image_set",
+                                 NULL,
+                                 "rna_NodeCryptomatte_image_poll");
+  RNA_def_property_struct_type(prop, "Image");
+  RNA_def_property_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(prop, "Image", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  RNA_def_struct_sdna_from(srna, "NodeCryptomatte", "storage");
+  def_cmp_cryptomatte_common(srna);
+
+  prop = RNA_def_property(srna, "layer_name", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, node_cryptomatte_layer_name_items);
+  RNA_def_property_enum_funcs(prop,
+                              "rna_NodeCryptomatte_layer_name_get",
+                              "rna_NodeCryptomatte_layer_name_set",
+                              "rna_NodeCryptomatte_layer_name_itemf");
+  RNA_def_property_ui_text(prop, "Cryptomatte Layer", "What Cryptomatte layer is used");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "entries", PROP_COLLECTION, PROP_NONE);
+  RNA_def_property_collection_sdna(prop, NULL, "entries", NULL);
+  RNA_def_property_struct_type(prop, "CryptomatteEntry");
+  RNA_def_property_ui_text(prop, "Mattes", "");
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+
+  /* Included here instead of defining image_user as a property of the node,
+   * see def_cmp_image for details.
+   * As mentioned in DNA_node_types.h, iuser is the first member of the Cryptomatte
+   * storage type, so we can cast node->storage to ImageUser.
+   * That is required since we can't define the properties from storage->iuser directly... */
+  RNA_def_struct_sdna_from(srna, "ImageUser", "storage");
+  def_node_image_user(srna);
 }
 
 static void def_cmp_denoise(StructRNA *srna)
@@ -7763,6 +8875,41 @@ static void def_cmp_denoise(StructRNA *srna)
   prop = RNA_def_property(srna, "use_hdr", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "hdr", 0);
   RNA_def_property_ui_text(prop, "HDR", "Process HDR images");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_cmp_antialiasing(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAntiAliasingData", "storage");
+
+  prop = RNA_def_property(srna, "threshold", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_float_sdna(prop, NULL, "threshold");
+  RNA_def_property_ui_range(prop, 0.0f, 1.0f, 0.1, 3);
+  RNA_def_property_ui_text(
+      prop,
+      "Threshold",
+      "Threshold to detect edges (smaller threshold makes more sensitive detection)");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "contrast_limit", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_float_sdna(prop, NULL, "contrast_limit");
+  RNA_def_property_range(prop, 0.0f, 1.0f);
+  RNA_def_property_ui_range(prop, 0.0f, 1.0f, 0.1, 3);
+  RNA_def_property_ui_text(
+      prop,
+      "Contrast Limit",
+      "How much to eliminate spurious edges to avoid artifacts (the larger value makes less "
+      "active; the value 2.0, for example, means discard a detected edge if there is a "
+      "neighboring edge that has 2.0 times bigger contrast than the current one)");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "corner_rounding", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_float_sdna(prop, NULL, "corner_rounding");
+  RNA_def_property_range(prop, 0.0f, 1.0f);
+  RNA_def_property_ui_range(prop, 0.0f, 1.0f, 0.1, 3);
+  RNA_def_property_ui_text(prop, "Corner Rounding", "How much sharp corners will be rounded");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
@@ -7828,6 +8975,1133 @@ static void def_tex_bricks(StructRNA *srna)
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
 }
 
+/* -- Geometry Nodes --------------------------------------------------------- */
+
+static void def_geo_boolean(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem rna_node_geometry_boolean_method_items[] = {
+      {GEO_NODE_BOOLEAN_INTERSECT,
+       "INTERSECT",
+       0,
+       "Intersect",
+       "Keep the part of the mesh that is common between all operands"},
+      {GEO_NODE_BOOLEAN_UNION, "UNION", 0, "Union", "Combine meshes in an additive way"},
+      {GEO_NODE_BOOLEAN_DIFFERENCE,
+       "DIFFERENCE",
+       0,
+       "Difference",
+       "Combine meshes in a subtractive way"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, rna_node_geometry_boolean_method_items);
+  RNA_def_property_enum_default(prop, GEO_NODE_BOOLEAN_INTERSECT);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_curve_primitive_bezier_segment(StructRNA *srna)
+{
+  static const EnumPropertyItem mode_items[] = {
+
+      {GEO_NODE_CURVE_PRIMITIVE_BEZIER_SEGMENT_POSITION,
+       "POSITION",
+       ICON_NONE,
+       "Position",
+       "The start and end handles are fixed positions"},
+      {GEO_NODE_CURVE_PRIMITIVE_BEZIER_SEGMENT_OFFSET,
+       "OFFSET",
+       ICON_NONE,
+       "Offset",
+       "The start and end handles are offsets from the spline's control points"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryCurvePrimitiveBezierSegment", "storage");
+
+  prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mode_items);
+  RNA_def_property_ui_text(prop, "Mode", "Method used to determine control handles");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_triangulate(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem rna_node_geometry_triangulate_quad_method_items[] = {
+      {GEO_NODE_TRIANGULATE_QUAD_BEAUTY,
+       "BEAUTY",
+       0,
+       "Beauty",
+       "Split the quads in nice triangles, slower method"},
+      {GEO_NODE_TRIANGULATE_QUAD_FIXED,
+       "FIXED",
+       0,
+       "Fixed",
+       "Split the quads on the first and third vertices"},
+      {GEO_NODE_TRIANGULATE_QUAD_ALTERNATE,
+       "FIXED_ALTERNATE",
+       0,
+       "Fixed Alternate",
+       "Split the quads on the 2nd and 4th vertices"},
+      {GEO_NODE_TRIANGULATE_QUAD_SHORTEDGE,
+       "SHORTEST_DIAGONAL",
+       0,
+       "Shortest Diagonal",
+       "Split the quads based on the distance between the vertices"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  static const EnumPropertyItem rna_node_geometry_triangulate_ngon_method_items[] = {
+      {GEO_NODE_TRIANGULATE_NGON_BEAUTY,
+       "BEAUTY",
+       0,
+       "Beauty",
+       "Arrange the new triangles evenly (slow)"},
+      {GEO_NODE_TRIANGULATE_NGON_EARCLIP,
+       "CLIP",
+       0,
+       "Clip",
+       "Split the polygons with an ear clipping algorithm"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  prop = RNA_def_property(srna, "quad_method", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, rna_node_geometry_triangulate_quad_method_items);
+  RNA_def_property_enum_default(prop, GEO_NODE_TRIANGULATE_QUAD_SHORTEDGE);
+  RNA_def_property_ui_text(prop, "Quad Method", "Method for splitting the quads into triangles");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "ngon_method", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom2");
+  RNA_def_property_enum_items(prop, rna_node_geometry_triangulate_ngon_method_items);
+  RNA_def_property_enum_default(prop, GEO_NODE_TRIANGULATE_NGON_BEAUTY);
+  RNA_def_property_ui_text(prop, "N-gon Method", "Method for splitting the n-gons into triangles");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_attribute_randomize(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeRandomize", "storage");
+
+  prop = RNA_def_property(srna, "data_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "data_type");
+  RNA_def_property_enum_items(prop, rna_enum_attribute_type_items);
+  RNA_def_property_enum_funcs(prop, NULL, NULL, "rna_GeometryNodeAttributeRandom_type_itemf");
+  RNA_def_property_enum_default(prop, CD_PROP_FLOAT);
+  RNA_def_property_ui_text(prop, "Data Type", "Type of data stored in attribute");
+  RNA_def_property_update(
+      prop, NC_NODE | NA_EDITED, "rna_GeometryNodeAttributeRandomize_data_type_update");
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "operation");
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_randomize_operation_items);
+  RNA_def_property_enum_funcs(
+      prop, NULL, NULL, "rna_GeometryNodeAttributeRandomize_operation_itemf");
+  RNA_def_property_enum_default(prop, GEO_NODE_ATTRIBUTE_RANDOMIZE_REPLACE_CREATE);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_fill(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  prop = RNA_def_property(srna, "data_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, rna_enum_attribute_type_items);
+  RNA_def_property_enum_funcs(prop, NULL, NULL, "rna_GeometryNodeAttributeFill_type_itemf");
+  RNA_def_property_enum_default(prop, CD_PROP_FLOAT);
+  RNA_def_property_ui_text(prop, "Data Type", "Type of data stored in attribute");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_GeometryNode_socket_update");
+
+  prop = RNA_def_property(srna, "domain", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom2");
+  RNA_def_property_enum_items(prop, rna_enum_attribute_domain_with_auto_items);
+  RNA_def_property_enum_default(prop, ATTR_DOMAIN_AUTO);
+  RNA_def_property_ui_text(prop, "Domain", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_attribute_convert(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeConvert", "storage");
+
+  prop = RNA_def_property(srna, "data_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_enum_attribute_type_with_auto_items);
+  RNA_def_property_enum_funcs(prop, NULL, NULL, "rna_GeometryNodeAttributeConvert_type_itemf");
+  RNA_def_property_enum_default(prop, CD_AUTO_FROM_NAME);
+  RNA_def_property_ui_text(prop, "Data Type", "The data type to save the result attribute with");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_GeometryNode_socket_update");
+
+  prop = RNA_def_property(srna, "domain", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_enum_attribute_domain_with_auto_items);
+  RNA_def_property_enum_default(prop, ATTR_DOMAIN_AUTO);
+  RNA_def_property_ui_text(prop, "Domain", "The geometry domain to save the result attribute in");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_attribute_math(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeMath", "storage");
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "operation");
+  RNA_def_property_enum_items(prop, rna_enum_node_math_items);
+  RNA_def_property_enum_default(prop, NODE_MATH_ADD);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_a", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "input_type_a");
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type A", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_b", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "input_type_b");
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type B", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_c", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "input_type_c");
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type C", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_vector_math(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeVectorMath", "storage");
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "operation");
+  RNA_def_property_enum_items(prop, rna_enum_node_vec_math_items);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(
+      prop, NC_NODE | NA_EDITED, "rna_GeometryNodeAttributeVectorMath_operation_update");
+
+  prop = RNA_def_property(srna, "input_type_a", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "input_type_a");
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type A", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_b", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "input_type_b");
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_any);
+  RNA_def_property_enum_funcs(
+      prop, NULL, NULL, "rna_GeometryNodeAttributeVectorMath_input_type_b_itemf");
+  RNA_def_property_ui_text(prop, "Input Type B", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_c", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "input_type_c");
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_any);
+  RNA_def_property_enum_funcs(
+      prop, NULL, NULL, "rna_GeometryNodeAttributeVectorMath_input_type_c_itemf");
+  RNA_def_property_ui_text(prop, "Input Type C", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_map_range(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeMapRange", "storage");
+
+  prop = RNA_def_property(srna, "data_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "data_type");
+  RNA_def_property_enum_items(prop, rna_enum_attribute_type_items);
+  RNA_def_property_enum_funcs(prop, NULL, NULL, "rna_GeometryNodeAttributeMapRange_type_itemf");
+  RNA_def_property_ui_text(prop, "Data Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "interpolation_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "interpolation_type");
+  RNA_def_property_enum_items(prop, rna_enum_node_map_range_items);
+  RNA_def_property_ui_text(prop, "Interpolation Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_ShaderNode_socket_update");
+}
+
+static void def_geo_point_instance(StructRNA *srna)
+{
+  static const EnumPropertyItem instance_type_items[] = {
+      {GEO_NODE_POINT_INSTANCE_TYPE_OBJECT,
+       "OBJECT",
+       ICON_NONE,
+       "Object",
+       "Instance an individual object on all points"},
+      {GEO_NODE_POINT_INSTANCE_TYPE_COLLECTION,
+       "COLLECTION",
+       ICON_NONE,
+       "Collection",
+       "Instance an entire collection on all points"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+  RNA_def_struct_sdna_from(srna, "NodeGeometryPointInstance", "storage");
+
+  prop = RNA_def_property(srna, "instance_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "instance_type");
+  RNA_def_property_enum_items(prop, instance_type_items);
+  RNA_def_property_enum_default(prop, GEO_NODE_POINT_INSTANCE_TYPE_OBJECT);
+  RNA_def_property_ui_text(prop, "Instance Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "use_whole_collection", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", GEO_NODE_POINT_INSTANCE_WHOLE_COLLECTION);
+  RNA_def_property_ui_text(prop, "Whole Collection", "Instance entire collection on each point");
+  RNA_def_property_update(prop, 0, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_mix(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeMix", "storage");
+
+  prop = RNA_def_property(srna, "blend_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_enum_ramp_blend_items);
+  RNA_def_property_enum_default(prop, MA_RAMP_BLEND);
+  RNA_def_property_ui_text(prop, "Blending Mode", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "input_type_factor", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type Factor", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_a", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_no_boolean);
+  RNA_def_property_ui_text(prop, "Input Type A", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_b", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_no_boolean);
+  RNA_def_property_ui_text(prop, "Input Type B", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_clamp(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeClamp", "storage");
+
+  prop = RNA_def_property(srna, "data_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "data_type");
+  RNA_def_property_enum_items(prop, rna_enum_attribute_type_items);
+  RNA_def_property_enum_funcs(prop, NULL, NULL, "rna_GeometryNodeAttributeClamp_type_itemf");
+  RNA_def_property_ui_text(prop, "Data Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_enum_node_clamp_items);
+  RNA_def_property_enum_default(prop, NODE_CLAMP_MINMAX);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_attribute_attribute_compare(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeCompare", "storage");
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_enum_node_float_compare_items);
+  RNA_def_property_enum_default(prop, NODE_FLOAT_COMPARE_GREATER_THAN);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_a", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_no_boolean);
+  RNA_def_property_ui_text(prop, "Input Type A", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_b", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_no_boolean);
+  RNA_def_property_ui_text(prop, "Input Type B", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_point_distribute(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem rna_node_geometry_point_distribute_method_items[] = {
+      {GEO_NODE_POINT_DISTRIBUTE_RANDOM,
+       "RANDOM",
+       0,
+       "Random",
+       "Distribute points randomly on the surface"},
+      {GEO_NODE_POINT_DISTRIBUTE_POISSON,
+       "POISSON",
+       0,
+       "Poisson Disk",
+       "Distribute the points randomly on the surface while taking a minimum distance between "
+       "points into account"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  prop = RNA_def_property(srna, "distribute_method", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "custom1");
+  RNA_def_property_enum_items(prop, rna_node_geometry_point_distribute_method_items);
+  RNA_def_property_enum_default(prop, GEO_NODE_POINT_DISTRIBUTE_RANDOM);
+  RNA_def_property_ui_text(prop, "Distribution Method", "Method to use for scattering points");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_color_ramp(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeColorRamp", "storage");
+
+  prop = RNA_def_property(srna, "color_ramp", PROP_POINTER, PROP_NONE);
+  RNA_def_property_struct_type(prop, "ColorRamp");
+  RNA_def_property_ui_text(prop, "Color Ramp", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_attribute_curve_map(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeCurveMap", "storage");
+
+  prop = RNA_def_property(srna, "data_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "data_type");
+  RNA_def_property_enum_items(prop, rna_enum_attribute_type_items);
+  RNA_def_property_enum_funcs(prop, NULL, NULL, "rna_GeometryNodeAttributeCurveMap_type_itemf");
+  RNA_def_property_ui_text(prop, "Data Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "curve_vec", PROP_POINTER, PROP_NONE);
+  RNA_def_property_struct_type(prop, "CurveMapping");
+  RNA_def_property_ui_text(prop, "Mapping", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "curve_rgb", PROP_POINTER, PROP_NONE);
+  RNA_def_property_struct_type(prop, "CurveMapping");
+  RNA_def_property_ui_text(prop, "Mapping", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_attribute_vector_rotate(StructRNA *srna)
+{
+  static const EnumPropertyItem rotate_mode_items[] = {
+      {GEO_NODE_VECTOR_ROTATE_TYPE_AXIS,
+       "AXIS_ANGLE",
+       0,
+       "Axis Angle",
+       "Rotate a point using axis angle"},
+      {GEO_NODE_VECTOR_ROTATE_TYPE_AXIS_X, "X_AXIS", 0, "X Axis", "Rotate a point using X axis"},
+      {GEO_NODE_VECTOR_ROTATE_TYPE_AXIS_Y, "Y_AXIS", 0, "Y Axis", "Rotate a point using Y axis"},
+      {GEO_NODE_VECTOR_ROTATE_TYPE_AXIS_Z, "Z_AXIS", 0, "Z Axis", "Rotate a point using Z axis"},
+      {GEO_NODE_VECTOR_ROTATE_TYPE_EULER_XYZ,
+       "EULER_XYZ",
+       0,
+       "Euler",
+       "Rotate a point using XYZ order"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeVectorRotate", "storage");
+
+  prop = RNA_def_property(srna, "rotation_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "mode");
+  RNA_def_property_enum_items(prop, rotate_mode_items);
+  RNA_def_property_ui_text(prop, "Mode", "Type of rotation");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_ShaderNode_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_vector", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type Vector", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_center", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type Center", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_axis", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type Axis", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_angle", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type Angle", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_rotation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type Rotation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_curve_primitive_circle(StructRNA *srna)
+{
+  static const EnumPropertyItem mode_items[] = {
+      {GEO_NODE_CURVE_PRIMITIVE_CIRCLE_TYPE_POINTS,
+       "POINTS",
+       ICON_NONE,
+       "Points",
+       "Define the radius and location with three points"},
+      {GEO_NODE_CURVE_PRIMITIVE_CIRCLE_TYPE_RADIUS,
+       "RADIUS",
+       ICON_NONE,
+       "Radius",
+       "Define the radius with a float"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryCurvePrimitiveCircle", "storage");
+
+  prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mode_items);
+  RNA_def_property_ui_text(prop, "Mode", "Method used to determine radius and placement");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_curve_primitive_line(StructRNA *srna)
+{
+  static const EnumPropertyItem mode_items[] = {
+      {GEO_NODE_CURVE_PRIMITIVE_LINE_MODE_POINTS,
+       "POINTS",
+       ICON_NONE,
+       "Points",
+       "Define the start and end points of the line"},
+      {GEO_NODE_CURVE_PRIMITIVE_LINE_MODE_DIRECTION,
+       "DIRECTION",
+       ICON_NONE,
+       "Direction",
+       "Define a line with a start point, direction and length"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryCurvePrimitiveLine", "storage");
+
+  prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mode_items);
+  RNA_def_property_ui_text(prop, "Mode", "Method used to determine radius and placement");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_point_rotate(StructRNA *srna)
+{
+  static const EnumPropertyItem type_items[] = {
+      {GEO_NODE_POINT_ROTATE_TYPE_AXIS_ANGLE,
+       "AXIS_ANGLE",
+       ICON_NONE,
+       "Axis Angle",
+       "Rotate around an axis by an angle"},
+      {GEO_NODE_POINT_ROTATE_TYPE_EULER,
+       "EULER",
+       ICON_NONE,
+       "Euler",
+       "Rotate around the X, Y, and Z axes"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  static const EnumPropertyItem space_items[] = {
+      {GEO_NODE_POINT_ROTATE_SPACE_OBJECT,
+       "OBJECT",
+       ICON_NONE,
+       "Object",
+       "Rotate points in the local space of the object"},
+      {GEO_NODE_POINT_ROTATE_SPACE_POINT,
+       "POINT",
+       ICON_NONE,
+       "Point",
+       "Rotate every point in its local space (as defined by the 'rotation' attribute)"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryRotatePoints", "storage");
+
+  prop = RNA_def_property(srna, "type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, type_items);
+  RNA_def_property_ui_text(prop, "Type", "Method used to describe the rotation");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "space", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, space_items);
+  RNA_def_property_ui_text(prop, "Space", "Base orientation of the points");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "input_type_axis", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type Axis", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_angle", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type Angle", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_rotation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type Rotation", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_align_rotation_to_vector(StructRNA *srna)
+{
+  static const EnumPropertyItem axis_items[] = {
+      {GEO_NODE_ALIGN_ROTATION_TO_VECTOR_AXIS_X,
+       "X",
+       ICON_NONE,
+       "X",
+       "Align the X axis with the vector"},
+      {GEO_NODE_ALIGN_ROTATION_TO_VECTOR_AXIS_Y,
+       "Y",
+       ICON_NONE,
+       "Y",
+       "Align the Y axis with the vector"},
+      {GEO_NODE_ALIGN_ROTATION_TO_VECTOR_AXIS_Z,
+       "Z",
+       ICON_NONE,
+       "Z",
+       "Align the Z axis with the vector"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  static const EnumPropertyItem pivot_axis_items[] = {
+      {GEO_NODE_ALIGN_ROTATION_TO_VECTOR_PIVOT_AXIS_AUTO,
+       "AUTO",
+       ICON_NONE,
+       "Auto",
+       "Automatically detect the best rotation axis to rotate towards the vector"},
+      {GEO_NODE_ALIGN_ROTATION_TO_VECTOR_PIVOT_AXIS_X,
+       "X",
+       ICON_NONE,
+       "X",
+       "Rotate around the local X axis"},
+      {GEO_NODE_ALIGN_ROTATION_TO_VECTOR_PIVOT_AXIS_Y,
+       "Y",
+       ICON_NONE,
+       "Y",
+       "Rotate around the local Y axis"},
+      {GEO_NODE_ALIGN_ROTATION_TO_VECTOR_PIVOT_AXIS_Z,
+       "Z",
+       ICON_NONE,
+       "Z",
+       "Rotate around the local Z axis"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryAlignRotationToVector", "storage");
+
+  prop = RNA_def_property(srna, "axis", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, axis_items);
+  RNA_def_property_ui_text(prop, "Axis", "Axis to align to the vector");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "pivot_axis", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, pivot_axis_items);
+  RNA_def_property_ui_text(prop, "Pivot Axis", "Axis to rotate around");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "input_type_factor", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type Factor", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_vector", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type Vector", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_point_scale(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryPointScale", "storage");
+
+  prop = RNA_def_property(srna, "input_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float_vector);
+  RNA_def_property_ui_text(prop, "Input Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_point_translate(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryPointTranslate", "storage");
+
+  prop = RNA_def_property(srna, "input_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_object_info(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem rna_node_geometry_object_info_transform_space_items[] = {
+      {GEO_NODE_TRANSFORM_SPACE_ORIGINAL,
+       "ORIGINAL",
+       0,
+       "Original",
+       "Output the geometry relative to the input object transform, and the location, rotation "
+       "and "
+       "scale relative to the world origin"},
+      {GEO_NODE_TRANSFORM_SPACE_RELATIVE,
+       "RELATIVE",
+       0,
+       "Relative",
+       "Bring the input object geometry, location, rotation and scale into the modified object, "
+       "maintaining the relative position between the two objects in the scene"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryObjectInfo", "storage");
+
+  prop = RNA_def_property(srna, "transform_space", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_object_info_transform_space_items);
+  RNA_def_property_ui_text(
+      prop, "Transform Space", "The transformation of the vector and geometry outputs");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_points_to_volume(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static EnumPropertyItem resolution_mode_items[] = {
+      {GEO_NODE_POINTS_TO_VOLUME_RESOLUTION_MODE_AMOUNT,
+       "VOXEL_AMOUNT",
+       0,
+       "Amount",
+       "Specify the approximate number of voxels along the diagonal"},
+      {GEO_NODE_POINTS_TO_VOLUME_RESOLUTION_MODE_SIZE,
+       "VOXEL_SIZE",
+       0,
+       "Size",
+       "Specify the voxel side length"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryPointsToVolume", "storage");
+
+  prop = RNA_def_property(srna, "resolution_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, resolution_mode_items);
+  RNA_def_property_ui_text(prop, "Resolution Mode", "How the voxel size is specified");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_radius", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Radius Input Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_collection_info(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem rna_node_geometry_collection_info_transform_space_items[] = {
+      {GEO_NODE_TRANSFORM_SPACE_ORIGINAL,
+       "ORIGINAL",
+       0,
+       "Original",
+       "Output the geometry relative to the collection offset"},
+      {GEO_NODE_TRANSFORM_SPACE_RELATIVE,
+       "RELATIVE",
+       0,
+       "Relative",
+       "Bring the input collection geometry into the modified object, maintaining the relative "
+       "position between the objects in the scene"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryCollectionInfo", "storage");
+
+  prop = RNA_def_property(srna, "transform_space", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_collection_info_transform_space_items);
+  RNA_def_property_ui_text(prop, "Transform Space", "The transformation of the geometry output");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_attribute_proximity(StructRNA *srna)
+{
+  static const EnumPropertyItem target_geometry_element[] = {
+      {GEO_NODE_ATTRIBUTE_PROXIMITY_TARGET_GEOMETRY_ELEMENT_POINTS,
+       "POINTS",
+       ICON_NONE,
+       "Points",
+       "Calculate proximity to the target's points (usually faster than the other two modes)"},
+      {GEO_NODE_ATTRIBUTE_PROXIMITY_TARGET_GEOMETRY_ELEMENT_EDGES,
+       "EDGES",
+       ICON_NONE,
+       "Edges",
+       "Calculate proximity to the target's edges"},
+      {GEO_NODE_ATTRIBUTE_PROXIMITY_TARGET_GEOMETRY_ELEMENT_FACES,
+       "FACES",
+       ICON_NONE,
+       "Faces",
+       "Calculate proximity to the target's faces"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryAttributeProximity", "storage");
+
+  prop = RNA_def_property(srna, "target_geometry_element", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, target_geometry_element);
+  RNA_def_property_enum_default(prop, GEO_NODE_ATTRIBUTE_PROXIMITY_TARGET_GEOMETRY_ELEMENT_FACES);
+  RNA_def_property_ui_text(
+      prop, "Target Geometry", "Element of the target geometry to calculate the distance from");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_volume_to_mesh(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static EnumPropertyItem resolution_mode_items[] = {
+      {VOLUME_TO_MESH_RESOLUTION_MODE_GRID,
+       "GRID",
+       0,
+       "Grid",
+       "Use resolution of the volume grid"},
+      {VOLUME_TO_MESH_RESOLUTION_MODE_VOXEL_AMOUNT,
+       "VOXEL_AMOUNT",
+       0,
+       "Voxel Amount",
+       "Desired number of voxels along one axis"},
+      {VOLUME_TO_MESH_RESOLUTION_MODE_VOXEL_SIZE,
+       "VOXEL_SIZE",
+       0,
+       "Voxel Size",
+       "Desired voxel side length"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryVolumeToMesh", "storage");
+
+  prop = RNA_def_property(srna, "resolution_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, resolution_mode_items);
+  RNA_def_property_ui_text(prop, "Resolution Mode", "How the voxel size is specified");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_combine_xyz(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeCombineXYZ", "storage");
+
+  prop = RNA_def_property(srna, "input_type_x", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type X", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_y", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type Y", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_z", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type Z", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_separate_xyz(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeAttributeSeparateXYZ", "storage");
+
+  prop = RNA_def_property(srna, "input_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_mesh_circle(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryMeshCircle", "storage");
+
+  prop = RNA_def_property(srna, "fill_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_mesh_circle_fill_type_items);
+  RNA_def_property_ui_text(prop, "Fill Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_mesh_cylinder(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryMeshCylinder", "storage");
+
+  prop = RNA_def_property(srna, "fill_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_mesh_circle_fill_type_items);
+  RNA_def_property_ui_text(prop, "Fill Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_mesh_cone(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryMeshCone", "storage");
+
+  prop = RNA_def_property(srna, "fill_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_mesh_circle_fill_type_items);
+  RNA_def_property_ui_text(prop, "Fill Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_mesh_line(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static EnumPropertyItem mode_items[] = {
+      {GEO_NODE_MESH_LINE_MODE_OFFSET,
+       "OFFSET",
+       0,
+       "Offset",
+       "Specify the offset from one vertex to the next"},
+      {GEO_NODE_MESH_LINE_MODE_END_POINTS,
+       "END_POINTS",
+       0,
+       "End Points",
+       "Specify the line's start and end points"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  static EnumPropertyItem count_mode_items[] = {
+      {GEO_NODE_MESH_LINE_COUNT_TOTAL,
+       "TOTAL",
+       0,
+       "Count",
+       "Specify the total number of vertices"},
+      {GEO_NODE_MESH_LINE_COUNT_RESOLUTION,
+       "RESOLUTION",
+       0,
+       "Resolution",
+       "Specify the distance between vertices"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryMeshLine", "storage");
+
+  prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mode_items);
+  RNA_def_property_ui_text(prop, "Mode", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "count_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, count_mode_items);
+  RNA_def_property_ui_text(prop, "Count Mode", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_switch(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeSwitch", "storage");
+  prop = RNA_def_property(srna, "input_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "input_type");
+  RNA_def_property_enum_items(prop, node_socket_data_type_items);
+  RNA_def_property_enum_funcs(prop, NULL, NULL, "rna_GeometryNodeSwitch_type_itemf");
+  RNA_def_property_ui_text(prop, "Input Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_curve_resample(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static EnumPropertyItem mode_items[] = {
+      {GEO_NODE_CURVE_SAMPLE_COUNT,
+       "COUNT",
+       0,
+       "Count",
+       "Sample the specified number of points along each spline"},
+      {GEO_NODE_CURVE_SAMPLE_LENGTH,
+       "LENGTH",
+       0,
+       "Length",
+       "Calculate the number of samples by splitting each spline into segments with the specified "
+       "length"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryCurveResample", "storage");
+
+  prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mode_items);
+  RNA_def_property_ui_text(prop, "Mode", "How to specify the amount of samples");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_curve_subdivide(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryCurveSubdivide", "storage");
+
+  prop = RNA_def_property(srna, "cuts_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_int);
+  RNA_def_property_ui_text(prop, "Cuts Type", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_curve_to_points(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  static EnumPropertyItem mode_items[] = {
+      {GEO_NODE_CURVE_SAMPLE_EVALUATED,
+       "EVALUATED",
+       0,
+       "Evaluated",
+       "Create points from the curve's evaluated points, based on the resolution attribute for "
+       "NURBS and Bezier splines"},
+      {GEO_NODE_CURVE_SAMPLE_COUNT,
+       "COUNT",
+       0,
+       "Count",
+       "Sample each spline by evenly distributing the specified number of points"},
+      {GEO_NODE_CURVE_SAMPLE_LENGTH,
+       "LENGTH",
+       0,
+       "Length",
+       "Sample each spline by splitting it into segments with the specified length"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryCurveToPoints", "storage");
+
+  prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mode_items);
+  RNA_def_property_ui_text(prop, "Mode", "How to generate points from the input curve");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
+static void def_geo_attribute_transfer(StructRNA *srna)
+{
+  static EnumPropertyItem mapping_items[] = {
+      {GEO_NODE_ATTRIBUTE_TRANSFER_NEAREST_FACE_INTERPOLATED,
+       "NEAREST_FACE_INTERPOLATED",
+       0,
+       "Nearest Face Interpolated",
+       "Transfer the attribute from the nearest face on a surface (loose points and edges are "
+       "ignored)"},
+      {GEO_NODE_ATTRIBUTE_TRANSFER_NEAREST,
+       "NEAREST",
+       0,
+       "Nearest",
+       "Transfer the element from the nearest element (using face and edge centers for the "
+       "distance computation)"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryAttributeTransfer", "storage");
+
+  prop = RNA_def_property(srna, "domain", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_enum_attribute_domain_with_auto_items);
+  RNA_def_property_enum_default(prop, ATTR_DOMAIN_AUTO);
+  RNA_def_property_ui_text(prop, "Domain", "The geometry domain to save the result attribute in");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "mapping", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mapping_items);
+  RNA_def_property_ui_text(prop, "Mapping", "Mapping between geometries");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_input_material(StructRNA *srna)
+{
+  PropertyRNA *prop;
+
+  prop = RNA_def_property(srna, "material", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "id");
+  RNA_def_property_struct_type(prop, "Material");
+  RNA_def_property_flag(prop, PROP_EDITABLE);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
+  RNA_def_property_ui_text(prop, "Material", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+}
+
+static void def_geo_raycast(StructRNA *srna)
+{
+  static EnumPropertyItem mapping_items[] = {
+      {GEO_NODE_RAYCAST_INTERPOLATED,
+       "INTERPOLATED",
+       0,
+       "Interpolated",
+       "Interpolate the attribute from the corners of the hit face"},
+      {GEO_NODE_RAYCAST_NEAREST,
+       "NEAREST",
+       0,
+       "Nearest",
+       "Use the attribute value of the closest mesh element"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  PropertyRNA *prop;
+
+  RNA_def_struct_sdna_from(srna, "NodeGeometryRaycast", "storage");
+
+  prop = RNA_def_property(srna, "mapping", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, mapping_items);
+  RNA_def_property_ui_text(prop, "Mapping", "Mapping from the target geometry to hit points");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_update");
+
+  prop = RNA_def_property(srna, "input_type_ray_direction", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_vector);
+  RNA_def_property_ui_text(prop, "Input Type Ray Direction", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+
+  prop = RNA_def_property(srna, "input_type_ray_length", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_node_geometry_attribute_input_type_items_float);
+  RNA_def_property_ui_text(prop, "Input Type Ray Length", "");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_Node_socket_update");
+}
+
 /* -------------------------------------------------------------------------- */
 
 static void rna_def_shader_node(BlenderRNA *brna)
@@ -7853,6 +10127,8 @@ static void rna_def_compositor_node(BlenderRNA *brna)
   /* compositor node need_exec flag */
   func = RNA_def_function(srna, "tag_need_exec", "rna_CompositorNode_tag_need_exec");
   RNA_def_function_ui_description(func, "Tag the node for compositor update");
+
+  def_cmp_cryptomatte_entry(brna);
 }
 
 static void rna_def_texture_node(BlenderRNA *brna)
@@ -7863,6 +10139,26 @@ static void rna_def_texture_node(BlenderRNA *brna)
   RNA_def_struct_ui_text(srna, "Texture Node", "");
   RNA_def_struct_sdna(srna, "bNode");
   RNA_def_struct_register_funcs(srna, "rna_TextureNode_register", "rna_Node_unregister", NULL);
+}
+
+static void rna_def_geometry_node(BlenderRNA *brna)
+{
+  StructRNA *srna;
+
+  srna = RNA_def_struct(brna, "GeometryNode", "NodeInternal");
+  RNA_def_struct_ui_text(srna, "Geometry Node", "");
+  RNA_def_struct_sdna(srna, "bNode");
+  RNA_def_struct_register_funcs(srna, "rna_GeometryNode_register", "rna_Node_unregister", NULL);
+}
+
+static void rna_def_function_node(BlenderRNA *brna)
+{
+  StructRNA *srna;
+
+  srna = RNA_def_struct(brna, "FunctionNode", "NodeInternal");
+  RNA_def_struct_ui_text(srna, "Function Node", "");
+  RNA_def_struct_sdna(srna, "bNode");
+  RNA_def_struct_register_funcs(srna, "rna_FunctionNode_register", "rna_Node_unregister", NULL);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -7891,10 +10187,20 @@ static void rna_def_node_socket(BlenderRNA *brna)
   RNA_def_struct_name_property(srna, prop);
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocket_update");
 
+  prop = RNA_def_property(srna, "label", PROP_STRING, PROP_NONE);
+  RNA_def_property_string_sdna(prop, NULL, "label");
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(prop, "Label", "Custom dynamic defined socket label");
+
   prop = RNA_def_property(srna, "identifier", PROP_STRING, PROP_NONE);
   RNA_def_property_string_sdna(prop, NULL, "identifier");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_ui_text(prop, "Identifier", "Unique identifier for mapping sockets");
+
+  prop = RNA_def_property(srna, "description", PROP_STRING, PROP_NONE);
+  RNA_def_property_string_sdna(prop, NULL, "description");
+  RNA_def_property_ui_text(prop, "Tooltip", "Socket tooltip");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocket_update");
 
   prop = RNA_def_property(srna, "is_output", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_funcs(prop, "rna_NodeSocket_is_output_get", NULL);
@@ -7924,6 +10230,12 @@ static void rna_def_node_socket(BlenderRNA *brna)
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_ui_text(prop, "Linked", "True if the socket is connected");
 
+  prop = RNA_def_property(srna, "is_multi_input", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SOCK_MULTI_INPUT);
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(
+      prop, "Multi Input", "True if the socket can accept multiple ordered input links");
+
   prop = RNA_def_property(srna, "show_expanded", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_flag(prop, PROP_NO_DEG_UPDATE);
   RNA_def_property_boolean_negative_sdna(prop, NULL, "flag", SOCK_COLLAPSED);
@@ -7939,6 +10251,8 @@ static void rna_def_node_socket(BlenderRNA *brna)
   RNA_def_property_pointer_funcs(prop, "rna_NodeSocket_node_get", NULL, NULL, NULL);
   RNA_def_property_struct_type(prop, "Node");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_flag(prop, PROP_PTR_NO_OWNERSHIP);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_ui_text(prop, "Node", "Node owning this socket");
 
   /* NB: the type property is used by standard sockets.
@@ -8032,10 +10346,22 @@ static void rna_def_node_socket_interface(BlenderRNA *brna)
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_ui_text(prop, "Identifier", "Unique identifier for mapping sockets");
 
+  prop = RNA_def_property(srna, "description", PROP_STRING, PROP_NONE);
+  RNA_def_property_string_sdna(prop, NULL, "description");
+  RNA_def_property_ui_text(prop, "Tooltip", "Socket tooltip");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
+
   prop = RNA_def_property(srna, "is_output", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_funcs(prop, "rna_NodeSocket_is_output_get", NULL);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_ui_text(prop, "Is Output", "True if the socket is an output, otherwise input");
+
+  prop = RNA_def_property(srna, "hide_value", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SOCK_HIDE_VALUE);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_ui_text(
+      prop, "Hide Value", "Hide the socket input value even when the socket is not connected");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
   /* registration */
   prop = RNA_def_property(srna, "bl_socket_idname", PROP_STRING, PROP_NONE);
@@ -8112,7 +10438,7 @@ static void rna_def_node_socket_float(BlenderRNA *brna,
   }
 
   srna = RNA_def_struct(brna, idname, "NodeSocketStandard");
-  RNA_def_struct_ui_text(srna, "Float Node Socket", "Floating point number socket of a node");
+  RNA_def_struct_ui_text(srna, "Float Node Socket", "Floating-point number socket of a node");
   RNA_def_struct_sdna(srna, "bNodeSocket");
 
   RNA_def_struct_sdna_from(srna, "bNodeSocketValueFloat", "default_value");
@@ -8129,7 +10455,7 @@ static void rna_def_node_socket_float(BlenderRNA *brna,
   /* socket interface */
   srna = RNA_def_struct(brna, interface_idname, "NodeSocketInterfaceStandard");
   RNA_def_struct_ui_text(
-      srna, "Float Node Socket Interface", "Floating point number socket of a node");
+      srna, "Float Node Socket Interface", "Floating-point number socket of a node");
   RNA_def_struct_sdna(srna, "bNodeSocket");
 
   RNA_def_struct_sdna_from(srna, "bNodeSocketValueFloat", "default_value");
@@ -8137,17 +10463,20 @@ static void rna_def_node_socket_float(BlenderRNA *brna,
   prop = RNA_def_property(srna, "default_value", PROP_FLOAT, subtype);
   RNA_def_property_float_sdna(prop, NULL, "value");
   RNA_def_property_float_default(prop, value_default);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_float_funcs(prop, NULL, NULL, "rna_NodeSocketStandard_float_range");
   RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
   prop = RNA_def_property(srna, "min_value", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "min");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Minimum Value", "Minimum value");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
   prop = RNA_def_property(srna, "max_value", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "max");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Maximum Value", "Maximum value");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
@@ -8201,17 +10530,20 @@ static void rna_def_node_socket_int(BlenderRNA *brna,
 
   prop = RNA_def_property(srna, "default_value", PROP_INT, subtype);
   RNA_def_property_int_sdna(prop, NULL, "value");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_int_funcs(prop, NULL, NULL, "rna_NodeSocketStandard_int_range");
   RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
   prop = RNA_def_property(srna, "min_value", PROP_INT, PROP_NONE);
   RNA_def_property_int_sdna(prop, NULL, "min");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Minimum Value", "Minimum value");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
   prop = RNA_def_property(srna, "max_value", PROP_INT, PROP_NONE);
   RNA_def_property_int_sdna(prop, NULL, "max");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Maximum Value", "Maximum value");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
@@ -8248,6 +10580,7 @@ static void rna_def_node_socket_bool(BlenderRNA *brna,
 
   prop = RNA_def_property(srna, "default_value", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "value", 1);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
@@ -8302,17 +10635,20 @@ static void rna_def_node_socket_vector(BlenderRNA *brna,
 
   prop = RNA_def_property(srna, "default_value", PROP_FLOAT, subtype);
   RNA_def_property_float_sdna(prop, NULL, "value");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_float_funcs(prop, NULL, NULL, "rna_NodeSocketStandard_vector_range");
   RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
   prop = RNA_def_property(srna, "min_value", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "min");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Minimum Value", "Minimum value");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
   prop = RNA_def_property(srna, "max_value", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "max");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Maximum Value", "Maximum value");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
@@ -8349,6 +10685,7 @@ static void rna_def_node_socket_color(BlenderRNA *brna,
 
   prop = RNA_def_property(srna, "default_value", PROP_FLOAT, PROP_COLOR);
   RNA_def_property_float_sdna(prop, NULL, "value");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
@@ -8385,6 +10722,7 @@ static void rna_def_node_socket_string(BlenderRNA *brna,
 
   prop = RNA_def_property(srna, "default_value", PROP_STRING, PROP_NONE);
   RNA_def_property_string_sdna(prop, NULL, "value");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 
@@ -8414,6 +10752,200 @@ static void rna_def_node_socket_virtual(BlenderRNA *brna, const char *identifier
   srna = RNA_def_struct(brna, identifier, "NodeSocketStandard");
   RNA_def_struct_ui_text(srna, "Virtual Node Socket", "Virtual socket of a node");
   RNA_def_struct_sdna(srna, "bNodeSocket");
+}
+
+static void rna_def_node_socket_object(BlenderRNA *brna,
+                                       const char *identifier,
+                                       const char *interface_idname)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, identifier, "NodeSocketStandard");
+  RNA_def_struct_ui_text(srna, "Object Node Socket", "Object socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueObject", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Object");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(
+      prop, NC_NODE | NA_EDITED, "rna_NodeSocketStandard_value_and_relation_update");
+  RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_REFCOUNT | PROP_CONTEXT_UPDATE);
+
+  /* socket interface */
+  srna = RNA_def_struct(brna, interface_idname, "NodeSocketInterfaceStandard");
+  RNA_def_struct_ui_text(srna, "Object Node Socket Interface", "Object socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueObject", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Object");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
+}
+
+static void rna_def_node_socket_image(BlenderRNA *brna,
+                                      const char *identifier,
+                                      const char *interface_idname)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, identifier, "NodeSocketStandard");
+  RNA_def_struct_ui_text(srna, "Image Node Socket", "Image socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueImage", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Image");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(
+      prop, NC_NODE | NA_EDITED, "rna_NodeSocketStandard_value_and_relation_update");
+  RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_REFCOUNT | PROP_CONTEXT_UPDATE);
+
+  /* socket interface */
+  srna = RNA_def_struct(brna, interface_idname, "NodeSocketInterfaceStandard");
+  RNA_def_struct_ui_text(srna, "Image Node Socket Interface", "Image socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueImage", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Image");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
+}
+
+static void rna_def_node_socket_geometry(BlenderRNA *brna,
+                                         const char *identifier,
+                                         const char *interface_idname)
+{
+  StructRNA *srna;
+
+  srna = RNA_def_struct(brna, identifier, "NodeSocketStandard");
+  RNA_def_struct_ui_text(srna, "Geometry Node Socket", "Geometry socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  srna = RNA_def_struct(brna, interface_idname, "NodeSocketInterfaceStandard");
+  RNA_def_struct_ui_text(srna, "Geometry Node Socket Interface", "Geometry socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+}
+
+static void rna_def_node_socket_collection(BlenderRNA *brna,
+                                           const char *identifier,
+                                           const char *interface_idname)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, identifier, "NodeSocketStandard");
+  RNA_def_struct_ui_text(srna, "Collection Node Socket", "Collection socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueCollection", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Collection");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(
+      prop, NC_NODE | NA_EDITED, "rna_NodeSocketStandard_value_and_relation_update");
+  RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_REFCOUNT | PROP_CONTEXT_UPDATE);
+
+  /* socket interface */
+  srna = RNA_def_struct(brna, interface_idname, "NodeSocketInterfaceStandard");
+  RNA_def_struct_ui_text(srna, "Collection Node Socket Interface", "Collection socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueCollection", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Collection");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
+}
+
+static void rna_def_node_socket_texture(BlenderRNA *brna,
+                                        const char *identifier,
+                                        const char *interface_idname)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, identifier, "NodeSocketStandard");
+  RNA_def_struct_ui_text(srna, "Texture Node Socket", "Texture socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueTexture", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Texture");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(
+      prop, NC_NODE | NA_EDITED, "rna_NodeSocketStandard_value_and_relation_update");
+  RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_REFCOUNT | PROP_CONTEXT_UPDATE);
+
+  /* socket interface */
+  srna = RNA_def_struct(brna, interface_idname, "NodeSocketInterfaceStandard");
+  RNA_def_struct_ui_text(srna, "Texture Node Socket Interface", "Texture socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueTexture", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Texture");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
+}
+
+static void rna_def_node_socket_material(BlenderRNA *brna,
+                                         const char *identifier,
+                                         const char *interface_idname)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, identifier, "NodeSocketStandard");
+  RNA_def_struct_ui_text(srna, "Material Node Socket", "Material socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueMaterial", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Material");
+  RNA_def_property_pointer_funcs(
+      prop, NULL, NULL, NULL, "rna_NodeSocketMaterial_default_value_poll");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(
+      prop, NC_NODE | NA_EDITED, "rna_NodeSocketStandard_value_and_relation_update");
+  RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_REFCOUNT | PROP_CONTEXT_UPDATE);
+
+  /* socket interface */
+  srna = RNA_def_struct(brna, interface_idname, "NodeSocketInterfaceStandard");
+  RNA_def_struct_ui_text(srna, "Material Node Socket Interface", "Material socket of a node");
+  RNA_def_struct_sdna(srna, "bNodeSocket");
+
+  RNA_def_struct_sdna_from(srna, "bNodeSocketValueMaterial", "default_value");
+
+  prop = RNA_def_property(srna, "default_value", PROP_POINTER, PROP_NONE);
+  RNA_def_property_pointer_sdna(prop, NULL, "value");
+  RNA_def_property_struct_type(prop, "Material");
+  RNA_def_property_pointer_funcs(
+      prop, NULL, NULL, NULL, "rna_NodeSocketMaterial_default_value_poll");
+  RNA_def_property_ui_text(prop, "Default Value", "Input value used for unconnected socket");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, "rna_NodeSocketInterface_update");
 }
 
 static void rna_def_node_socket_standard_types(BlenderRNA *brna)
@@ -8500,7 +11032,7 @@ static void rna_def_node_socket_standard_types(BlenderRNA *brna)
   /* XXX These types should eventually be registered at runtime.
    * Then use the nodeStaticSocketType and nodeStaticSocketInterfaceType functions
    * to get the idname strings from int type and subtype
-   * (see node_socket.c, register_standard_node_socket_types).
+   * (see node_socket.cc, register_standard_node_socket_types).
    */
 
   rna_def_node_socket_float(brna, "NodeSocketFloat", "NodeSocketInterfaceFloat", PROP_NONE);
@@ -8514,6 +11046,12 @@ static void rna_def_node_socket_standard_types(BlenderRNA *brna)
       brna, "NodeSocketFloatAngle", "NodeSocketInterfaceFloatAngle", PROP_ANGLE);
   rna_def_node_socket_float(
       brna, "NodeSocketFloatTime", "NodeSocketInterfaceFloatTime", PROP_TIME);
+  rna_def_node_socket_float(brna,
+                            "NodeSocketFloatTimeAbsolute",
+                            "NodeSocketInterfaceFloatTimeAbsolute",
+                            PROP_TIME_ABSOLUTE);
+  rna_def_node_socket_float(
+      brna, "NodeSocketFloatDistance", "NodeSocketInterfaceFloatDistance", PROP_DISTANCE);
 
   rna_def_node_socket_int(brna, "NodeSocketInt", "NodeSocketInterfaceInt", PROP_NONE);
   rna_def_node_socket_int(
@@ -8550,6 +11088,18 @@ static void rna_def_node_socket_standard_types(BlenderRNA *brna)
   rna_def_node_socket_shader(brna, "NodeSocketShader", "NodeSocketInterfaceShader");
 
   rna_def_node_socket_virtual(brna, "NodeSocketVirtual");
+
+  rna_def_node_socket_object(brna, "NodeSocketObject", "NodeSocketInterfaceObject");
+
+  rna_def_node_socket_image(brna, "NodeSocketImage", "NodeSocketInterfaceImage");
+
+  rna_def_node_socket_geometry(brna, "NodeSocketGeometry", "NodeSocketInterfaceGeometry");
+
+  rna_def_node_socket_collection(brna, "NodeSocketCollection", "NodeSocketInterfaceCollection");
+
+  rna_def_node_socket_texture(brna, "NodeSocketTexture", "NodeSocketInterfaceTexture");
+
+  rna_def_node_socket_material(brna, "NodeSocketMaterial", "NodeSocketInterfaceMaterial");
 }
 
 static void rna_def_internal_node(BlenderRNA *brna)
@@ -8613,7 +11163,8 @@ static void rna_def_internal_node(BlenderRNA *brna)
 
   /* update */
   func = RNA_def_function(srna, "update", "rna_NodeInternal_update");
-  RNA_def_function_ui_description(func, "Update on editor changes");
+  RNA_def_function_ui_description(
+      func, "Update on node graph topology changes (adding or removing nodes and links)");
   RNA_def_function_flag(func, FUNC_USE_SELF_ID | FUNC_ALLOW_WRITE);
 
   /* draw buttons */
@@ -8784,6 +11335,8 @@ static void rna_def_node(BlenderRNA *brna)
   RNA_def_property_pointer_sdna(prop, NULL, "parent");
   RNA_def_property_pointer_funcs(prop, NULL, "rna_Node_parent_set", NULL, "rna_Node_parent_poll");
   RNA_def_property_flag(prop, PROP_EDITABLE);
+  RNA_def_property_flag(prop, PROP_PTR_NO_OWNERSHIP);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_struct_type(prop, "Node");
   RNA_def_property_ui_text(prop, "Parent", "Parent this node is attached to");
 
@@ -8827,7 +11380,7 @@ static void rna_def_node(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "show_texture", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", NODE_ACTIVE_TEXTURE);
-  RNA_def_property_ui_text(prop, "Show Texture", "Draw node in viewport textured draw mode");
+  RNA_def_property_ui_text(prop, "Show Texture", "Display node in viewport textured shading mode");
   RNA_def_property_update(prop, 0, "rna_Node_update");
 
   /* generic property update function */
@@ -8917,7 +11470,8 @@ static void rna_def_node(BlenderRNA *brna)
 
   /* update */
   func = RNA_def_function(srna, "update", NULL);
-  RNA_def_function_ui_description(func, "Update on editor changes");
+  RNA_def_function_ui_description(
+      func, "Update on node graph topology changes (adding or removing nodes and links)");
   RNA_def_function_flag(func, FUNC_USE_SELF_ID | FUNC_REGISTER_OPTIONAL | FUNC_ALLOW_WRITE);
 
   /* insert_link */
@@ -8993,33 +11547,48 @@ static void rna_def_node_link(BlenderRNA *brna)
   RNA_def_struct_ui_text(srna, "Valid", "Link is valid");
   RNA_def_property_update(prop, NC_NODE | NA_EDITED, NULL);
 
+  prop = RNA_def_property(srna, "is_muted", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", NODE_LINK_MUTED);
+  RNA_def_struct_ui_text(srna, "Muted", "Link is muted and can be ignored");
+  RNA_def_property_update(prop, NC_NODE | NA_EDITED, NULL);
+
   prop = RNA_def_property(srna, "from_node", PROP_POINTER, PROP_NONE);
   RNA_def_property_pointer_sdna(prop, NULL, "fromnode");
   RNA_def_property_struct_type(prop, "Node");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_flag(prop, PROP_PTR_NO_OWNERSHIP);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_ui_text(prop, "From node", "");
 
   prop = RNA_def_property(srna, "to_node", PROP_POINTER, PROP_NONE);
   RNA_def_property_pointer_sdna(prop, NULL, "tonode");
   RNA_def_property_struct_type(prop, "Node");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_flag(prop, PROP_PTR_NO_OWNERSHIP);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_ui_text(prop, "To node", "");
 
   prop = RNA_def_property(srna, "from_socket", PROP_POINTER, PROP_NONE);
   RNA_def_property_pointer_sdna(prop, NULL, "fromsock");
   RNA_def_property_struct_type(prop, "NodeSocket");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_flag(prop, PROP_PTR_NO_OWNERSHIP);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_ui_text(prop, "From socket", "");
 
   prop = RNA_def_property(srna, "to_socket", PROP_POINTER, PROP_NONE);
   RNA_def_property_pointer_sdna(prop, NULL, "tosock");
   RNA_def_property_struct_type(prop, "NodeSocket");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_flag(prop, PROP_PTR_NO_OWNERSHIP);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_ui_text(prop, "To socket", "");
 
   prop = RNA_def_property(srna, "is_hidden", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_funcs(prop, "rna_NodeLink_is_hidden_get", NULL);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_flag(prop, PROP_PTR_NO_OWNERSHIP);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_ui_text(prop, "Is Hidden", "Link is hidden due to invisible sockets");
 }
 
@@ -9173,6 +11742,7 @@ static void rna_def_nodetree(BlenderRNA *brna)
       {NTREE_SHADER, "SHADER", ICON_MATERIAL, "Shader", "Shader nodes"},
       {NTREE_TEXTURE, "TEXTURE", ICON_TEXTURE, "Texture", "Texture nodes"},
       {NTREE_COMPOSIT, "COMPOSITING", ICON_RENDERLAYERS, "Compositing", "Compositing nodes"},
+      {NTREE_GEOMETRY, "GEOMETRY", ICON_NODETREE, "Geometry", "Geometry nodes"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -9308,6 +11878,14 @@ static void rna_def_nodetree(BlenderRNA *brna)
   parm = RNA_def_pointer(
       func, "result_3", "ID", "From ID", "Original ID data-block selected from the context");
   RNA_def_function_output(func, parm);
+
+  /* Check for support of a socket type. */
+  func = RNA_def_function(srna, "valid_socket_type", NULL);
+  RNA_def_function_ui_description(func, "Check if the socket type is valid for the node tree");
+  RNA_def_function_flag(func, FUNC_NO_SELF | FUNC_REGISTER_OPTIONAL);
+  parm = RNA_def_enum(func, "type", node_socket_type_items, 0, "", "");
+  RNA_def_parameter_flags(parm, PROP_NEVER_NULL, PARM_REQUIRED);
+  RNA_def_function_return(func, RNA_def_boolean(func, "valid", false, "", ""));
 }
 
 static void rna_def_composite_nodetree(BlenderRNA *brna)
@@ -9320,6 +11898,12 @@ static void rna_def_composite_nodetree(BlenderRNA *brna)
       srna, "Compositor Node Tree", "Node tree consisting of linked nodes used for compositing");
   RNA_def_struct_sdna(srna, "bNodeTree");
   RNA_def_struct_ui_icon(srna, ICON_RENDERLAYERS);
+
+  prop = RNA_def_property(srna, "execution_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "execution_mode");
+  RNA_def_property_enum_items(prop, rna_enum_execution_mode_items);
+  RNA_def_property_ui_text(prop, "Execution Mode", "Set how compositing is executed");
+  RNA_def_property_update(prop, NC_NODE | ND_DISPLAY, "rna_NodeTree_update");
 
   prop = RNA_def_property(srna, "render_quality", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "render_quality");
@@ -9357,7 +11941,7 @@ static void rna_def_composite_nodetree(BlenderRNA *brna)
   prop = RNA_def_property(srna, "use_viewer_border", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", NTREE_VIEWER_BORDER);
   RNA_def_property_ui_text(
-      prop, "Viewer Border", "Use boundaries for viewer nodes and composite backdrop");
+      prop, "Viewer Region", "Use boundaries for viewer nodes and composite backdrop");
   RNA_def_property_update(prop, NC_NODE | ND_DISPLAY, "rna_NodeTree_update");
 }
 
@@ -9394,6 +11978,17 @@ static void rna_def_texture_nodetree(BlenderRNA *brna)
       srna, "Texture Node Tree", "Node tree consisting of linked nodes used for textures");
   RNA_def_struct_sdna(srna, "bNodeTree");
   RNA_def_struct_ui_icon(srna, ICON_TEXTURE);
+}
+
+static void rna_def_geometry_nodetree(BlenderRNA *brna)
+{
+  StructRNA *srna;
+
+  srna = RNA_def_struct(brna, "GeometryNodeTree", "NodeTree");
+  RNA_def_struct_ui_text(
+      srna, "Geometry Node Tree", "Node tree consisting of linked nodes used for geometries");
+  RNA_def_struct_sdna(srna, "bNodeTree");
+  RNA_def_struct_ui_icon(srna, ICON_NODETREE);
 }
 
 static StructRNA *define_specific_node(BlenderRNA *brna,
@@ -9482,6 +12077,8 @@ void RNA_def_nodetree(BlenderRNA *brna)
   rna_def_shader_node(brna);
   rna_def_compositor_node(brna);
   rna_def_texture_node(brna);
+  rna_def_geometry_node(brna);
+  rna_def_function_node(brna);
 
   rna_def_nodetree(brna);
 
@@ -9490,6 +12087,7 @@ void RNA_def_nodetree(BlenderRNA *brna)
   rna_def_composite_nodetree(brna);
   rna_def_shader_nodetree(brna);
   rna_def_texture_nodetree(brna);
+  rna_def_geometry_nodetree(brna);
 
 #  define DefNode(Category, ID, DefFunc, EnumName, StructName, UIName, UIDesc) \
     { \
@@ -9506,12 +12104,13 @@ void RNA_def_nodetree(BlenderRNA *brna)
    */
 #  include "../../nodes/NOD_static_types.h"
 
-  /* Node group types need to be defined for shader, compositor, texture nodes individually.
-   * Cannot use the static types header for this, since they share the same int id.
+  /* Node group types need to be defined for shader, compositor, texture, geometry nodes
+   * individually. Cannot use the static types header for this, since they share the same int id.
    */
   define_specific_node(brna, "ShaderNodeGroup", "ShaderNode", "Group", "", def_group);
   define_specific_node(brna, "CompositorNodeGroup", "CompositorNode", "Group", "", def_group);
   define_specific_node(brna, "TextureNodeGroup", "TextureNode", "Group", "", def_group);
+  define_specific_node(brna, "GeometryNodeGroup", "GeometryNode", "Group", "", def_group);
   def_custom_group(brna,
                    "ShaderNodeCustomGroup",
                    "ShaderNode",
@@ -9530,6 +12129,12 @@ void RNA_def_nodetree(BlenderRNA *brna)
                    "Custom Group",
                    "Base node type for custom registered node group types",
                    "rna_NodeCustomGroup_register");
+  def_custom_group(brna,
+                   "GeometryNodeCustomGroup",
+                   "GeometryNode",
+                   "Geometry Custom Group",
+                   "Custom Geometry Group Node for Python nodes",
+                   "rna_GeometryNodeCustomGroup_register");
 
   /* special socket types */
   rna_def_cmp_output_file_slot_file(brna);

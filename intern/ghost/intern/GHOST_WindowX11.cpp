@@ -22,18 +22,17 @@
  */
 
 /* For standard X11 cursors */
-#include <X11/cursorfont.h>
 #include <X11/Xatom.h>
-#include <X11/Xutil.h>
 #include <X11/Xmd.h>
+#include <X11/Xutil.h>
+#include <X11/cursorfont.h>
 #ifdef WITH_X11_ALPHA
 #  include <X11/extensions/Xrender.h>
 #endif
-#include "GHOST_WindowX11.h"
-#include "GHOST_SystemX11.h"
-#include "GHOST_IconX11.h"
-#include "STR_String.h"
 #include "GHOST_Debug.h"
+#include "GHOST_IconX11.h"
+#include "GHOST_SystemX11.h"
+#include "GHOST_WindowX11.h"
 
 #ifdef WITH_XDND
 #  include "GHOST_DropTargetX11.h"
@@ -54,15 +53,16 @@
 // For DPI value
 #include <X11/Xresource.h>
 
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 
 /* gethostname */
 #include <unistd.h>
 
 #include <algorithm>
-#include <string>
+#include <limits.h>
 #include <math.h>
+#include <string>
 
 /* For obscure full screen mode stuff
  * lifted verbatim from blut. */
@@ -212,11 +212,11 @@ static XVisualInfo *x11_visualinfo_from_glx(Display *display,
 
 GHOST_WindowX11::GHOST_WindowX11(GHOST_SystemX11 *system,
                                  Display *display,
-                                 const STR_String &title,
-                                 GHOST_TInt32 left,
-                                 GHOST_TInt32 top,
-                                 GHOST_TUns32 width,
-                                 GHOST_TUns32 height,
+                                 const char *title,
+                                 int32_t left,
+                                 int32_t top,
+                                 uint32_t width,
+                                 uint32_t height,
                                  GHOST_TWindowState state,
                                  GHOST_WindowX11 *parentWindow,
                                  GHOST_TDrawingContextType type,
@@ -239,6 +239,7 @@ GHOST_WindowX11::GHOST_WindowX11(GHOST_SystemX11 *system,
 #ifdef WITH_XDND
       m_dropTarget(NULL),
 #endif
+      m_tabletData(GHOST_TABLET_DATA_NONE),
 #if defined(WITH_X11_XINPUT) && defined(X_HAVE_UTF8_STRING)
       m_xic(NULL),
 #endif
@@ -292,55 +293,18 @@ GHOST_WindowX11::GHOST_WindowX11(GHOST_SystemX11 *system,
       m_display, RootWindow(m_display, m_visualInfo->screen), m_visualInfo->visual, AllocNone);
 
   /* create the window! */
-  if ((parentWindow == 0) || is_dialog) {
-    m_window = XCreateWindow(m_display,
-                             RootWindow(m_display, m_visualInfo->screen),
-                             left,
-                             top,
-                             width,
-                             height,
-                             0, /* no border. */
-                             m_visualInfo->depth,
-                             InputOutput,
-                             m_visualInfo->visual,
-                             xattributes_valuemask,
-                             &xattributes);
-  }
-  else {
-    Window root_return;
-    int x_return, y_return;
-    unsigned int w_return, h_return, border_w_return, depth_return;
-
-    XGetGeometry(m_display,
-                 parentWindow->m_window,
-                 &root_return,
-                 &x_return,
-                 &y_return,
-                 &w_return,
-                 &h_return,
-                 &border_w_return,
-                 &depth_return);
-
-    left = 0;
-    top = 0;
-    width = w_return;
-    height = h_return;
-
-    m_window = XCreateWindow(m_display,
-                             parentWindow->m_window, /* reparent against embedder */
-                             left,
-                             top,
-                             width,
-                             height,
-                             0, /* no border. */
-                             m_visualInfo->depth,
-                             InputOutput,
-                             m_visualInfo->visual,
-                             xattributes_valuemask,
-                             &xattributes);
-
-    XSelectInput(m_display, parentWindow->m_window, SubstructureNotifyMask);
-  }
+  m_window = XCreateWindow(m_display,
+                           RootWindow(m_display, m_visualInfo->screen),
+                           left,
+                           top,
+                           width,
+                           height,
+                           0, /* no border. */
+                           m_visualInfo->depth,
+                           InputOutput,
+                           m_visualInfo->visual,
+                           xattributes_valuemask,
+                           &xattributes);
 
 #ifdef WITH_XDND
   /* initialize drop target for newly created window */
@@ -413,9 +377,9 @@ GHOST_WindowX11::GHOST_WindowX11(GHOST_SystemX11 *system,
   /* XClassHint, title */
   {
     XClassHint *xclasshint = XAllocClassHint();
-    const int len = title.Length() + 1;
+    const int len = strlen(title) + 1;
     char *wmclass = (char *)malloc(sizeof(char) * len);
-    memcpy(wmclass, title.ReadPtr(), len * sizeof(char));
+    memcpy(wmclass, title, len * sizeof(char));
     xclasshint->res_name = wmclass;
     xclasshint->res_class = wmclass;
     XSetClassHint(m_display, m_window, xclasshint);
@@ -498,8 +462,6 @@ GHOST_WindowX11::GHOST_WindowX11(GHOST_SystemX11 *system,
 
 #ifdef WITH_X11_XINPUT
   refreshXInputDevices();
-
-  m_tabletData = GHOST_TABLET_DATA_DEFAULT;
 #endif
 
   /* now set up the rendering context. */
@@ -618,7 +580,7 @@ bool GHOST_WindowX11::getValid() const
   return GHOST_Window::getValid() && m_valid_setup;
 }
 
-void GHOST_WindowX11::setTitle(const STR_String &title)
+void GHOST_WindowX11::setTitle(const char *title)
 {
   Atom name = XInternAtom(m_display, "_NET_WM_NAME", 0);
   Atom utf8str = XInternAtom(m_display, "UTF8_STRING", 0);
@@ -628,8 +590,8 @@ void GHOST_WindowX11::setTitle(const STR_String &title)
                   utf8str,
                   8,
                   PropModeReplace,
-                  (const unsigned char *)title.ReadPtr(),
-                  title.Length());
+                  (const unsigned char *)title,
+                  strlen(title));
 
   /* This should convert to valid x11 string
    * and getTitle would need matching change */
@@ -638,13 +600,14 @@ void GHOST_WindowX11::setTitle(const STR_String &title)
   XFlush(m_display);
 }
 
-void GHOST_WindowX11::getTitle(STR_String &title) const
+std::string GHOST_WindowX11::getTitle() const
 {
   char *name = NULL;
 
   XFetchName(m_display, m_window, &name);
-  title = name ? name : "untitled";
+  std::string title = name ? name : "untitled";
   XFree(name);
+  return title;
 }
 
 void GHOST_WindowX11::getWindowBounds(GHOST_Rect &bounds) const
@@ -659,7 +622,7 @@ void GHOST_WindowX11::getClientBounds(GHOST_Rect &bounds) const
   Window root_return;
   int x_return, y_return;
   unsigned int w_return, h_return, border_w_return, depth_return;
-  GHOST_TInt32 screen_x, screen_y;
+  int32_t screen_x, screen_y;
 
   XGetGeometry(m_display,
                m_window,
@@ -679,7 +642,7 @@ void GHOST_WindowX11::getClientBounds(GHOST_Rect &bounds) const
   bounds.m_b = bounds.m_t + h_return;
 }
 
-GHOST_TSuccess GHOST_WindowX11::setClientWidth(GHOST_TUns32 width)
+GHOST_TSuccess GHOST_WindowX11::setClientWidth(uint32_t width)
 {
   XWindowChanges values;
   unsigned int value_mask = CWWidth;
@@ -689,7 +652,7 @@ GHOST_TSuccess GHOST_WindowX11::setClientWidth(GHOST_TUns32 width)
   return GHOST_kSuccess;
 }
 
-GHOST_TSuccess GHOST_WindowX11::setClientHeight(GHOST_TUns32 height)
+GHOST_TSuccess GHOST_WindowX11::setClientHeight(uint32_t height)
 {
   XWindowChanges values;
   unsigned int value_mask = CWHeight;
@@ -698,7 +661,7 @@ GHOST_TSuccess GHOST_WindowX11::setClientHeight(GHOST_TUns32 height)
   return GHOST_kSuccess;
 }
 
-GHOST_TSuccess GHOST_WindowX11::setClientSize(GHOST_TUns32 width, GHOST_TUns32 height)
+GHOST_TSuccess GHOST_WindowX11::setClientSize(uint32_t width, uint32_t height)
 {
   XWindowChanges values;
   unsigned int value_mask = CWWidth | CWHeight;
@@ -708,10 +671,7 @@ GHOST_TSuccess GHOST_WindowX11::setClientSize(GHOST_TUns32 width, GHOST_TUns32 h
   return GHOST_kSuccess;
 }
 
-void GHOST_WindowX11::screenToClient(GHOST_TInt32 inX,
-                                     GHOST_TInt32 inY,
-                                     GHOST_TInt32 &outX,
-                                     GHOST_TInt32 &outY) const
+void GHOST_WindowX11::screenToClient(int32_t inX, int32_t inY, int32_t &outX, int32_t &outY) const
 {
   /* This is correct! */
 
@@ -724,10 +684,7 @@ void GHOST_WindowX11::screenToClient(GHOST_TInt32 inX,
   outY = ay;
 }
 
-void GHOST_WindowX11::clientToScreen(GHOST_TInt32 inX,
-                                     GHOST_TInt32 inY,
-                                     GHOST_TInt32 &outX,
-                                     GHOST_TInt32 &outY) const
+void GHOST_WindowX11::clientToScreen(int32_t inX, int32_t inY, int32_t &outX, int32_t &outY) const
 {
   int ax, ay;
   Window temp;
@@ -901,7 +858,7 @@ bool GHOST_WindowX11::netwmIsMaximized(void) const
 
   if (prop_ret)
     XFree(prop_ret);
-  return (st);
+  return st;
 }
 
 void GHOST_WindowX11::netwmFullScreen(bool set)
@@ -964,7 +921,7 @@ bool GHOST_WindowX11::netwmIsFullScreen(void) const
 
   if (prop_ret)
     XFree(prop_ret);
-  return (st);
+  return st;
 }
 
 void GHOST_WindowX11::motifFullScreen(bool set)
@@ -1018,7 +975,7 @@ bool GHOST_WindowX11::motifIsFullScreen(void) const
 
   if (prop_ret)
     XFree(prop_ret);
-  return (state);
+  return state;
 }
 
 GHOST_TWindowState GHOST_WindowX11::getState() const
@@ -1040,7 +997,7 @@ GHOST_TWindowState GHOST_WindowX11::getState() const
     state_ret = GHOST_kWindowStateFullScreen;
   else if (netwmIsMaximized() == True)
     state_ret = GHOST_kWindowStateMaximized;
-  return (state_ret);
+  return state_ret;
 }
 
 GHOST_TSuccess GHOST_WindowX11::setState(GHOST_TWindowState state)
@@ -1078,7 +1035,7 @@ GHOST_TSuccess GHOST_WindowX11::setState(GHOST_TWindowState state)
     if (is_motif_full == True)
       motifFullScreen(False);
     icccmSetState(NormalState);
-    return (GHOST_kSuccess);
+    return GHOST_kSuccess;
   }
 
   if (state == GHOST_kWindowStateFullScreen) {
@@ -1087,7 +1044,7 @@ GHOST_TSuccess GHOST_WindowX11::setState(GHOST_TWindowState state)
      * isn't mapped.
      */
     if (cur_state == GHOST_kWindowStateMinimized)
-      return (GHOST_kFailure);
+      return GHOST_kFailure;
 
     m_normal_state = cur_state;
 
@@ -1097,7 +1054,7 @@ GHOST_TSuccess GHOST_WindowX11::setState(GHOST_TWindowState state)
       netwmFullScreen(True);
     if (is_motif_full == False)
       motifFullScreen(True);
-    return (GHOST_kSuccess);
+    return GHOST_kSuccess;
   }
 
   if (state == GHOST_kWindowStateMaximized) {
@@ -1106,7 +1063,7 @@ GHOST_TSuccess GHOST_WindowX11::setState(GHOST_TWindowState state)
      * isn't mapped.
      */
     if (cur_state == GHOST_kWindowStateMinimized)
-      return (GHOST_kFailure);
+      return GHOST_kFailure;
 
     if (is_full == True)
       netwmFullScreen(False);
@@ -1114,7 +1071,7 @@ GHOST_TSuccess GHOST_WindowX11::setState(GHOST_TWindowState state)
       motifFullScreen(False);
     if (is_max == False)
       netwmMaximized(True);
-    return (GHOST_kSuccess);
+    return GHOST_kSuccess;
   }
 
   if (state == GHOST_kWindowStateMinimized) {
@@ -1123,10 +1080,10 @@ GHOST_TSuccess GHOST_WindowX11::setState(GHOST_TWindowState state)
      * the window (maximized, full screen, etc).
      */
     icccmSetState(IconicState);
-    return (GHOST_kSuccess);
+    return GHOST_kSuccess;
   }
 
-  return (GHOST_kFailure);
+  return GHOST_kFailure;
 }
 
 GHOST_TSuccess GHOST_WindowX11::setOrder(GHOST_TWindowOrder order)
@@ -1169,7 +1126,7 @@ GHOST_TSuccess GHOST_WindowX11::setOrder(GHOST_TWindowOrder order)
 
     XGetWindowAttributes(m_display, m_window, &attr);
 
-    /* iconized windows give bad match error */
+    /* Minimized windows give bad match error. */
     if (attr.map_state == IsViewable)
       XSetInputFocus(m_display, m_window, RevertToPointerRoot, CurrentTime);
     XFlush(m_display);
@@ -1278,7 +1235,7 @@ GHOST_WindowX11::~GHOST_WindowX11()
   if (m_valid_setup) {
     static Atom Primary_atom, Clipboard_atom;
     Window p_owner, c_owner;
-    /*Change the owner of the Atoms to None if we are the owner*/
+    /* Change the owner of the Atoms to None if we are the owner. */
     Primary_atom = XInternAtom(m_display, "PRIMARY", False);
     Clipboard_atom = XInternAtom(m_display, "CLIPBOARD", False);
 
@@ -1362,6 +1319,7 @@ GHOST_Context *GHOST_WindowX11::newDrawingContext(GHOST_TDrawingContextType type
     for (int minor = 5; minor >= 0; --minor) {
 #ifdef WITH_GL_EGL
       context = new GHOST_ContextEGL(
+          this->m_system,
           m_wantStereoVisual,
           EGLNativeWindowType(m_window),
           EGLNativeDisplayType(m_display),
@@ -1392,7 +1350,8 @@ GHOST_Context *GHOST_WindowX11::newDrawingContext(GHOST_TDrawingContextType type
     }
 
 #ifdef WITH_GL_EGL
-    context = new GHOST_ContextEGL(m_wantStereoVisual,
+    context = new GHOST_ContextEGL(this->m_system,
+                                   m_wantStereoVisual,
                                    EGLNativeWindowType(m_window),
                                    EGLNativeDisplayType(m_display),
                                    profile_mask,
@@ -1625,8 +1584,8 @@ GHOST_TSuccess GHOST_WindowX11::hasCursorShape(GHOST_TStandardCursor shape)
   return getStandardCursor(shape, xcursor);
 }
 
-GHOST_TSuccess GHOST_WindowX11::setWindowCustomCursorShape(GHOST_TUns8 *bitmap,
-                                                           GHOST_TUns8 *mask,
+GHOST_TSuccess GHOST_WindowX11::setWindowCustomCursorShape(uint8_t *bitmap,
+                                                           uint8_t *mask,
                                                            int sizex,
                                                            int sizey,
                                                            int hotX,
@@ -1714,7 +1673,7 @@ GHOST_TSuccess GHOST_WindowX11::endFullScreen() const
   return GHOST_kSuccess;
 }
 
-GHOST_TUns16 GHOST_WindowX11::getDPIHint()
+uint16_t GHOST_WindowX11::getDPIHint()
 {
   /* Try to read DPI setting set using xrdb */
   char *resMan = XResourceManagerString(m_display);

@@ -118,7 +118,9 @@ struct knFlipComputeSecondaryParticlePotentials : public KernelBase {
     for (IndexInt x = i - radius; x <= i + radius; x++) {
       for (IndexInt y = j - radius; y <= j + radius; y++) {
         for (IndexInt z = k - radius; z <= k + radius; z++) {
-          if ((x == i && y == j && z == k) || !flags.isInBounds(Vec3i(x, y, z)) ||
+          // ensure that xyz is in bounds: use bnd=1 to ensure that vel.getCentered() always has a
+          // neighbor cell
+          if ((x == i && y == j && z == k) || !flags.isInBounds(Vec3i(x, y, z), 1) ||
               (flags(x, y, z) & jtype))
             continue;
 
@@ -390,7 +392,7 @@ static PyObject *_W_0(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipComputeSecondaryParticlePotentials", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       Grid<Real> &potTA = *_args.getPtr<Grid<Real>>("potTA", 0, &_lock);
@@ -477,7 +479,8 @@ struct knFlipSampleSecondaryParticlesMoreCylinders : public KernelBase {
                                               const Real k_ta,
                                               const Real k_wc,
                                               const Real dt,
-                                              const int itype = FlagGrid::TypeFluid)
+                                              const int itype,
+                                              RandomStream &rand)
       : KernelBase(&flags, 0),
         flags(flags),
         v(v),
@@ -495,7 +498,8 @@ struct knFlipSampleSecondaryParticlesMoreCylinders : public KernelBase {
         k_ta(k_ta),
         k_wc(k_wc),
         dt(dt),
-        itype(itype)
+        itype(itype),
+        rand(rand)
   {
     runMessage();
     run();
@@ -519,13 +523,13 @@ struct knFlipSampleSecondaryParticlesMoreCylinders : public KernelBase {
                  const Real k_ta,
                  const Real k_wc,
                  const Real dt,
-                 const int itype = FlagGrid::TypeFluid)
+                 const int itype,
+                 RandomStream &rand)
   {
 
     if (!(flags(i, j, k) & itype))
       return;
 
-    RandomStream mRand(9832);
     Real radius =
         0.25;  // diameter=0.5 => sampling with two cylinders in each dimension since cell size=1
     for (Real x = i - radius; x <= i + radius; x += 2 * radius) {
@@ -547,9 +551,9 @@ struct knFlipSampleSecondaryParticlesMoreCylinders : public KernelBase {
               cross(e1, dir));  // perpendicular to dir and e1, so e1 and e1 create reference plane
 
           for (int di = 0; di < n; di++) {
-            const Real r = radius * sqrt(mRand.getReal());        // distance to cylinder axis
-            const Real theta = mRand.getReal() * Real(2) * M_PI;  // azimuth
-            const Real h = mRand.getReal() * norm(dt * vi);       // distance to reference plane
+            const Real r = radius * sqrt(rand.getReal());        // distance to cylinder axis
+            const Real theta = rand.getReal() * Real(2) * M_PI;  // azimuth
+            const Real h = rand.getReal() * norm(dt * vi);       // distance to reference plane
             Vec3 xd = xi + r * cos(theta) * e1 + r * sin(theta) * e2 + h * getNormalized(vi);
             if (!flags.is3D())
               xd.z = 0;
@@ -559,7 +563,7 @@ struct knFlipSampleSecondaryParticlesMoreCylinders : public KernelBase {
                                       vi;  // init velocity of new particle
             Real temp = (KE + TA + WC) / 3;
             l_sec[l_sec.size() - 1] = ((lMax - lMin) * temp) + lMin +
-                                      mRand.getReal() * 0.1;  // init lifetime of new particle
+                                      rand.getReal() * 0.1;  // init lifetime of new particle
 
             // init type of new particle
             if (neighborRatio(i, j, k) < c_s) {
@@ -661,6 +665,11 @@ struct knFlipSampleSecondaryParticlesMoreCylinders : public KernelBase {
     return itype;
   }
   typedef int type16;
+  inline RandomStream &getArg17()
+  {
+    return rand;
+  }
+  typedef RandomStream type17;
   void runMessage()
   {
     debMsg("Executing kernel knFlipSampleSecondaryParticlesMoreCylinders ", 3);
@@ -694,7 +703,8 @@ struct knFlipSampleSecondaryParticlesMoreCylinders : public KernelBase {
              k_ta,
              k_wc,
              dt,
-             itype);
+             itype,
+             rand);
   }
   const FlagGrid &flags;
   const MACGrid &v;
@@ -713,6 +723,7 @@ struct knFlipSampleSecondaryParticlesMoreCylinders : public KernelBase {
   const Real k_wc;
   const Real dt;
   const int itype;
+  RandomStream &rand;
 };
 
 // adds secondary particles to &pts_sec for every fluid cell in &flags according to the potential
@@ -736,7 +747,8 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
                                  const Real k_ta,
                                  const Real k_wc,
                                  const Real dt,
-                                 const int itype = FlagGrid::TypeFluid)
+                                 const int itype,
+                                 RandomStream &rand)
       : KernelBase(&flags, 0),
         flags(flags),
         v(v),
@@ -754,7 +766,8 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
         k_ta(k_ta),
         k_wc(k_wc),
         dt(dt),
-        itype(itype)
+        itype(itype),
+        rand(rand)
   {
     runMessage();
     run();
@@ -778,7 +791,8 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
                  const Real k_ta,
                  const Real k_wc,
                  const Real dt,
-                 const int itype = FlagGrid::TypeFluid)
+                 const int itype,
+                 RandomStream &rand)
   {
 
     if (!(flags(i, j, k) & itype))
@@ -791,11 +805,8 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
     const int n = KE * (k_ta * TA + k_wc * WC) * dt;  // number of secondary particles
     if (n == 0)
       return;
-    RandomStream mRand(9832);
 
-    Vec3 xi = Vec3(i + mRand.getReal(),
-                   j + mRand.getReal(),
-                   k + mRand.getReal());  // randomized offset uniform in cell
+    Vec3 xi = Vec3(i, j, k) + rand.getVec3();  // randomized offset uniform in cell
     Vec3 vi = v.getInterpolated(xi);
     Vec3 dir = dt * vi;                               // direction of movement of current particle
     Vec3 e1 = getNormalized(Vec3(dir.z, 0, -dir.x));  // perpendicular to dir
@@ -803,9 +814,9 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
         cross(e1, dir));  // perpendicular to dir and e1, so e1 and e1 create reference plane
 
     for (int di = 0; di < n; di++) {
-      const Real r = Real(0.5) * sqrt(mRand.getReal());     // distance to cylinder axis
-      const Real theta = mRand.getReal() * Real(2) * M_PI;  // azimuth
-      const Real h = mRand.getReal() * norm(dt * vi);       // distance to reference plane
+      const Real r = Real(0.5) * sqrt(rand.getReal());     // distance to cylinder axis
+      const Real theta = rand.getReal() * Real(2) * M_PI;  // azimuth
+      const Real h = rand.getReal() * norm(dt * vi);       // distance to reference plane
       Vec3 xd = xi + r * cos(theta) * e1 + r * sin(theta) * e2 + h * getNormalized(vi);
       if (!flags.is3D())
         xd.z = 0;
@@ -815,7 +826,7 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
                                 vi;  // init velocity of new particle
       Real temp = (KE + TA + WC) / 3;
       l_sec[l_sec.size() - 1] = ((lMax - lMin) * temp) + lMin +
-                                mRand.getReal() * 0.1;  // init lifetime of new particle
+                                rand.getReal() * 0.1;  // init lifetime of new particle
 
       // init type of new particle
       if (neighborRatio(i, j, k) < c_s) {
@@ -914,6 +925,11 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
     return itype;
   }
   typedef int type16;
+  inline RandomStream &getArg17()
+  {
+    return rand;
+  }
+  typedef RandomStream type17;
   void runMessage()
   {
     debMsg("Executing kernel knFlipSampleSecondaryParticles ", 3);
@@ -947,7 +963,8 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
              k_ta,
              k_wc,
              dt,
-             itype);
+             itype,
+             rand);
   }
   const FlagGrid &flags;
   const MACGrid &v;
@@ -966,6 +983,7 @@ struct knFlipSampleSecondaryParticles : public KernelBase {
   const Real k_wc;
   const Real dt;
   const int itype;
+  RandomStream &rand;
 };
 
 void flipSampleSecondaryParticles(const std::string mode,
@@ -984,9 +1002,17 @@ void flipSampleSecondaryParticles(const std::string mode,
                                   const Real c_b,
                                   const Real k_ta,
                                   const Real k_wc,
-                                  const Real dt,
+                                  const Real dt = 0,
                                   const int itype = FlagGrid::TypeFluid)
 {
+
+  float timestep = dt;
+  if (dt <= 0)
+    timestep = flags.getParent()->getDt();
+
+  /* Every particle needs to get a different random offset. */
+  RandomStream rand(pts_sec.getSeed());
+
   if (mode == "single") {
     knFlipSampleSecondaryParticles(flags,
                                    v,
@@ -1003,8 +1029,9 @@ void flipSampleSecondaryParticles(const std::string mode,
                                    c_b,
                                    k_ta,
                                    k_wc,
-                                   dt,
-                                   itype);
+                                   timestep,
+                                   itype,
+                                   rand);
   }
   else if (mode == "multiple") {
     knFlipSampleSecondaryParticlesMoreCylinders(flags,
@@ -1022,8 +1049,9 @@ void flipSampleSecondaryParticles(const std::string mode,
                                                 c_b,
                                                 k_ta,
                                                 k_wc,
-                                                dt,
-                                                itype);
+                                                timestep,
+                                                itype,
+                                                rand);
   }
   else {
     throw std::invalid_argument("Unknown mode: use \"single\" or \"multiple\" instead!");
@@ -1036,7 +1064,7 @@ static PyObject *_W_1(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipSampleSecondaryParticles", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const std::string mode = _args.get<std::string>("mode", 0, &_lock);
@@ -1055,7 +1083,7 @@ static PyObject *_W_1(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
       const Real c_b = _args.get<Real>("c_b", 13, &_lock);
       const Real k_ta = _args.get<Real>("k_ta", 14, &_lock);
       const Real k_wc = _args.get<Real>("k_wc", 15, &_lock);
-      const Real dt = _args.get<Real>("dt", 16, &_lock);
+      const Real dt = _args.getOpt<Real>("dt", 16, 0, &_lock);
       const int itype = _args.getOpt<int>("itype", 17, FlagGrid::TypeFluid, &_lock);
       _retval = getPyNone();
       flipSampleSecondaryParticles(mode,
@@ -1099,7 +1127,7 @@ void PbRegister_flipSampleSecondaryParticles()
 // evaluates cubic spline with radius h and distance l in dim dimensions
 Real cubicSpline(const Real h, const Real l, const int dim)
 {
-  const Real h2 = square(h), h3 = h2 * h, h4 = h3 * h, h5 = h4 * h;
+  const Real h2 = square(h), h3 = h2 * h;
   const Real c[] = {
       Real(2e0 / (3e0 * h)), Real(10e0 / (7e0 * M_PI * h2)), Real(1e0 / (M_PI * h3))};
   const Real q = l / h;
@@ -1175,9 +1203,6 @@ struct knFlipUpdateSecondaryParticlesLinear : public KernelBase {
     }
 
     Vec3i gridpos = toVec3i(pts_sec[idx].pos);
-    int i = gridpos.x;
-    int j = gridpos.y;
-    int k = gridpos.z;
 
     // spray particle
     if (neighborRatio(gridpos) < c_s) {
@@ -1189,8 +1214,8 @@ struct knFlipUpdateSecondaryParticlesLinear : public KernelBase {
 
       // anti tunneling for small obstacles
       for (int ct = 1; ct < antitunneling; ct++) {
-        Vec3i tempPos = toVec3i(pts_sec[idx].pos +
-                                ct * (1 / Real(antitunneling)) * dt * v_sec[idx]);
+        Vec3i tempPos = toVec3iFloor(pts_sec[idx].pos +
+                                     ct * (1 / Real(antitunneling)) * dt * v_sec[idx]);
         if (!flags.isInBounds(tempPos) || flags(tempPos) & FlagGrid::TypeObstacle) {
           pts_sec.kill(idx);
           return;
@@ -1209,8 +1234,8 @@ struct knFlipUpdateSecondaryParticlesLinear : public KernelBase {
 
       // anti tunneling for small obstacles
       for (int ct = 1; ct < antitunneling; ct++) {
-        Vec3i tempPos = toVec3i(pts_sec[idx].pos +
-                                ct * (1 / Real(antitunneling)) * dt * v_sec[idx]);
+        Vec3i tempPos = toVec3iFloor(pts_sec[idx].pos +
+                                     ct * (1 / Real(antitunneling)) * dt * v_sec[idx]);
         if (!flags.isInBounds(tempPos) || flags(tempPos) & FlagGrid::TypeObstacle) {
           pts_sec.kill(idx);
           return;
@@ -1227,7 +1252,7 @@ struct knFlipUpdateSecondaryParticlesLinear : public KernelBase {
       const Vec3 vj = v.getInterpolated(pts_sec[idx].pos);
       // anti tunneling for small obstacles
       for (int ct = 1; ct < antitunneling; ct++) {
-        Vec3i tempPos = toVec3i(pts_sec[idx].pos + ct * (1 / Real(antitunneling)) * dt * vj);
+        Vec3i tempPos = toVec3iFloor(pts_sec[idx].pos + ct * (1 / Real(antitunneling)) * dt * vj);
         if (!flags.isInBounds(tempPos) || flags(tempPos) & FlagGrid::TypeObstacle) {
           pts_sec.kill(idx);
           return;
@@ -1449,8 +1474,8 @@ struct knFlipUpdateSecondaryParticlesCubic : public KernelBase {
 
       // anti tunneling for small obstacles
       for (int ct = 1; ct < antitunneling; ct++) {
-        Vec3i tempPos = toVec3i(pts_sec[idx].pos +
-                                ct * (1 / Real(antitunneling)) * dt * v_sec[idx]);
+        Vec3i tempPos = toVec3iFloor(pts_sec[idx].pos +
+                                     ct * (1 / Real(antitunneling)) * dt * v_sec[idx]);
         if (!flags.isInBounds(tempPos) || flags(tempPos) & FlagGrid::TypeObstacle) {
           pts_sec.kill(idx);
           return;
@@ -1490,8 +1515,8 @@ struct knFlipUpdateSecondaryParticlesCubic : public KernelBase {
 
       // anti tunneling for small obstacles
       for (int ct = 1; ct < antitunneling; ct++) {
-        Vec3i tempPos = toVec3i(pts_sec[idx].pos +
-                                ct * (1 / Real(antitunneling)) * dt * v_sec[idx]);
+        Vec3i tempPos = toVec3iFloor(pts_sec[idx].pos +
+                                     ct * (1 / Real(antitunneling)) * dt * v_sec[idx]);
         if (!flags.isInBounds(tempPos) || flags(tempPos) & FlagGrid::TypeObstacle) {
           pts_sec.kill(idx);
           return;
@@ -1529,8 +1554,8 @@ struct knFlipUpdateSecondaryParticlesCubic : public KernelBase {
 
       // anti tunneling for small obstacles
       for (int ct = 1; ct < antitunneling; ct++) {
-        Vec3i tempPos = toVec3i(pts_sec[idx].pos + ct * (1 / Real(antitunneling)) * dt *
-                                                       (sumNumerator / sumDenominator));
+        Vec3i tempPos = toVec3iFloor(pts_sec[idx].pos + ct * (1 / Real(antitunneling)) * dt *
+                                                            (sumNumerator / sumDenominator));
         if (!flags.isInBounds(tempPos) || flags(tempPos) & FlagGrid::TypeObstacle) {
           pts_sec.kill(idx);
           return;
@@ -1696,13 +1721,20 @@ void flipUpdateSecondaryParticles(const std::string mode,
                                   const Real k_d,
                                   const Real c_s,
                                   const Real c_b,
-                                  const Real dt,
+                                  const Real dt = 0,
+                                  bool scale = true,
                                   const int exclude = ParticleBase::PTRACER,
                                   const int antitunneling = 0,
                                   const int itype = FlagGrid::TypeFluid)
 {
 
-  Vec3 g = gravity / flags.getDx();
+  float gridScale = (scale) ? flags.getParent()->getDx() : 1;
+  Vec3 g = gravity / gridScale;
+
+  float timestep = dt;
+  if (dt <= 0)
+    timestep = flags.getParent()->getDt();
+
   if (mode == "linear") {
     knFlipUpdateSecondaryParticlesLinear(pts_sec,
                                          v_sec,
@@ -1716,7 +1748,7 @@ void flipUpdateSecondaryParticles(const std::string mode,
                                          k_d,
                                          c_s,
                                          c_b,
-                                         dt,
+                                         timestep,
                                          exclude,
                                          antitunneling);
   }
@@ -1734,7 +1766,7 @@ void flipUpdateSecondaryParticles(const std::string mode,
                                         k_d,
                                         c_s,
                                         c_b,
-                                        dt,
+                                        timestep,
                                         exclude,
                                         antitunneling,
                                         itype);
@@ -1751,7 +1783,7 @@ static PyObject *_W_2(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipUpdateSecondaryParticles", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const std::string mode = _args.get<std::string>("mode", 0, &_lock);
@@ -1769,10 +1801,11 @@ static PyObject *_W_2(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
       const Real k_d = _args.get<Real>("k_d", 11, &_lock);
       const Real c_s = _args.get<Real>("c_s", 12, &_lock);
       const Real c_b = _args.get<Real>("c_b", 13, &_lock);
-      const Real dt = _args.get<Real>("dt", 14, &_lock);
-      const int exclude = _args.getOpt<int>("exclude", 15, ParticleBase::PTRACER, &_lock);
-      const int antitunneling = _args.getOpt<int>("antitunneling", 16, 0, &_lock);
-      const int itype = _args.getOpt<int>("itype", 17, FlagGrid::TypeFluid, &_lock);
+      const Real dt = _args.getOpt<Real>("dt", 14, 0, &_lock);
+      bool scale = _args.getOpt<bool>("scale", 15, true, &_lock);
+      const int exclude = _args.getOpt<int>("exclude", 16, ParticleBase::PTRACER, &_lock);
+      const int antitunneling = _args.getOpt<int>("antitunneling", 17, 0, &_lock);
+      const int itype = _args.getOpt<int>("itype", 18, FlagGrid::TypeFluid, &_lock);
       _retval = getPyNone();
       flipUpdateSecondaryParticles(mode,
                                    pts_sec,
@@ -1789,6 +1822,7 @@ static PyObject *_W_2(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
                                    c_s,
                                    c_b,
                                    dt,
+                                   scale,
                                    exclude,
                                    antitunneling,
                                    itype);
@@ -1829,7 +1863,7 @@ struct knFlipDeleteParticlesInObstacle : public KernelBase {
       return;
 
     const Vec3 &xi = pts[idx].pos;
-    const Vec3i xidx = toVec3i(xi);
+    const Vec3i xidx = toVec3iFloor(xi);
     // remove particles that completely left the bounds
     if (!flags.isInBounds(xidx)) {
       pts.kill(idx);
@@ -1837,7 +1871,7 @@ struct knFlipDeleteParticlesInObstacle : public KernelBase {
     }
     int gridIndex = flags.index(xidx);
     // remove particles that penetrate obstacles
-    if (flags[gridIndex] == FlagGrid::TypeObstacle || flags[gridIndex] == FlagGrid::TypeOutflow) {
+    if (flags.isObstacle(gridIndex) || flags.isOutflow(gridIndex)) {
       pts.kill(idx);
     }
   }
@@ -1884,7 +1918,7 @@ static PyObject *_W_3(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipDeleteParticlesInObstacle", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       BasicParticleSystem &pts = *_args.getPtr<BasicParticleSystem>("pts", 0, &_lock);
@@ -1952,7 +1986,7 @@ static PyObject *_W_4(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "debugGridInfo", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
@@ -2058,7 +2092,7 @@ static PyObject *_W_5(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "setFlagsFromLevelset", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
@@ -2159,7 +2193,7 @@ static PyObject *_W_6(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "setMACFromLevelset", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       MACGrid &v = *_args.getPtr<MACGrid>("v", 0, &_lock);
@@ -2371,7 +2405,7 @@ static PyObject *_W_7(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipComputePotentialTrappedAir", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       Grid<Real> &pot = *_args.getPtr<Grid<Real>>("pot", 0, &_lock);
@@ -2544,7 +2578,7 @@ static PyObject *_W_8(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipComputePotentialKineticEnergy", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       Grid<Real> &pot = *_args.getPtr<Grid<Real>>("pot", 0, &_lock);
@@ -2780,7 +2814,7 @@ static PyObject *_W_9(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipComputePotentialWaveCrest", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       Grid<Real> &pot = *_args.getPtr<Grid<Real>>("pot", 0, &_lock);
@@ -2872,7 +2906,7 @@ static PyObject *_W_10(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipComputeSurfaceNormals", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       Grid<Vec3> &normal = *_args.getPtr<Grid<Vec3>>("normal", 0, &_lock);
@@ -3029,7 +3063,7 @@ static PyObject *_W_11(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "flipUpdateNeighborRatio", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);

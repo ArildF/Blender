@@ -21,11 +21,11 @@
  * \ingroup edmask
  */
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stddef.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -40,8 +40,8 @@
 
 #include "ED_anim_api.h"
 #include "ED_keyframes_edit.h"
-#include "ED_mask.h" /* own include */
 #include "ED_markers.h"
+#include "ED_mask.h" /* own include */
 
 /* ***************************************** */
 /* NOTE ABOUT THIS FILE:
@@ -55,7 +55,7 @@
 /* Loops over the mask-frames for a mask-layer, and applies the given callback */
 bool ED_masklayer_frames_looper(MaskLayer *mask_layer,
                                 Scene *scene,
-                                short (*mask_layer_shape_cb)(MaskLayerShape *, Scene *))
+                                bool (*mask_layer_shape_cb)(MaskLayerShape *, Scene *))
 {
   MaskLayerShape *mask_layer_shape;
 
@@ -109,7 +109,7 @@ void ED_masklayer_make_cfra_list(MaskLayer *mask_layer, ListBase *elems, bool on
 /* Selection Tools */
 
 /* check if one of the frames in this layer is selected */
-bool ED_masklayer_frame_select_check(MaskLayer *mask_layer)
+bool ED_masklayer_frame_select_check(const MaskLayer *mask_layer)
 {
   MaskLayerShape *mask_layer_shape;
 
@@ -122,12 +122,12 @@ bool ED_masklayer_frame_select_check(MaskLayer *mask_layer)
   for (mask_layer_shape = mask_layer->splines_shapes.first; mask_layer_shape;
        mask_layer_shape = mask_layer_shape->next) {
     if (mask_layer_shape->flag & MASK_SHAPE_SELECT) {
-      return 1;
+      return true;
     }
   }
 
   /* not found */
-  return 0;
+  return false;
 }
 
 /* helper function - select mask-frame based on SELECT_* mode */
@@ -283,25 +283,25 @@ void ED_masklayer_frames_duplicate(MaskLayer *mask_layer)
 {
   MaskLayerShape *mask_layer_shape, *gpfn;
 
-  /* error checking */
+  /* Error checking. */
   if (mask_layer == NULL) {
     return;
   }
 
-  /* duplicate selected frames  */
+  /* Duplicate selected frames. */
   for (mask_layer_shape = mask_layer->splines_shapes.first; mask_layer_shape;
        mask_layer_shape = gpfn) {
     gpfn = mask_layer_shape->next;
 
-    /* duplicate this frame */
+    /* Duplicate this frame. */
     if (mask_layer_shape->flag & MASK_SHAPE_SELECT) {
       MaskLayerShape *mask_shape_dupe;
 
-      /* duplicate frame, and deselect self */
+      /* Duplicate frame, and deselect self. */
       mask_shape_dupe = BKE_mask_layer_shape_duplicate(mask_layer_shape);
       mask_layer_shape->flag &= ~MASK_SHAPE_SELECT;
 
-      /* XXX - how to handle duplicate frames? */
+      /* XXX: how to handle duplicate frames? */
       BLI_insertlinkafter(&mask_layer->splines_shapes, mask_layer_shape, mask_shape_dupe);
     }
   }
@@ -310,38 +310,38 @@ void ED_masklayer_frames_duplicate(MaskLayer *mask_layer)
 /* -------------------------------------- */
 /* Snap Tools */
 
-static short snap_mask_layer_nearest(MaskLayerShape *mask_layer_shape, Scene *UNUSED(scene))
+static bool snap_mask_layer_nearest(MaskLayerShape *mask_layer_shape, Scene *UNUSED(scene))
 {
   if (mask_layer_shape->flag & MASK_SHAPE_SELECT) {
     mask_layer_shape->frame = (int)(floor(mask_layer_shape->frame + 0.5));
   }
-  return 0;
+  return false;
 }
 
-static short snap_mask_layer_nearestsec(MaskLayerShape *mask_layer_shape, Scene *scene)
+static bool snap_mask_layer_nearestsec(MaskLayerShape *mask_layer_shape, Scene *scene)
 {
   float secf = (float)FPS;
   if (mask_layer_shape->flag & MASK_SHAPE_SELECT) {
     mask_layer_shape->frame = (int)(floorf(mask_layer_shape->frame / secf + 0.5f) * secf);
   }
-  return 0;
+  return false;
 }
 
-static short snap_mask_layer_cframe(MaskLayerShape *mask_layer_shape, Scene *scene)
+static bool snap_mask_layer_cframe(MaskLayerShape *mask_layer_shape, Scene *scene)
 {
   if (mask_layer_shape->flag & MASK_SHAPE_SELECT) {
     mask_layer_shape->frame = (int)CFRA;
   }
-  return 0;
+  return false;
 }
 
-static short snap_mask_layer_nearmarker(MaskLayerShape *mask_layer_shape, Scene *scene)
+static bool snap_mask_layer_nearmarker(MaskLayerShape *mask_layer_shape, Scene *scene)
 {
   if (mask_layer_shape->flag & MASK_SHAPE_SELECT) {
     mask_layer_shape->frame = (int)ED_markers_find_nearest_marker_time(
         &scene->markers, (float)mask_layer_shape->frame);
   }
-  return 0;
+  return false;
 }
 
 /* snap selected frames to ... */

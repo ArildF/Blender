@@ -29,10 +29,10 @@
 /* Number of chunks to test with */
 #define NUM_BLOCKS 10
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include "MEM_guardedalloc.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static void mem_error_cb(const char *errorStr)
 {
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
   /* ----------------------------------------------------------------- */
   /* Round two, do a normal allocation, and corrupt some blocks.       */
   /* ----------------------------------------------------------------- */
-  /* switch off, because it will complain about some things.           */
+  /* Switch off, because it will complain about some things. */
   MEM_set_error_callback(NULL);
 
   for (i = 0; i < NUM_BLOCKS; i++) {
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
     p[i] = MEM_callocN(blocksize, strdup(tagstring));
   }
 
-  /* now corrupt a few blocks...*/
+  /* Now corrupt a few blocks. */
   ip = (int *)p[5] - 50;
   for (i = 0; i < 1000; i++, ip++)
     *ip = i + 1;
@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
       fprintf(stderr, "|\n|--* Errors were detected\n");
     }
     else {
-      fprintf(stderr, "|\n|--* Test exited succesfully\n");
+      fprintf(stderr, "|\n|--* Test exited successfully\n");
     }
 
     fprintf(stderr, "|\n*** Finished test\n\n");

@@ -17,23 +17,22 @@
  * All rights reserved.
  *
  * The Original Code is: some of this file.
- *
- * */
+ */
 
-#ifndef __BLI_MATH_BASE_H__
-#define __BLI_MATH_BASE_H__
+#pragma once
 
 /** \file
  * \ingroup bli
  */
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(_USE_MATH_DEFINES)
 #  define _USE_MATH_DEFINES
 #endif
 
-#include <math.h>
 #include "BLI_assert.h"
 #include "BLI_math_inline.h"
+#include "BLI_sys_types.h"
+#include <math.h>
 
 #ifndef M_PI
 #  define M_PI 3.14159265358979323846 /* pi */
@@ -92,6 +91,10 @@ static const int NAN_INT = 0x7FC00000;
 #  pragma GCC diagnostic ignored "-Wredundant-decls"
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /******************************* Float ******************************/
 
 MINLINE float pow2f(float x);
@@ -114,6 +117,26 @@ MINLINE float sasqrt(float fac);
 MINLINE float interpf(float a, float b, float t);
 MINLINE double interpd(double a, double b, double t);
 
+MINLINE float ratiof(float min, float max, float pos);
+MINLINE double ratiod(double min, double max, double pos);
+
+/* NOTE: Compilers will upcast all types smaller than int to int when performing arithmetic
+ * operation. */
+MINLINE int square_s(short a);
+MINLINE int square_uchar(unsigned char a);
+MINLINE int cube_s(short a);
+MINLINE int cube_uchar(unsigned char a);
+
+MINLINE int square_i(int a);
+MINLINE unsigned int square_uint(unsigned int a);
+MINLINE float square_f(float a);
+MINLINE double square_d(double a);
+
+MINLINE int cube_i(int a);
+MINLINE unsigned int cube_uint(unsigned int a);
+MINLINE float cube_f(float a);
+MINLINE double cube_d(double a);
+
 MINLINE float min_ff(float a, float b);
 MINLINE float max_ff(float a, float b);
 MINLINE float min_fff(float a, float b, float c);
@@ -131,8 +154,14 @@ MINLINE int max_iii(int a, int b, int c);
 MINLINE int min_iiii(int a, int b, int c, int d);
 MINLINE int max_iiii(int a, int b, int c, int d);
 
+MINLINE uint min_uu(uint a, uint b);
+MINLINE uint max_uu(uint a, uint b);
+
 MINLINE size_t min_zz(size_t a, size_t b);
 MINLINE size_t max_zz(size_t a, size_t b);
+
+MINLINE char min_cc(char a, char b);
+MINLINE char max_cc(char a, char b);
 
 MINLINE int clamp_i(int value, int min, int max);
 MINLINE float clamp_f(float value, float min, float max);
@@ -195,6 +224,9 @@ MINLINE unsigned int round_db_to_uint_clamp(double a);
 int pow_i(int base, int exp);
 double double_round(double x, int ndigits);
 
+float floor_power_of_10(float f);
+float ceil_power_of_10(float f);
+
 #ifdef BLI_MATH_GCC_WARN_PRAGMA
 #  pragma GCC diagnostic pop
 #endif
@@ -205,6 +237,7 @@ double double_round(double x, int ndigits);
 #ifndef NDEBUG
 /** \note 0.0001 is too small because normals may be converted from short's: see T34322. */
 #  define BLI_ASSERT_UNIT_EPSILON 0.0002f
+#  define BLI_ASSERT_UNIT_EPSILON_DB 0.0002
 /**
  * \note Checks are flipped so NAN doesn't assert.
  * This is done because we're making sure the value was normalized and in the case we
@@ -215,6 +248,14 @@ double double_round(double x, int ndigits);
       const float _test_unit = len_squared_v3(v); \
       BLI_assert(!(fabsf(_test_unit - 1.0f) >= BLI_ASSERT_UNIT_EPSILON) || \
                  !(fabsf(_test_unit) >= BLI_ASSERT_UNIT_EPSILON)); \
+    } \
+    (void)0
+
+#  define BLI_ASSERT_UNIT_V3_DB(v) \
+    { \
+      const double _test_unit = len_squared_v3_db(v); \
+      BLI_assert(!(fabs(_test_unit - 1.0) >= BLI_ASSERT_UNIT_EPSILON_DB) || \
+                 !(fabs(_test_unit) >= BLI_ASSERT_UNIT_EPSILON_DB)); \
     } \
     (void)0
 
@@ -255,10 +296,13 @@ double double_round(double x, int ndigits);
 #else
 #  define BLI_ASSERT_UNIT_V2(v) (void)(v)
 #  define BLI_ASSERT_UNIT_V3(v) (void)(v)
+#  define BLI_ASSERT_UNIT_V3_DB(v) (void)(v)
 #  define BLI_ASSERT_UNIT_QUAT(v) (void)(v)
 #  define BLI_ASSERT_ZERO_M3(m) (void)(m)
 #  define BLI_ASSERT_ZERO_M4(m) (void)(m)
 #  define BLI_ASSERT_UNIT_M3(m) (void)(m)
 #endif
 
-#endif /* __BLI_MATH_BASE_H__ */
+#ifdef __cplusplus
+}
+#endif

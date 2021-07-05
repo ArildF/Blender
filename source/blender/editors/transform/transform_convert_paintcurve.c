@@ -29,7 +29,6 @@
 
 #include "BKE_context.h"
 #include "BKE_paint.h"
-#include "BKE_report.h"
 
 #include "transform.h"
 #include "transform_convert.h"
@@ -41,7 +40,6 @@ typedef struct TransDataPaintCurve {
 
 /* -------------------------------------------------------------------- */
 /** \name Paint Curve Transform Creation
- *
  * \{ */
 
 #define PC_IS_ANY_SEL(pc) (((pc)->bez.f1 | (pc)->bez.f2 | (pc)->bez.f3) & SELECT)
@@ -155,13 +153,11 @@ void createTransPaintCurveVerts(bContext *C, TransInfo *t)
         total += 3;
         continue;
       }
-      else {
-        if (pcp->bez.f1 & SELECT) {
-          total++;
-        }
-        if (pcp->bez.f3 & SELECT) {
-          total++;
-        }
+      if (pcp->bez.f1 & SELECT) {
+        total++;
+      }
+      if (pcp->bez.f3 & SELECT) {
+        total++;
       }
     }
   }
@@ -206,7 +202,6 @@ void createTransPaintCurveVerts(bContext *C, TransInfo *t)
 
 /* -------------------------------------------------------------------- */
 /** \name Paint Curve Transform Flush
- *
  * \{ */
 
 void flushTransPaintCurve(TransInfo *t)

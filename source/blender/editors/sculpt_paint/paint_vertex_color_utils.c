@@ -220,7 +220,7 @@ BLI_INLINE uint mcol_lighten(uint col_src, uint col_dst, int fac)
   if (fac == 0) {
     return col_src;
   }
-  else if (fac >= 255) {
+  if (fac >= 255) {
     return col_dst;
   }
 
@@ -230,7 +230,7 @@ BLI_INLINE uint mcol_lighten(uint col_src, uint col_dst, int fac)
   cp_dst = (uchar *)&col_dst;
   cp_mix = (uchar *)&col_mix;
 
-  /* See if are lighter, if so mix, else don't do anything.
+  /* See if we're lighter, if so mix, else don't do anything.
    * if the paint color is darker then the original, then ignore */
   if (IMB_colormanagement_get_luminance_byte(cp_src) >
       IMB_colormanagement_get_luminance_byte(cp_dst)) {
@@ -254,7 +254,7 @@ BLI_INLINE uint mcol_darken(uint col_src, uint col_dst, int fac)
   if (fac == 0) {
     return col_src;
   }
-  else if (fac >= 255) {
+  if (fac >= 255) {
     return col_dst;
   }
 
@@ -264,7 +264,7 @@ BLI_INLINE uint mcol_darken(uint col_src, uint col_dst, int fac)
   cp_dst = (uchar *)&col_dst;
   cp_mix = (uchar *)&col_mix;
 
-  /* See if were darker, if so mix, else don't do anything.
+  /* See if we're darker, if so mix, else don't do anything.
    * if the paint color is brighter then the original, then ignore */
   if (IMB_colormanagement_get_luminance_byte(cp_src) <
       IMB_colormanagement_get_luminance_byte(cp_dst)) {
@@ -435,9 +435,7 @@ BLI_INLINE uint mcol_softlight(uint col_src, uint col_dst, int fac)
   cp_dst = (uchar *)&col_dst;
   cp_mix = (uchar *)&col_mix;
 
-  int i = 0;
-
-  for (i = 0; i < 4; i++) {
+  for (int i = 0; i < 4; i++) {
     if (cp_src[i] < 127) {
       temp = ((2 * ((cp_dst[i] / 2) + 64)) * cp_src[i]) / 255;
     }
@@ -612,7 +610,9 @@ BLI_INLINE uint mcol_alpha_sub(uint col_src, int fac)
   return col_mix;
 }
 
-/* wpaint has 'ED_wpaint_blend_tool' */
+/**
+ * \note weight-paint has an equivalent function: #ED_wpaint_blend_tool
+ */
 uint ED_vpaint_blend_tool(const int tool, const uint col, const uint paintcol, const int alpha_i)
 {
   switch ((IMB_BlendMode)tool) {

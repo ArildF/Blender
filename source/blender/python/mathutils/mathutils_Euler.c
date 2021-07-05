@@ -22,10 +22,10 @@
 
 #include "mathutils.h"
 
+#include "../generic/py_capi_utils.h"
+#include "../generic/python_utildefines.h"
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
-#include "../generic/python_utildefines.h"
-#include "../generic/py_capi_utils.h"
 
 #ifndef MATH_STANDALONE
 #  include "BLI_dynstr.h"
@@ -88,7 +88,7 @@ short euler_order_from_string(const char *str, const char *error_prefix)
 #  define MAKE_ID3(a, b, c) (((a) << 24) | ((b) << 16) | ((c) << 8))
 #endif
 
-    switch (*((PY_INT32_T *)str)) {
+    switch (*((const PY_INT32_T *)str)) {
       case MAKE_ID3('X', 'Y', 'Z'):
         return EULER_ORDER_XYZ;
       case MAKE_ID3('X', 'Z', 'Y'):
@@ -110,7 +110,7 @@ short euler_order_from_string(const char *str, const char *error_prefix)
   return -1;
 }
 
-/* note: BaseMath_ReadCallback must be called beforehand */
+/* NOTE: BaseMath_ReadCallback must be called beforehand. */
 static PyObject *Euler_ToTupleExt(EulerObject *self, int ndigits)
 {
   PyObject *ret;
@@ -558,7 +558,7 @@ static PyObject *Euler_subscript(EulerObject *self, PyObject *item)
     }
     return Euler_item(self, i);
   }
-  else if (PySlice_Check(item)) {
+  if (PySlice_Check(item)) {
     Py_ssize_t start, stop, step, slicelength;
 
     if (PySlice_GetIndicesEx(item, EULER_SIZE, &start, &stop, &step, &slicelength) < 0) {
@@ -568,19 +568,17 @@ static PyObject *Euler_subscript(EulerObject *self, PyObject *item)
     if (slicelength <= 0) {
       return PyTuple_New(0);
     }
-    else if (step == 1) {
+    if (step == 1) {
       return Euler_slice(self, start, stop);
     }
-    else {
-      PyErr_SetString(PyExc_IndexError, "slice steps not supported with eulers");
-      return NULL;
-    }
-  }
-  else {
-    PyErr_Format(
-        PyExc_TypeError, "euler indices must be integers, not %.200s", Py_TYPE(item)->tp_name);
+
+    PyErr_SetString(PyExc_IndexError, "slice steps not supported with eulers");
     return NULL;
   }
+
+  PyErr_Format(
+      PyExc_TypeError, "euler indices must be integers, not %.200s", Py_TYPE(item)->tp_name);
+  return NULL;
 }
 
 static int Euler_ass_subscript(EulerObject *self, PyObject *item, PyObject *value)
@@ -595,7 +593,7 @@ static int Euler_ass_subscript(EulerObject *self, PyObject *item, PyObject *valu
     }
     return Euler_ass_item(self, i, value);
   }
-  else if (PySlice_Check(item)) {
+  if (PySlice_Check(item)) {
     Py_ssize_t start, stop, step, slicelength;
 
     if (PySlice_GetIndicesEx(item, EULER_SIZE, &start, &stop, &step, &slicelength) < 0) {
@@ -605,16 +603,14 @@ static int Euler_ass_subscript(EulerObject *self, PyObject *item, PyObject *valu
     if (step == 1) {
       return Euler_ass_slice(self, start, stop, value);
     }
-    else {
-      PyErr_SetString(PyExc_IndexError, "slice steps not supported with euler");
-      return -1;
-    }
-  }
-  else {
-    PyErr_Format(
-        PyExc_TypeError, "euler indices must be integers, not %.200s", Py_TYPE(item)->tp_name);
+
+    PyErr_SetString(PyExc_IndexError, "slice steps not supported with euler");
     return -1;
   }
+
+  PyErr_Format(
+      PyExc_TypeError, "euler indices must be integers, not %.200s", Py_TYPE(item)->tp_name);
+  return -1;
 }
 
 /* -----------------PROTCOL DECLARATIONS-------------------------- */
@@ -623,9 +619,9 @@ static PySequenceMethods Euler_SeqMethods = {
     (binaryfunc)NULL,                /* sq_concat */
     (ssizeargfunc)NULL,              /* sq_repeat */
     (ssizeargfunc)Euler_item,        /* sq_item */
-    (ssizessizeargfunc)NULL,         /* sq_slice, deprecated  */
+    (ssizessizeargfunc)NULL,         /* sq_slice (deprecated) */
     (ssizeobjargproc)Euler_ass_item, /* sq_ass_item */
-    (ssizessizeobjargproc)NULL,      /* sq_ass_slice, deprecated */
+    (ssizessizeobjargproc)NULL,      /* sq_ass_slice (deprecated) */
     (objobjproc)NULL,                /* sq_contains */
     (binaryfunc)NULL,                /* sq_inplace_concat */
     (ssizeargfunc)NULL,              /* sq_inplace_repeat */
@@ -674,7 +670,7 @@ static int Euler_order_set(EulerObject *self, PyObject *value, void *UNUSED(clos
     return -1;
   }
 
-  if (((order_str = _PyUnicode_AsString(value)) == NULL) ||
+  if (((order_str = PyUnicode_AsUTF8(value)) == NULL) ||
       ((order = euler_order_from_string(order_str, "euler.order")) == -1)) {
     return -1;
   }
@@ -848,8 +844,8 @@ PyObject *Euler_CreatePyObject_wrap(float eul[3], const short order, PyTypeObjec
 
 PyObject *Euler_CreatePyObject_cb(PyObject *cb_user,
                                   const short order,
-                                  unsigned char cb_type,
-                                  unsigned char cb_subtype)
+                                  uchar cb_type,
+                                  uchar cb_subtype)
 {
   EulerObject *self = (EulerObject *)Euler_CreatePyObject(NULL, order, NULL);
   if (self) {

@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_CONFIG_H__
-#define __FREESTYLE_CONFIG_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -31,7 +30,7 @@ namespace Freestyle {
 namespace Config {
 
 // Directory separators
-// TODO Use Blender's stuff for such things!
+// TODO: Use Blender's stuff for such things!
 #ifdef WIN32
 static const string DIR_SEP("\\");
 static const string PATH_SEP(";");
@@ -43,5 +42,3 @@ static const string PATH_SEP(":");
 }  // end of namespace Config
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_CONFIG_H__

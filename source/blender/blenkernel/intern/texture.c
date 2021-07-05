@@ -21,45 +21,222 @@
  * \ingroup bke
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_kdopbvh.h"
-#include "BLI_utildefines.h"
+#include "BLI_listbase.h"
+#include "BLI_math.h"
 #include "BLI_math_color.h"
+#include "BLI_utildefines.h"
 
-#include "DNA_key_types.h"
-#include "DNA_object_types.h"
-#include "DNA_material_types.h"
+#include "BLT_translation.h"
+
+/* Allow using deprecated functionality for .blend file I/O. */
+#define DNA_DEPRECATED_ALLOW
+
 #include "DNA_brush_types.h"
-#include "DNA_node_types.h"
 #include "DNA_color_types.h"
-#include "DNA_particle_types.h"
-#include "DNA_linestyle_types.h"
 #include "DNA_defaults.h"
+#include "DNA_key_types.h"
+#include "DNA_linestyle_types.h"
+#include "DNA_material_types.h"
+#include "DNA_node_types.h"
+#include "DNA_object_types.h"
+#include "DNA_particle_types.h"
 
 #include "IMB_imbuf.h"
 
 #include "BKE_main.h"
 
+#include "BKE_anim_data.h"
 #include "BKE_colorband.h"
-#include "BKE_library.h"
-#include "BKE_image.h"
-#include "BKE_material.h"
-#include "BKE_texture.h"
-#include "BKE_key.h"
-#include "BKE_icons.h"
-#include "BKE_node.h"
-#include "BKE_animsys.h"
 #include "BKE_colortools.h"
+#include "BKE_icons.h"
+#include "BKE_idtype.h"
+#include "BKE_image.h"
+#include "BKE_key.h"
+#include "BKE_lib_id.h"
+#include "BKE_lib_query.h"
+#include "BKE_material.h"
+#include "BKE_node.h"
 #include "BKE_scene.h"
+#include "BKE_texture.h"
 
-#include "RE_shader_ext.h"
+#include "RE_texture.h"
+
+#include "BLO_read_write.h"
+
+static void texture_init_data(ID *id)
+{
+  Tex *texture = (Tex *)id;
+
+  BLI_assert(MEMCMP_STRUCT_AFTER_IS_ZERO(texture, id));
+
+  MEMCPY_STRUCT_AFTER(texture, DNA_struct_default_get(Tex), id);
+
+  BKE_imageuser_default(&texture->iuser);
+}
+
+static void texture_copy_data(Main *bmain, ID *id_dst, const ID *id_src, const int flag)
+{
+  Tex *texture_dst = (Tex *)id_dst;
+  const Tex *texture_src = (const Tex *)id_src;
+
+  const bool is_localized = (flag & LIB_ID_CREATE_LOCAL) != 0;
+  /* We always need allocation of our private ID data. */
+  const int flag_private_id_data = flag & ~LIB_ID_CREATE_NO_ALLOCATE;
+
+  if (!BKE_texture_is_image_user(texture_src)) {
+    texture_dst->ima = NULL;
+  }
+
+  if (texture_dst->coba) {
+    texture_dst->coba = MEM_dupallocN(texture_dst->coba);
+  }
+  if (texture_src->nodetree) {
+    if (texture_src->nodetree->execdata) {
+      ntreeTexEndExecTree(texture_src->nodetree->execdata);
+    }
+
+    if (is_localized) {
+      texture_dst->nodetree = ntreeLocalize(texture_src->nodetree);
+    }
+    else {
+      BKE_id_copy_ex(
+          bmain, (ID *)texture_src->nodetree, (ID **)&texture_dst->nodetree, flag_private_id_data);
+    }
+  }
+
+  if ((flag & LIB_ID_COPY_NO_PREVIEW) == 0) {
+    BKE_previewimg_id_copy(&texture_dst->id, &texture_src->id);
+  }
+  else {
+    texture_dst->preview = NULL;
+  }
+}
+
+static void texture_free_data(ID *id)
+{
+  Tex *texture = (Tex *)id;
+
+  /* is no lib link block, but texture extension */
+  if (texture->nodetree) {
+    ntreeFreeEmbeddedTree(texture->nodetree);
+    MEM_freeN(texture->nodetree);
+    texture->nodetree = NULL;
+  }
+
+  MEM_SAFE_FREE(texture->coba);
+
+  BKE_icon_id_delete((ID *)texture);
+  BKE_previewimg_free(&texture->preview);
+}
+
+static void texture_foreach_id(ID *id, LibraryForeachIDData *data)
+{
+  Tex *texture = (Tex *)id;
+  if (texture->nodetree) {
+    /* nodetree **are owned by IDs**, treat them as mere sub-data and not real ID! */
+    BKE_library_foreach_ID_embedded(data, (ID **)&texture->nodetree);
+  }
+  BKE_LIB_FOREACHID_PROCESS(data, texture->ima, IDWALK_CB_USER);
+}
+
+static void texture_blend_write(BlendWriter *writer, ID *id, const void *id_address)
+{
+  Tex *tex = (Tex *)id;
+  if (tex->id.us > 0 || BLO_write_is_undo(writer)) {
+    /* write LibData */
+    BLO_write_id_struct(writer, Tex, id_address, &tex->id);
+    BKE_id_blend_write(writer, &tex->id);
+
+    if (tex->adt) {
+      BKE_animdata_blend_write(writer, tex->adt);
+    }
+
+    /* direct data */
+    if (tex->coba) {
+      BLO_write_struct(writer, ColorBand, tex->coba);
+    }
+
+    /* nodetree is integral part of texture, no libdata */
+    if (tex->nodetree) {
+      BLO_write_struct(writer, bNodeTree, tex->nodetree);
+      ntreeBlendWrite(writer, tex->nodetree);
+    }
+
+    BKE_previewimg_blend_write(writer, tex->preview);
+  }
+}
+
+static void texture_blend_read_data(BlendDataReader *reader, ID *id)
+{
+  Tex *tex = (Tex *)id;
+  BLO_read_data_address(reader, &tex->adt);
+  BKE_animdata_blend_read_data(reader, tex->adt);
+
+  BLO_read_data_address(reader, &tex->coba);
+
+  BLO_read_data_address(reader, &tex->preview);
+  BKE_previewimg_blend_read(reader, tex->preview);
+
+  tex->iuser.ok = 1;
+  tex->iuser.scene = NULL;
+}
+
+static void texture_blend_read_lib(BlendLibReader *reader, ID *id)
+{
+  Tex *tex = (Tex *)id;
+  BLO_read_id_address(reader, tex->id.lib, &tex->ima);
+  BLO_read_id_address(reader, tex->id.lib, &tex->ipo); /* XXX deprecated - old animation system */
+}
+
+static void texture_blend_read_expand(BlendExpander *expander, ID *id)
+{
+  Tex *tex = (Tex *)id;
+  BLO_expand(expander, tex->ima);
+  BLO_expand(expander, tex->ipo); /* XXX deprecated - old animation system */
+}
+
+IDTypeInfo IDType_ID_TE = {
+    .id_code = ID_TE,
+    .id_filter = FILTER_ID_TE,
+    .main_listbase_index = INDEX_ID_TE,
+    .struct_size = sizeof(Tex),
+    .name = "Texture",
+    .name_plural = "textures",
+    .translation_context = BLT_I18NCONTEXT_ID_TEXTURE,
+    .flags = 0,
+
+    .init_data = texture_init_data,
+    .copy_data = texture_copy_data,
+    .free_data = texture_free_data,
+    .make_local = NULL,
+    .foreach_id = texture_foreach_id,
+    .foreach_cache = NULL,
+    .owner_get = NULL,
+
+    .blend_write = texture_blend_write,
+    .blend_read_data = texture_blend_read_data,
+    .blend_read_lib = texture_blend_read_lib,
+    .blend_read_expand = texture_blend_read_expand,
+
+    .blend_read_undo_preserve = NULL,
+
+    .lib_override_apply_post = NULL,
+};
+
+/* Utils for all IDs using those texture slots. */
+void BKE_texture_mtex_foreach_id(LibraryForeachIDData *data, MTex *mtex)
+{
+  BKE_LIB_FOREACHID_PROCESS(data, mtex->object, IDWALK_CB_NOP);
+  BKE_LIB_FOREACHID_PROCESS(data, mtex->tex, IDWALK_CB_USER);
+}
 
 /* ****************** Mapping ******************* */
 
@@ -193,33 +370,11 @@ void BKE_texture_colormapping_default(ColorMapping *colormap)
 
 /* ******************* TEX ************************ */
 
-/** Free (or release) any data used by this texture (does not free the texure itself). */
-void BKE_texture_free(Tex *tex)
-{
-  BKE_animdata_free((ID *)tex, false);
-
-  /* is no lib link block, but texture extension */
-  if (tex->nodetree) {
-    ntreeFreeNestedTree(tex->nodetree);
-    MEM_freeN(tex->nodetree);
-    tex->nodetree = NULL;
-  }
-
-  MEM_SAFE_FREE(tex->coba);
-
-  BKE_icon_id_delete((ID *)tex);
-  BKE_previewimg_free(&tex->preview);
-}
-
 /* ------------------------------------------------------------------------- */
 
 void BKE_texture_default(Tex *tex)
 {
-  BLI_assert(MEMCMP_STRUCT_AFTER_IS_ZERO(tex, id));
-
-  MEMCPY_STRUCT_AFTER(tex, DNA_struct_default_get(Tex), id);
-
-  BKE_imageuser_default(&tex->iuser);
+  texture_init_data(&tex->id);
 }
 
 void BKE_texture_type_set(Tex *tex, int type)
@@ -233,9 +388,7 @@ Tex *BKE_texture_add(Main *bmain, const char *name)
 {
   Tex *tex;
 
-  tex = BKE_libblock_alloc(bmain, ID_TE, name, 0);
-
-  BKE_texture_default(tex);
+  tex = BKE_id_new(bmain, ID_TE, name);
 
   return tex;
 }
@@ -304,92 +457,6 @@ MTex *BKE_texture_mtex_add_id(ID *id, int slot)
 }
 
 /* ------------------------------------------------------------------------- */
-
-/**
- * Only copy internal data of Texture ID from source
- * to already allocated/initialized destination.
- * You probably never want to use that directly,
- * use #BKE_id_copy or #BKE_id_copy_ex for typical needs.
- *
- * WARNING! This function will not handle ID user count!
- *
- * \param flag: Copying options (see BKE_library.h's LIB_ID_COPY_... flags for more).
- */
-void BKE_texture_copy_data(Main *bmain, Tex *tex_dst, const Tex *tex_src, const int flag)
-{
-  /* We always need allocation of our private ID data. */
-  const int flag_private_id_data = flag & ~LIB_ID_CREATE_NO_ALLOCATE;
-
-  if (!BKE_texture_is_image_user(tex_src)) {
-    tex_dst->ima = NULL;
-  }
-
-  if (tex_dst->coba) {
-    tex_dst->coba = MEM_dupallocN(tex_dst->coba);
-  }
-  if (tex_src->nodetree) {
-    if (tex_src->nodetree->execdata) {
-      ntreeTexEndExecTree(tex_src->nodetree->execdata);
-    }
-    BKE_id_copy_ex(
-        bmain, (ID *)tex_src->nodetree, (ID **)&tex_dst->nodetree, flag_private_id_data);
-  }
-
-  if ((flag & LIB_ID_COPY_NO_PREVIEW) == 0) {
-    BKE_previewimg_id_copy(&tex_dst->id, &tex_src->id);
-  }
-  else {
-    tex_dst->preview = NULL;
-  }
-}
-
-Tex *BKE_texture_copy(Main *bmain, const Tex *tex)
-{
-  Tex *tex_copy;
-  BKE_id_copy(bmain, &tex->id, (ID **)&tex_copy);
-  return tex_copy;
-}
-
-/* texture copy without adding to main dbase */
-Tex *BKE_texture_localize(Tex *tex)
-{
-  /* TODO(bastien): Replace with something like:
-   *
-   *   Tex *tex_copy;
-   *   BKE_id_copy_ex(bmain, &tex->id, (ID **)&tex_copy,
-   *                  LIB_ID_COPY_NO_MAIN | LIB_ID_COPY_NO_PREVIEW | LIB_ID_COPY_NO_USER_REFCOUNT,
-   *                  false);
-   *   return tex_copy;
-   *
-   * NOTE: Only possible once nested node trees are fully converted to that too. */
-
-  Tex *texn;
-
-  texn = BKE_libblock_copy_for_localize(&tex->id);
-
-  /* image texture: BKE_texture_free also doesn't decrease */
-
-  if (texn->coba) {
-    texn->coba = MEM_dupallocN(texn->coba);
-  }
-
-  texn->preview = NULL;
-
-  if (tex->nodetree) {
-    texn->nodetree = ntreeLocalize(tex->nodetree);
-  }
-
-  texn->id.tag |= LIB_TAG_LOCALIZED;
-
-  return texn;
-}
-
-/* ------------------------------------------------------------------------- */
-
-void BKE_texture_make_local(Main *bmain, Tex *tex, const bool lib_local)
-{
-  BKE_id_make_local_generic(bmain, &tex->id, true, lib_local);
-}
 
 Tex *give_current_linestyle_texture(FreestyleLineStyle *linestyle)
 {
@@ -632,11 +699,11 @@ bool BKE_texture_dependsOnTime(const struct Tex *texture)
   if (texture->ima && BKE_image_is_animated(texture->ima)) {
     return true;
   }
-  else if (texture->adt) {
+  if (texture->adt) {
     /* assume anything in adt means the texture is animated */
     return true;
   }
-  else if (texture->type == TEX_NOISE) {
+  if (texture->type == TEX_NOISE) {
     /* noise always varies with time */
     return true;
   }
@@ -647,7 +714,7 @@ bool BKE_texture_dependsOnTime(const struct Tex *texture)
 
 void BKE_texture_get_value_ex(const Scene *scene,
                               Tex *texture,
-                              float *tex_co,
+                              const float *tex_co,
                               TexResult *texres,
                               struct ImagePool *pool,
                               bool use_color_management)
@@ -674,8 +741,11 @@ void BKE_texture_get_value_ex(const Scene *scene,
   }
 }
 
-void BKE_texture_get_value(
-    const Scene *scene, Tex *texture, float *tex_co, TexResult *texres, bool use_color_management)
+void BKE_texture_get_value(const Scene *scene,
+                           Tex *texture,
+                           const float *tex_co,
+                           TexResult *texres,
+                           bool use_color_management)
 {
   BKE_texture_get_value_ex(scene, texture, tex_co, texres, NULL, use_color_management);
 }
@@ -684,7 +754,7 @@ static void texture_nodes_fetch_images_for_pool(Tex *texture,
                                                 bNodeTree *ntree,
                                                 struct ImagePool *pool)
 {
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (node->type == SH_NODE_TEX_IMAGE && node->id != NULL) {
       Image *image = (Image *)node->id;
       BKE_image_pool_acquire_ibuf(image, &texture->iuser, pool);

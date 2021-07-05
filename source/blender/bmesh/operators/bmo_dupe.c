@@ -22,8 +22,8 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_alloca.h"
+#include "BLI_math.h"
 
 #include "bmesh.h"
 
@@ -109,7 +109,7 @@ static BMEdge *bmo_edge_copy(BMOperator *op,
   BMO_slot_map_elem_insert(op, slot_edgemap_out, e_src, e_dst);
   BMO_slot_map_elem_insert(op, slot_edgemap_out, e_dst, e_src);
 
-  /* add to new/old edge map if necassary */
+  /* Add to new/old edge map if necessary. */
   if (rlen < 2) {
     /* not sure what non-manifold cases of greater than three
      * radial should do. */
@@ -363,10 +363,12 @@ void bmo_duplicate_exec(BMesh *bm, BMOperator *op)
 }
 
 #if 0 /* UNUSED */
-/* executes the duplicate operation, feeding elements of
- * type flag etypeflag and header flag flag to it.  note,
- * to get more useful information (such as the mapping from
- * original to new elements) you should run the dupe op manually */
+/**
+ * executes the duplicate operation, feeding elements of
+ * type flag etypeflag and header flag to it.
+ * \note to get more useful information (such as the mapping from
+ * original to new elements) you should run the dupe op manually.
+ */
 void BMO_dupe_from_flag(BMesh *bm, int htype, const char hflag)
 {
   BMOperator dupeop;

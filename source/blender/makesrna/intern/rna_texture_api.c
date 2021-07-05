@@ -18,8 +18,8 @@
  * \ingroup RNA
  */
 
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "BLI_utildefines.h"
@@ -30,19 +30,19 @@
 
 #ifdef RNA_RUNTIME
 
-#  include "IMB_imbuf.h"
-#  include "IMB_imbuf_types.h"
-#  include "DNA_scene_types.h"
 #  include "BKE_context.h"
 #  include "BKE_global.h"
+#  include "DNA_scene_types.h"
+#  include "IMB_imbuf.h"
+#  include "IMB_imbuf_types.h"
 #  include "RE_pipeline.h"
-#  include "RE_shader_ext.h"
+#  include "RE_texture.h"
 
 static void texture_evaluate(struct Tex *tex, float value[3], float r_color[4])
 {
   TexResult texres = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, NULL};
 
-  /* TODO(sergey): always use color management now.  */
+  /* TODO(sergey): always use color management now. */
   multitex_ext(tex, value, NULL, NULL, 1, &texres, 0, NULL, true, false);
 
   r_color[0] = texres.tr;

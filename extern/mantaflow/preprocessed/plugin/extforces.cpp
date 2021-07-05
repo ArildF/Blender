@@ -244,13 +244,15 @@ struct KnApplyForce : public KernelBase {
   bool additive;
 };
 
-//! add gravity forces to all fluid cells, automatically adapts to different grid sizes
+//! add gravity forces to all fluid cells, optionally  adapts to different grid sizes automatically
 void addGravity(const FlagGrid &flags,
                 MACGrid &vel,
                 Vec3 gravity,
-                const Grid<Real> *exclude = NULL)
+                const Grid<Real> *exclude = nullptr,
+                bool scale = true)
 {
-  Vec3 f = gravity * flags.getParent()->getDt() / flags.getDx();
+  float gridScale = (scale) ? flags.getDx() : 1;
+  Vec3 f = gravity * flags.getParent()->getDt() / gridScale;
   KnApplyForce(flags, vel, f, exclude, true);
 }
 static PyObject *_W_0(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
@@ -260,15 +262,16 @@ static PyObject *_W_0(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "addGravity", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
       MACGrid &vel = *_args.getPtr<MACGrid>("vel", 1, &_lock);
       Vec3 gravity = _args.get<Vec3>("gravity", 2, &_lock);
-      const Grid<Real> *exclude = _args.getPtrOpt<Grid<Real>>("exclude", 3, NULL, &_lock);
+      const Grid<Real> *exclude = _args.getPtrOpt<Grid<Real>>("exclude", 3, nullptr, &_lock);
+      bool scale = _args.getOpt<bool>("scale", 4, true, &_lock);
       _retval = getPyNone();
-      addGravity(flags, vel, gravity, exclude);
+      addGravity(flags, vel, gravity, exclude, scale);
       _args.check();
     }
     pbFinalizePlugin(parent, "addGravity", !noTiming);
@@ -287,14 +290,13 @@ void PbRegister_addGravity()
 }
 }
 
-//! add gravity forces to all fluid cells , but dont account for changing cell size
+//! Deprecated: use addGravity(scale=false) instead
 void addGravityNoScale(const FlagGrid &flags,
                        MACGrid &vel,
                        const Vec3 &gravity,
-                       const Grid<Real> *exclude = NULL)
+                       const Grid<Real> *exclude = nullptr)
 {
-  const Vec3 f = gravity * flags.getParent()->getDt();
-  KnApplyForce(flags, vel, f, exclude, true);
+  addGravity(flags, vel, gravity, exclude, false);
 }
 static PyObject *_W_1(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
 {
@@ -303,13 +305,13 @@ static PyObject *_W_1(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "addGravityNoScale", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
       MACGrid &vel = *_args.getPtr<MACGrid>("vel", 1, &_lock);
       const Vec3 &gravity = _args.get<Vec3>("gravity", 2, &_lock);
-      const Grid<Real> *exclude = _args.getPtrOpt<Grid<Real>>("exclude", 3, NULL, &_lock);
+      const Grid<Real> *exclude = _args.getPtrOpt<Grid<Real>>("exclude", 3, nullptr, &_lock);
       _retval = getPyNone();
       addGravityNoScale(flags, vel, gravity, exclude);
       _args.check();
@@ -412,14 +414,17 @@ struct KnAddBuoyancy : public KernelBase {
   Vec3 strength;
 };
 
-//! add Buoyancy force based on fctor (e.g. smoke density)
+//! add Buoyancy force based on factor (e.g. smoke density), optionally adapts to different grid
+//! sizes automatically
 void addBuoyancy(const FlagGrid &flags,
                  const Grid<Real> &density,
                  MACGrid &vel,
                  Vec3 gravity,
-                 Real coefficient = 1.)
+                 Real coefficient = 1.,
+                 bool scale = true)
 {
-  Vec3 f = -gravity * flags.getParent()->getDt() / flags.getParent()->getDx() * coefficient;
+  float gridScale = (scale) ? flags.getDx() : 1;
+  Vec3 f = -gravity * flags.getParent()->getDt() / gridScale * coefficient;
   KnAddBuoyancy(flags, density, vel, f);
 }
 static PyObject *_W_2(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
@@ -429,7 +434,7 @@ static PyObject *_W_2(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "addBuoyancy", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
@@ -437,8 +442,9 @@ static PyObject *_W_2(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
       MACGrid &vel = *_args.getPtr<MACGrid>("vel", 2, &_lock);
       Vec3 gravity = _args.get<Vec3>("gravity", 3, &_lock);
       Real coefficient = _args.getOpt<Real>("coefficient", 4, 1., &_lock);
+      bool scale = _args.getOpt<bool>("scale", 5, true, &_lock);
       _retval = getPyNone();
-      addBuoyancy(flags, density, vel, gravity, coefficient);
+      addBuoyancy(flags, density, vel, gravity, coefficient, scale);
       _args.check();
     }
     pbFinalizePlugin(parent, "addBuoyancy", !noTiming);
@@ -531,7 +537,7 @@ static PyObject *_W_3(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "setOpenBound", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
@@ -561,11 +567,11 @@ void PbRegister_setOpenBound()
 //! delete fluid and ensure empty flag in outflow cells, delete particles and density and set phi
 //! to 0.5
 void resetOutflow(FlagGrid &flags,
-                  Grid<Real> *phi = 0,
-                  BasicParticleSystem *parts = 0,
-                  Grid<Real> *real = 0,
-                  Grid<int> *index = 0,
-                  ParticleIndexSystem *indexSys = 0)
+                  Grid<Real> *phi = nullptr,
+                  BasicParticleSystem *parts = nullptr,
+                  Grid<Real> *real = nullptr,
+                  Grid<int> *index = nullptr,
+                  ParticleIndexSystem *indexSys = nullptr)
 {
   // check if phi and parts -> pindex and gpi already created -> access particles from cell index,
   // avoid extra looping over particles
@@ -617,16 +623,17 @@ static PyObject *_W_4(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "resetOutflow", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
-      Grid<Real> *phi = _args.getPtrOpt<Grid<Real>>("phi", 1, 0, &_lock);
-      BasicParticleSystem *parts = _args.getPtrOpt<BasicParticleSystem>("parts", 2, 0, &_lock);
-      Grid<Real> *real = _args.getPtrOpt<Grid<Real>>("real", 3, 0, &_lock);
-      Grid<int> *index = _args.getPtrOpt<Grid<int>>("index", 4, 0, &_lock);
+      Grid<Real> *phi = _args.getPtrOpt<Grid<Real>>("phi", 1, nullptr, &_lock);
+      BasicParticleSystem *parts = _args.getPtrOpt<BasicParticleSystem>(
+          "parts", 2, nullptr, &_lock);
+      Grid<Real> *real = _args.getPtrOpt<Grid<Real>>("real", 3, nullptr, &_lock);
+      Grid<int> *index = _args.getPtrOpt<Grid<int>>("index", 4, nullptr, &_lock);
       ParticleIndexSystem *indexSys = _args.getPtrOpt<ParticleIndexSystem>(
-          "indexSys", 5, 0, &_lock);
+          "indexSys", 5, nullptr, &_lock);
       _retval = getPyNone();
       resetOutflow(flags, phi, parts, real, index, indexSys);
       _args.check();
@@ -741,7 +748,7 @@ static PyObject *_W_5(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "setInflowBcs", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       MACGrid &vel = *_args.getPtr<MACGrid>("vel", 0, &_lock);
@@ -1058,13 +1065,13 @@ struct KnSetWallBcsFrac : public KernelBase {
 };
 
 //! set zero normal velocity boundary condition on walls
-// (optionally with second order accuracy using the obstacle SDF , fractions grid currentlyl not
+// (optionally with second order accuracy using the obstacle SDF , fractions grid currently not
 // needed)
 void setWallBcs(const FlagGrid &flags,
                 MACGrid &vel,
-                const MACGrid *obvel = 0,
-                const MACGrid *fractions = 0,
-                const Grid<Real> *phiObs = 0,
+                const MACGrid *obvel = nullptr,
+                const MACGrid *fractions = nullptr,
+                const Grid<Real> *phiObs = nullptr,
                 int boundaryWidth = 0)
 {
   if (!phiObs || !fractions) {
@@ -1083,14 +1090,14 @@ static PyObject *_W_6(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "setWallBcs", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
       MACGrid &vel = *_args.getPtr<MACGrid>("vel", 1, &_lock);
-      const MACGrid *obvel = _args.getPtrOpt<MACGrid>("obvel", 2, 0, &_lock);
-      const MACGrid *fractions = _args.getPtrOpt<MACGrid>("fractions", 3, 0, &_lock);
-      const Grid<Real> *phiObs = _args.getPtrOpt<Grid<Real>>("phiObs", 4, 0, &_lock);
+      const MACGrid *obvel = _args.getPtrOpt<MACGrid>("obvel", 2, nullptr, &_lock);
+      const MACGrid *fractions = _args.getPtrOpt<MACGrid>("fractions", 3, nullptr, &_lock);
+      const Grid<Real> *phiObs = _args.getPtrOpt<Grid<Real>>("phiObs", 4, nullptr, &_lock);
       int boundaryWidth = _args.getOpt<int>("boundaryWidth", 5, 0, &_lock);
       _retval = getPyNone();
       setWallBcs(flags, vel, obvel, fractions, phiObs, boundaryWidth);
@@ -1128,26 +1135,27 @@ struct KnAddForceIfLower : public KernelBase {
     if (!curFluid && !curEmpty)
       return;
 
+    Real minVal, maxVal, sum;
     if (flags.isFluid(i - 1, j, k) || (curFluid && flags.isEmpty(i - 1, j, k))) {
       Real forceMACX = 0.5 * (force(i - 1, j, k).x + force(i, j, k).x);
-      Real min = std::min(vel(i, j, k).x, forceMACX);
-      Real max = std::max(vel(i, j, k).x, forceMACX);
-      Real sum = vel(i, j, k).x + forceMACX;
-      vel(i, j, k).x = (forceMACX > 0) ? std::min(sum, max) : std::max(sum, min);
+      minVal = min(vel(i, j, k).x, forceMACX);
+      maxVal = max(vel(i, j, k).x, forceMACX);
+      sum = vel(i, j, k).x + forceMACX;
+      vel(i, j, k).x = (forceMACX > 0) ? min(sum, maxVal) : max(sum, minVal);
     }
     if (flags.isFluid(i, j - 1, k) || (curFluid && flags.isEmpty(i, j - 1, k))) {
       Real forceMACY = 0.5 * (force(i, j - 1, k).y + force(i, j, k).y);
-      Real min = std::min(vel(i, j, k).y, forceMACY);
-      Real max = std::max(vel(i, j, k).y, forceMACY);
-      Real sum = vel(i, j, k).y + forceMACY;
-      vel(i, j, k).y = (forceMACY > 0) ? std::min(sum, max) : std::max(sum, min);
+      minVal = min(vel(i, j, k).y, forceMACY);
+      maxVal = max(vel(i, j, k).y, forceMACY);
+      sum = vel(i, j, k).y + forceMACY;
+      vel(i, j, k).y = (forceMACY > 0) ? min(sum, maxVal) : max(sum, minVal);
     }
     if (vel.is3D() && (flags.isFluid(i, j, k - 1) || (curFluid && flags.isEmpty(i, j, k - 1)))) {
       Real forceMACZ = 0.5 * (force(i, j, k - 1).z + force(i, j, k).z);
-      Real min = std::min(vel(i, j, k).z, forceMACZ);
-      Real max = std::max(vel(i, j, k).z, forceMACZ);
-      Real sum = vel(i, j, k).z + forceMACZ;
-      vel(i, j, k).z = (forceMACZ > 0) ? std::min(sum, max) : std::max(sum, min);
+      minVal = min(vel(i, j, k).z, forceMACZ);
+      maxVal = max(vel(i, j, k).z, forceMACZ);
+      sum = vel(i, j, k).z + forceMACZ;
+      vel(i, j, k).z = (forceMACZ > 0) ? min(sum, maxVal) : max(sum, minVal);
     }
   }
   inline const FlagGrid &getArg0()
@@ -1213,7 +1221,7 @@ static PyObject *_W_7(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "setInitialVelocity", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
@@ -1335,8 +1343,8 @@ struct KnConfForce : public KernelBase {
 
 void vorticityConfinement(MACGrid &vel,
                           const FlagGrid &flags,
-                          Real strengthGlobal = 0,
-                          const Grid<Real> *strengthCell = NULL)
+                          Real strength = 0,
+                          const Grid<Real> *strengthCell = nullptr)
 {
   Grid<Vec3> velCenter(flags.getParent()), curl(flags.getParent()), force(flags.getParent());
   Grid<Real> norm(flags.getParent());
@@ -1344,8 +1352,8 @@ void vorticityConfinement(MACGrid &vel,
   GetCentered(velCenter, vel);
   CurlOp(velCenter, curl);
   GridNorm(norm, curl);
-  KnConfForce(force, norm, curl, strengthGlobal, strengthCell);
-  KnApplyForceField(flags, vel, force, NULL, true, false);
+  KnConfForce(force, norm, curl, strength, strengthCell);
+  KnApplyForceField(flags, vel, force, nullptr, true, false);
 }
 static PyObject *_W_8(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
 {
@@ -1354,16 +1362,16 @@ static PyObject *_W_8(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "vorticityConfinement", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       MACGrid &vel = *_args.getPtr<MACGrid>("vel", 0, &_lock);
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 1, &_lock);
-      Real strengthGlobal = _args.getOpt<Real>("strengthGlobal", 2, 0, &_lock);
+      Real strength = _args.getOpt<Real>("strength", 2, 0, &_lock);
       const Grid<Real> *strengthCell = _args.getPtrOpt<Grid<Real>>(
-          "strengthCell", 3, NULL, &_lock);
+          "strengthCell", 3, nullptr, &_lock);
       _retval = getPyNone();
-      vorticityConfinement(vel, flags, strengthGlobal, strengthCell);
+      vorticityConfinement(vel, flags, strength, strengthCell);
       _args.check();
     }
     pbFinalizePlugin(parent, "vorticityConfinement", !noTiming);
@@ -1385,7 +1393,7 @@ void PbRegister_vorticityConfinement()
 void addForceField(const FlagGrid &flags,
                    MACGrid &vel,
                    const Grid<Vec3> &force,
-                   const Grid<Real> *region = NULL,
+                   const Grid<Real> *region = nullptr,
                    bool isMAC = false)
 {
   KnApplyForceField(flags, vel, force, region, true, isMAC);
@@ -1397,13 +1405,13 @@ static PyObject *_W_9(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "addForceField", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
       MACGrid &vel = *_args.getPtr<MACGrid>("vel", 1, &_lock);
       const Grid<Vec3> &force = *_args.getPtr<Grid<Vec3>>("force", 2, &_lock);
-      const Grid<Real> *region = _args.getPtrOpt<Grid<Real>>("region", 3, NULL, &_lock);
+      const Grid<Real> *region = _args.getPtrOpt<Grid<Real>>("region", 3, nullptr, &_lock);
       bool isMAC = _args.getOpt<bool>("isMAC", 4, false, &_lock);
       _retval = getPyNone();
       addForceField(flags, vel, force, region, isMAC);
@@ -1428,7 +1436,7 @@ void PbRegister_addForceField()
 void setForceField(const FlagGrid &flags,
                    MACGrid &vel,
                    const Grid<Vec3> &force,
-                   const Grid<Real> *region = NULL,
+                   const Grid<Real> *region = nullptr,
                    bool isMAC = false)
 {
   KnApplyForceField(flags, vel, force, region, false, isMAC);
@@ -1440,13 +1448,13 @@ static PyObject *_W_10(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "setForceField", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
       MACGrid &vel = *_args.getPtr<MACGrid>("vel", 1, &_lock);
       const Grid<Vec3> &force = *_args.getPtr<Grid<Vec3>>("force", 2, &_lock);
-      const Grid<Real> *region = _args.getPtrOpt<Grid<Real>>("region", 3, NULL, &_lock);
+      const Grid<Real> *region = _args.getPtrOpt<Grid<Real>>("region", 3, nullptr, &_lock);
       bool isMAC = _args.getOpt<bool>("isMAC", 4, false, &_lock);
       _retval = getPyNone();
       setForceField(flags, vel, force, region, isMAC);
@@ -1639,10 +1647,10 @@ struct KnDissolveSmoke : public KernelBase {
 
 void dissolveSmoke(const FlagGrid &flags,
                    Grid<Real> &density,
-                   Grid<Real> *heat = NULL,
-                   Grid<Real> *red = NULL,
-                   Grid<Real> *green = NULL,
-                   Grid<Real> *blue = NULL,
+                   Grid<Real> *heat = nullptr,
+                   Grid<Real> *red = nullptr,
+                   Grid<Real> *green = nullptr,
+                   Grid<Real> *blue = nullptr,
                    int speed = 5,
                    bool logFalloff = true)
 {
@@ -1657,15 +1665,15 @@ static PyObject *_W_11(PyObject *_self, PyObject *_linargs, PyObject *_kwds)
     FluidSolver *parent = _args.obtainParent();
     bool noTiming = _args.getOpt<bool>("notiming", -1, 0);
     pbPreparePlugin(parent, "dissolveSmoke", !noTiming);
-    PyObject *_retval = 0;
+    PyObject *_retval = nullptr;
     {
       ArgLocker _lock;
       const FlagGrid &flags = *_args.getPtr<FlagGrid>("flags", 0, &_lock);
       Grid<Real> &density = *_args.getPtr<Grid<Real>>("density", 1, &_lock);
-      Grid<Real> *heat = _args.getPtrOpt<Grid<Real>>("heat", 2, NULL, &_lock);
-      Grid<Real> *red = _args.getPtrOpt<Grid<Real>>("red", 3, NULL, &_lock);
-      Grid<Real> *green = _args.getPtrOpt<Grid<Real>>("green", 4, NULL, &_lock);
-      Grid<Real> *blue = _args.getPtrOpt<Grid<Real>>("blue", 5, NULL, &_lock);
+      Grid<Real> *heat = _args.getPtrOpt<Grid<Real>>("heat", 2, nullptr, &_lock);
+      Grid<Real> *red = _args.getPtrOpt<Grid<Real>>("red", 3, nullptr, &_lock);
+      Grid<Real> *green = _args.getPtrOpt<Grid<Real>>("green", 4, nullptr, &_lock);
+      Grid<Real> *blue = _args.getPtrOpt<Grid<Real>>("blue", 5, nullptr, &_lock);
       int speed = _args.getOpt<int>("speed", 6, 5, &_lock);
       bool logFalloff = _args.getOpt<bool>("logFalloff", 7, true, &_lock);
       _retval = getPyNone();

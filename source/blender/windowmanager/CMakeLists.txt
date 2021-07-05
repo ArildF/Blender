@@ -36,17 +36,20 @@ set(INC
   ../makesdna
   ../makesrna
   ../nodes
-  ../render/extern/include
+  ../render
+  ../sequencer
   ../../../intern/clog
   ../../../intern/ghost
   ../../../intern/glew-mx
   ../../../intern/guardedalloc
   ../../../intern/memutil
+
+  # for writefile.c: dna_type_offsets.h
+  ${CMAKE_BINARY_DIR}/source/blender/makesdna/intern
 )
 
 set(INC_SYS
   ${ZLIB_INCLUDE_DIRS}
-  ${GLEW_INCLUDE_PATH}
 )
 
 set(SRC
@@ -75,6 +78,7 @@ set(SRC
   intern/wm_splash_screen.c
   intern/wm_stereo.c
   intern/wm_subwindow.c
+  intern/wm_surface.c
   intern/wm_toolsystem.c
   intern/wm_tooltip.c
   intern/wm_uilist_type.c
@@ -101,6 +105,7 @@ set(SRC
   wm_event_system.h
   wm_event_types.h
   wm_files.h
+  wm_surface.h
   wm_window.h
   intern/wm_platform_support.h
   intern/wm_window_private.h
@@ -115,6 +120,7 @@ set(SRC
 
 set(LIB
   bf_editor_screen
+  bf_sequencer
 )
 
 if(WITH_AUDASPACE)
@@ -129,7 +135,9 @@ if(WITH_AUDASPACE)
   )
 endif()
 
-add_definitions(${GL_DEFINITIONS})
+if(WITH_CYCLES)
+  add_definitions(-DWITH_CYCLES)
+endif()
 
 if(WITH_INTERNATIONAL)
   add_definitions(-DWITH_INTERNATIONAL)
@@ -151,8 +159,8 @@ endif()
 
 if(WITH_HEADLESS)
   add_definitions(-DWITH_HEADLESS)
-elseif(WITH_X11)
-  add_definitions(-DWITH_X11)
+elseif(WITH_GHOST_X11)
+  add_definitions(-DWITH_GHOST_X11)
 endif()
 
 if(WITH_PYTHON)
@@ -160,21 +168,20 @@ if(WITH_PYTHON)
     ../python
   )
   add_definitions(-DWITH_PYTHON)
+  if(WITH_PYTHON_MODULE)
+    add_definitions(-DWITH_PYTHON_MODULE)
+  endif()
 endif()
 
 if(WITH_BUILDINFO)
   add_definitions(-DWITH_BUILDINFO)
 endif()
 
-if(WITH_OPENSUBDIV)
-  add_definitions(-DWITH_OPENSUBDIV)
-endif()
-
 if(WITH_INPUT_NDOF)
   add_definitions(-DWITH_INPUT_NDOF)
 endif()
 
-if(WIN32)
+if(WIN32 OR APPLE)
   if(WITH_INPUT_IME)
     add_definitions(-DWITH_INPUT_IME)
   endif()
@@ -187,4 +194,25 @@ if(WITH_COMPOSITOR)
   add_definitions(-DWITH_COMPOSITOR)
 endif()
 
+if(WITH_XR_OPENXR)
+  add_definitions(-DWITH_XR_OPENXR)
+
+  list(APPEND INC
+    xr
+  )
+
+  list(APPEND SRC
+    xr/intern/wm_xr.c
+    xr/intern/wm_xr_actions.c
+    xr/intern/wm_xr_draw.c
+    xr/intern/wm_xr_session.c
+
+    xr/wm_xr.h
+    xr/intern/wm_xr_intern.h
+  )
+endif()
+
 blender_add_lib_nolist(bf_windowmanager "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
+
+# Needed so we can use dna_type_offsets.h for defaults initialization.
+add_dependencies(bf_windowmanager bf_dna)

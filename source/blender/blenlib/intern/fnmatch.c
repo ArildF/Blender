@@ -27,8 +27,9 @@
 # define _GNU_SOURCE    1
 #endif
 
-#include <errno.h>
 #include <ctype.h>
+#include <errno.h>
+
 #include "BLI_fnmatch.h"
 
 
@@ -238,7 +239,7 @@ fnmatch (const char *pattern, const char *string, int flags)
 # undef FOLD
 }
 
-#endif /* _LIBC or not __GNU_LIBRARY__.  */
+#endif /* _LIBC or not __GNU_LIBRARY__. */
 
 /* clang-format on */
 

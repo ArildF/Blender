@@ -26,12 +26,12 @@
 #include "BKE_context.h"
 #include "BKE_layer.h"
 
-#include "DNA_object_types.h"
 #include "DNA_camera_types.h"
+#include "DNA_object_types.h"
 
 #include "ED_armature.h"
-#include "ED_screen.h"
 #include "ED_gizmo_library.h"
+#include "ED_screen.h"
 
 #include "UI_resources.h"
 
@@ -40,8 +40,8 @@
 #include "RNA_access.h"
 
 #include "WM_api.h"
-#include "WM_types.h"
 #include "WM_message.h"
+#include "WM_types.h"
 
 #include "DEG_depsgraph.h"
 
@@ -153,7 +153,7 @@ static void WIDGETGROUP_camera_refresh(const bContext *C, wmGizmoGroup *gzgroup)
     WM_gizmo_set_scale(cagzgroup->dop_dist, ca->drawsize);
     WM_gizmo_set_flag(cagzgroup->dop_dist, WM_GIZMO_HIDDEN, false);
 
-    /* Need to set property here for undo. TODO would prefer to do this in _init */
+    /* Need to set property here for undo. TODO: would prefer to do this in _init. */
     PointerRNA camera_dof_ptr;
     RNA_pointer_create(&ca->id, &RNA_CameraDOFSettings, &ca->dof, &camera_dof_ptr);
     WM_gizmo_target_property_def_rna(
@@ -163,7 +163,7 @@ static void WIDGETGROUP_camera_refresh(const bContext *C, wmGizmoGroup *gzgroup)
     WM_gizmo_set_flag(cagzgroup->dop_dist, WM_GIZMO_HIDDEN, true);
   }
 
-  /* TODO - make focal length/ortho ob_scale_inv widget optional */
+  /* TODO: make focal length/ortho ob_scale_inv widget optional. */
   const Scene *scene = CTX_data_scene(C);
   const float aspx = (float)scene->r.xsch * scene->r.xasp;
   const float aspy = (float)scene->r.ysch * scene->r.yasp;
@@ -242,7 +242,7 @@ static void WIDGETGROUP_camera_refresh(const bContext *C, wmGizmoGroup *gzgroup)
     WM_gizmo_target_property_def_rna_ptr(widget, gz_prop_type, &camera_ptr, prop, -1);
   }
 
-  /* This could be handled more elegently (split into two gizmo groups). */
+  /* This could be handled more elegantly (split into two gizmo groups). */
   if ((v3d->gizmo_show_camera & V3D_GIZMO_SHOW_CAMERA_LENS) == 0) {
     WM_gizmo_set_flag(cagzgroup->focal_len, WM_GIZMO_HIDDEN, true);
     WM_gizmo_set_flag(cagzgroup->ortho_scale, WM_GIZMO_HIDDEN, true);
@@ -253,13 +253,13 @@ static void WIDGETGROUP_camera_message_subscribe(const bContext *C,
                                                  wmGizmoGroup *gzgroup,
                                                  struct wmMsgBus *mbus)
 {
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Object *ob = OBACT(view_layer);
   Camera *ca = ob->data;
 
   wmMsgSubscribeValue msg_sub_value_gz_tag_refresh = {
-      .owner = ar,
+      .owner = region,
       .user_data = gzgroup->parent_gzmap,
       .notify = WM_gizmo_do_msg_notify_tag_refresh,
   };
@@ -403,8 +403,8 @@ static bool WIDGETGROUP_camera_view_poll(const bContext *C, wmGizmoGroupType *UN
     return false;
   }
 
-  ARegion *ar = CTX_wm_region(C);
-  RegionView3D *rv3d = ar->regiondata;
+  ARegion *region = CTX_wm_region(C);
+  RegionView3D *rv3d = region->regiondata;
   if (rv3d->persp == RV3D_CAMOB) {
     if (scene->r.mode & R_BORDER) {
       /* TODO: support overrides. */
@@ -432,6 +432,8 @@ static void WIDGETGROUP_camera_view_setup(const bContext *UNUSED(C), wmGizmoGrou
   /* Box style is more subtle in this case. */
   RNA_enum_set(viewgroup->border->ptr, "draw_style", ED_GIZMO_CAGE2D_STYLE_BOX);
 
+  WM_gizmo_set_scale(viewgroup->border, 10.0f / 0.15f);
+
   gzgroup->customdata = viewgroup;
 }
 
@@ -439,22 +441,22 @@ static void WIDGETGROUP_camera_view_draw_prepare(const bContext *C, wmGizmoGroup
 {
   struct CameraViewWidgetGroup *viewgroup = gzgroup->customdata;
 
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
   /* Drawing code should happen with fully evaluated graph. */
   struct Depsgraph *depsgraph = CTX_data_expect_evaluated_depsgraph(C);
-  RegionView3D *rv3d = ar->regiondata;
+  RegionView3D *rv3d = region->regiondata;
   if (rv3d->persp == RV3D_CAMOB) {
     Scene *scene = CTX_data_scene(C);
     View3D *v3d = CTX_wm_view3d(C);
     ED_view3d_calc_camera_border(
-        scene, depsgraph, ar, v3d, rv3d, &viewgroup->state.view_border, false);
+        scene, depsgraph, region, v3d, rv3d, &viewgroup->state.view_border, false);
   }
   else {
     viewgroup->state.view_border = (rctf){
         .xmin = 0,
         .ymin = 0,
-        .xmax = ar->winx,
-        .ymax = ar->winy,
+        .xmax = region->winx,
+        .ymax = region->winy,
     };
   }
 
@@ -471,8 +473,8 @@ static void WIDGETGROUP_camera_view_refresh(const bContext *C, wmGizmoGroup *gzg
   struct CameraViewWidgetGroup *viewgroup = gzgroup->customdata;
 
   View3D *v3d = CTX_wm_view3d(C);
-  ARegion *ar = CTX_wm_region(C);
-  RegionView3D *rv3d = ar->regiondata;
+  ARegion *region = CTX_wm_region(C);
+  RegionView3D *rv3d = region->regiondata;
   Scene *scene = CTX_data_scene(C);
 
   viewgroup->scene = scene;

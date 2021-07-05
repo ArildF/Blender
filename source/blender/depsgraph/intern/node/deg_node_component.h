@@ -23,17 +23,23 @@
 
 #pragma once
 
+#include "intern/eval/deg_eval_copy_on_write.h"
 #include "intern/node/deg_node.h"
+#include "intern/node/deg_node_id.h"
 #include "intern/node/deg_node_operation.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_string.h"
+#include "BLI_utildefines.h"
 
-struct GHash;
+#include "BKE_object.h"
+
+#include "DNA_object_types.h"
+
 struct ID;
 struct bPoseChannel;
 
-namespace DEG {
+namespace blender {
+namespace deg {
 
 struct BoneComponentNode;
 struct Depsgraph;
@@ -54,6 +60,7 @@ struct ComponentNode : public Node {
 
     string identifier() const;
     bool operator==(const OperationIDKey &other) const;
+    uint64_t hash() const;
   };
 
   /* Typedef for container of operations */
@@ -83,12 +90,9 @@ struct ComponentNode : public Node {
    * when node may have been partially created earlier (e.g. parent ref before
    * parent item is added)
    *
-   * \param type: Operation node type (corresponding to context/component that
-   *              it operates in)
-   * \param optype: Role that operation plays within component
-   *                (i.e. where in eval process)
-   * \param op: The operation to perform
-   * \param name: Identifier for operation - used to find/locate it again */
+   * \param opcode: The operation to perform.
+   * \param name: Identifier for operation - used to find/locate it again.
+   */
   OperationNode *add_operation(const DepsEvalOperationCb &op,
                                OperationCode opcode,
                                const char *name,
@@ -115,11 +119,11 @@ struct ComponentNode : public Node {
 
   /* Operations stored as a hash map, for faster build.
    * This hash map will be freed when graph is fully built. */
-  GHash *operations_map;
+  Map<ComponentNode::OperationIDKey, OperationNode *> *operations_map;
 
   /* This is a "normal" list of operations, used by evaluation
    * and other routines after construction. */
-  vector<OperationNode *> operations;
+  Vector<OperationNode *> operations;
 
   OperationNode *entry_operation;
   OperationNode *exit_operation;
@@ -158,6 +162,23 @@ struct ComponentNode : public Node {
     DEG_COMPONENT_NODE_DECLARE; \
   }
 
+/* When updating object data in edit-mode, don't request COW update since this will duplicate
+ * all object data which is unnecessary when the edit-mode data is used for calculating modifiers.
+ *
+ * TODO: Investigate modes besides edit-mode. */
+#define DEG_COMPONENT_NODE_DECLARE_NO_COW_TAG_ON_OBDATA_IN_EDIT_MODE(name) \
+  struct name##ComponentNode : public ComponentNode { \
+    DEG_COMPONENT_NODE_DECLARE; \
+    virtual bool need_tag_cow_before_update() override \
+    { \
+      if (OB_DATA_SUPPORT_EDITMODE(owner->id_type) && \
+          BKE_object_data_is_in_editmode(owner->id_orig)) { \
+        return false; \
+      } \
+      return true; \
+    } \
+  }
+
 #define DEG_COMPONENT_NODE_DECLARE_NO_COW_TAG_ON_UPDATE(name) \
   struct name##ComponentNode : public ComponentNode { \
     DEG_COMPONENT_NODE_DECLARE; \
@@ -171,9 +192,9 @@ DEG_COMPONENT_NODE_DECLARE_GENERIC(Animation);
 DEG_COMPONENT_NODE_DECLARE_NO_COW_TAG_ON_UPDATE(BatchCache);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(Cache);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(CopyOnWrite);
-DEG_COMPONENT_NODE_DECLARE_GENERIC(Geometry);
+DEG_COMPONENT_NODE_DECLARE_NO_COW_TAG_ON_OBDATA_IN_EDIT_MODE(Geometry);
+DEG_COMPONENT_NODE_DECLARE_GENERIC(ImageAnimation);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(LayerCollections);
-DEG_COMPONENT_NODE_DECLARE_GENERIC(Parameters);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(Particles);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(ParticleSettings);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(Pose);
@@ -189,6 +210,7 @@ DEG_COMPONENT_NODE_DECLARE_GENERIC(Synchronization);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(Audio);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(Armature);
 DEG_COMPONENT_NODE_DECLARE_GENERIC(GenericDatablock);
+DEG_COMPONENT_NODE_DECLARE_GENERIC(Simulation);
 
 /* Bone Component */
 struct BoneComponentNode : public ComponentNode {
@@ -199,6 +221,23 @@ struct BoneComponentNode : public ComponentNode {
   DEG_COMPONENT_NODE_DECLARE;
 };
 
+/* Eventually we would not tag parameters in all cases.
+ * Support for this each ID needs to be added on an individual basis. */
+struct ParametersComponentNode : public ComponentNode {
+  virtual bool need_tag_cow_before_update() override
+  {
+    if (ID_TYPE_SUPPORTS_PARAMS_WITHOUT_COW(owner->id_type)) {
+      /* Disabled as this is not true for newly added objects, needs investigation. */
+      // BLI_assert(deg_copy_on_write_is_expanded(owner->id_cow));
+      return false;
+    }
+    return true;
+  }
+
+  DEG_COMPONENT_NODE_DECLARE;
+};
+
 void deg_register_component_depsnodes();
 
-}  // namespace DEG
+}  // namespace deg
+}  // namespace blender

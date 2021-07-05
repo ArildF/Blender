@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_NODE_LIGHT_H__
-#define __FREESTYLE_NODE_LIGHT_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -41,10 +40,10 @@ class NodeLight : public Node {
   {
   }
 
-  /*! Accept the corresponding visitor */
+  /** Accept the corresponding visitor */
   virtual void accept(SceneVisitor &v);
 
-  /*! Accessors for the light properties */
+  /** Accessors for the light properties */
   inline const float *ambient() const
   {
     return Ambient;
@@ -79,27 +78,25 @@ class NodeLight : public Node {
   // Data members
   // ============
 
-  /*! on=true, the light is on */
+  /** on=true, the light is on */
   bool on;
 
-  /*! The color definition */
+  /** The color definition */
   float Ambient[4];
   float Diffuse[4];
   float Specular[4];
 
-  /*! Light position. if w = 0, the light is placed at infinite. */
+  /** Light position. if w = 0, the light is placed at infinite. */
   float Position[4];
 
-  /*! used to manage the number of lights */
-  /*! numberOfLights
+  /** used to manage the number of lights */
+  /** numberOfLights
    *    the number of lights in the scene.
    *    Initially, 0.
    */
   static int numberOfLights;
-  /*! The current lignt number */
+  /** The current light number */
   int _number;
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_NODE_LIGHT_H__

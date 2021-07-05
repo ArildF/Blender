@@ -22,16 +22,20 @@
  * \brief Object is a sort of wrapper for general info.
  */
 
-#ifndef __DNA_OBJECT_TYPES_H__
-#define __DNA_OBJECT_TYPES_H__
+#pragma once
 
 #include "DNA_object_enums.h"
 
-#include "DNA_defs.h"
 #include "DNA_customdata_types.h"
+#include "DNA_defs.h"
+#include "DNA_lineart_types.h"
 #include "DNA_listBase.h"
+
 #include "DNA_ID.h"
 #include "DNA_action_types.h" /* bAnimVizSettings */
+#include "DNA_customdata_types.h"
+#include "DNA_defs.h"
+#include "DNA_listBase.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,9 +43,9 @@ extern "C" {
 
 struct AnimData;
 struct BoundBox;
-struct DerivedMesh;
+struct Curve;
 struct FluidsimSettings;
-struct GpencilBatchCache;
+struct GeometrySet;
 struct Ipo;
 struct Material;
 struct Mesh;
@@ -62,7 +66,7 @@ typedef struct bDeformGroup {
   char flag, _pad0[7];
 } bDeformGroup;
 
-/* Face Maps*/
+/* Face Maps. */
 typedef struct bFaceMap {
   struct bFaceMap *next, *prev;
   /** MAX_VGROUP_NAME. */
@@ -109,22 +113,13 @@ enum {
   BOUNDBOX_DIRTY = (1 << 1),
 };
 
-typedef struct LodLevel {
-  struct LodLevel *next, *prev;
-  struct Object *source;
-  int flags;
-  float distance;
-  char _pad0[4];
-  int obhysteresis;
-} LodLevel;
-
 struct CustomData_MeshMasks;
 
 /* Not saved in file! */
 typedef struct Object_Runtime {
   /**
    * The custom data layer mask that was last used
-   * to calculate mesh_eval and mesh_deform_eval.
+   * to calculate data_eval and mesh_deform_eval.
    */
   CustomData_MeshMasks last_data_mask;
 
@@ -136,30 +131,52 @@ typedef struct Object_Runtime {
   /** Only used for drawing the parent/child help-line. */
   float parent_display_origin[3];
 
-  /** Selection id of this object; only available in the original object */
+  /**
+   * Selection id of this object. It might differ between an evaluated and its original object,
+   * when the object is being instanced.
+   */
   int select_id;
   char _pad1[3];
 
   /**
-   * Denotes whether the evaluated mesh is owned by this object or is referenced and owned by
+   * Denotes whether the evaluated data is owned by this object or is referenced and owned by
    * somebody else.
    */
-  char is_mesh_eval_owned;
+  char is_data_eval_owned;
+
+  /** Start time of the mode transfer overlay animation. */
+  double overlay_mode_transfer_start_time;
 
   /** Axis aligned boundbox (in localspace). */
   struct BoundBox *bb;
 
   /**
-   * Original mesh pointer, before object->data was changed to point
-   * to mesh_eval.
+   * Original data pointer, before object->data was changed to point
+   * to data_eval.
    * Is assigned by dependency graph's copy-on-write evaluation.
    */
-  struct Mesh *mesh_orig;
+  struct ID *data_orig;
   /**
-   * Mesh structure created during object evaluation.
-   * It has all modifiers applied.
+   * Object data structure created during object evaluation. It has all modifiers applied.
+   * The type is determined by the type of the original object. For example, for mesh and curve
+   * objects, this is a mesh. For a volume object, this is a volume.
    */
-  struct Mesh *mesh_eval;
+  struct ID *data_eval;
+
+  /**
+   * Objects can evaluate to a geometry set instead of a single ID. In those cases, the evaluated
+   * geometry set will be stored here. An ID of the correct type is still stored in #data_eval.
+   * #geometry_set_eval might reference the ID pointed to by #data_eval as well, but does not own
+   * the data.
+   */
+  struct GeometrySet *geometry_set_eval;
+
+  /**
+   * A GHash that contains geometry sets for intermediate stages of evaluation. The keys are just a
+   * hash and are not owned by the map. The geometry sets are owned.
+   */
+  void *geometry_set_previews;
+
   /**
    * Mesh structure created during object evaluation.
    * It has deformation only modifiers applied on it.
@@ -167,25 +184,59 @@ typedef struct Object_Runtime {
   struct Mesh *mesh_deform_eval;
 
   /**
+   * Original grease pencil bGPdata pointer, before object->data was changed to point
+   * to gpd_eval.
+   * Is assigned by dependency graph's copy-on-write evaluation.
+   */
+  struct bGPdata *gpd_orig;
+  /**
+   * bGPdata structure created during object evaluation.
+   * It has all modifiers applied.
+   */
+  struct bGPdata *gpd_eval;
+
+  /**
    * This is a mesh representation of corresponding object.
    * It created when Python calls `object.to_mesh()`.
    */
   struct Mesh *object_as_temp_mesh;
 
+  /**
+   * This is a curve representation of corresponding object.
+   * It created when Python calls `object.to_curve()`.
+   */
+  struct Curve *object_as_temp_curve;
+
   /** Runtime evaluated curve-specific data, not stored in the file. */
   struct CurveCache *curve_cache;
-
-  /** Runtime grease pencil drawing data */
-  struct GpencilBatchCache *gpencil_cache;
-  /** Runtime grease pencil total layers used for evaluated data created by modifiers */
-  int gpencil_tot_layers;
-  char _pad4[4];
-  /** Runtime grease pencil evaluated data created by modifiers */
-  struct bGPDframe *gpencil_evaluated_frames;
 
   unsigned short local_collections_bits;
   short _pad2[3];
 } Object_Runtime;
+
+typedef struct ObjectLineArt {
+  short usage;
+  short flags;
+
+  /** if OBJECT_LRT_OWN_CREASE is set */
+  float crease_threshold;
+} ObjectLineArt;
+
+/**
+ * \warning while the values seem to be flags, they aren't treated as flags.
+ */
+enum eObjectLineArt_Usage {
+  OBJECT_LRT_INHERIT = 0,
+  OBJECT_LRT_INCLUDE = (1 << 0),
+  OBJECT_LRT_OCCLUSION_ONLY = (1 << 1),
+  OBJECT_LRT_EXCLUDE = (1 << 2),
+  OBJECT_LRT_INTERSECTION_ONLY = (1 << 3),
+  OBJECT_LRT_NO_INTERSECTION = (1 << 4),
+};
+
+enum eObjectLineArt_Flags {
+  OBJECT_LRT_OWN_CREASE = (1 << 0),
+};
 
 typedef struct Object {
   ID id;
@@ -208,7 +259,7 @@ typedef struct Object {
   /** Old animation system, deprecated for 2.5. */
   struct Ipo *ipo DNA_DEPRECATED;
   /* struct Path *path; */
-  struct bAction *action DNA_DEPRECATED;  // XXX deprecated... old animation system
+  struct bAction *action DNA_DEPRECATED; /* XXX deprecated... old animation system */
   struct bAction *poselib;
   /** Pose data, armature objects only. */
   struct bPose *pose;
@@ -217,7 +268,7 @@ typedef struct Object {
 
   /** Grease Pencil data. */
   struct bGPdata *gpd
-      DNA_DEPRECATED;  // XXX deprecated... replaced by gpencil object, keep for readfile
+      DNA_DEPRECATED; /* XXX deprecated... replaced by gpencil object, keep for readfile */
 
   /** Settings for visualization of object-transform animation. */
   bAnimVizSettings avs;
@@ -225,8 +276,8 @@ typedef struct Object {
   bMotionPath *mpath;
   void *_pad0;
 
-  ListBase constraintChannels DNA_DEPRECATED;  // XXX deprecated... old animation system
-  ListBase effect DNA_DEPRECATED;              // XXX deprecated... keep for readfile
+  ListBase constraintChannels DNA_DEPRECATED; /* XXX deprecated... old animation system */
+  ListBase effect DNA_DEPRECATED;             /* XXX deprecated... keep for readfile */
   /** List of bDeformGroup (vertex groups) names and flag only. */
   ListBase defbase;
   /** List of ModifierData structures. */
@@ -284,12 +335,6 @@ typedef struct Object {
    */
   float imat[4][4];
 
-  /* Previously 'imat' was used at render time, but as other places use it too
-   * the interactive ui of 2.5 creates problems. So now only 'imat_ren' should
-   * be used when ever the inverse of ob->obmat * re->viewmat is needed! - jahka
-   */
-  float imat_ren[4][4];
-
   /** Copy of Base's layer in the scene. */
   unsigned int lay DNA_DEPRECATED;
 
@@ -335,9 +380,9 @@ typedef struct Object {
 
   /** Custom index, for renderpasses. */
   short index;
-  /** Current deformation group, note: index starts at 1. */
+  /** Current deformation group, NOTE: index starts at 1. */
   unsigned short actdef;
-  /** Current face map, note: index starts at 1. */
+  /** Current face map, NOTE: index starts at 1. */
   unsigned short actfmap;
   char _pad2[2];
   /** Object color (in most cases the material color is used for drawing). */
@@ -358,8 +403,8 @@ typedef struct Object {
 
   /** Object constraints. */
   ListBase constraints;
-  ListBase nlastrips DNA_DEPRECATED;  // XXX deprecated... old animation system
-  ListBase hooks DNA_DEPRECATED;      // XXX deprecated... old animation system
+  ListBase nlastrips DNA_DEPRECATED; /* XXX deprecated... old animation system */
+  ListBase hooks DNA_DEPRECATED;     /* XXX deprecated... old animation system */
   /** Particle systems. */
   ListBase particlesystem;
 
@@ -372,7 +417,7 @@ typedef struct Object {
 
   /** If fluidsim enabled, store additional settings. */
   struct FluidsimSettings *fluidsimSettings
-      DNA_DEPRECATED;  // XXX deprecated... replaced by mantaflow, keep for readfile
+      DNA_DEPRECATED; /* XXX deprecated... replaced by mantaflow, keep for readfile */
 
   ListBase pc_ids;
 
@@ -390,11 +435,9 @@ typedef struct Object {
   char empty_image_flag;
   char _pad8[5];
 
-  /** Contains data for levels of detail. */
-  ListBase lodlevels;
-  LodLevel *currentlod;
-
   struct PreviewImage *preview;
+
+  ObjectLineArt lineart;
 
   /** Runtime evaluation data (keep last). */
   Object_Runtime runtime;
@@ -427,8 +470,10 @@ typedef struct ObHook {
 
 /* **************** OBJECT ********************* */
 
-/* used many places... should be specialized  */
+/* used many places, should be specialized. */
 #define SELECT 1
+
+#define OBJECT_ACTIVE_MODIFIER_NONE -1
 
 /* type */
 enum {
@@ -452,12 +497,19 @@ enum {
   /** Grease Pencil object used in 3D view but not used for annotation in 2D. */
   OB_GPENCIL = 26,
 
+  OB_HAIR = 27,
+
+  OB_POINTCLOUD = 28,
+
+  OB_VOLUME = 29,
+
+  /* Keep last. */
   OB_TYPE_MAX,
 };
 
 /* check if the object type supports materials */
 #define OB_TYPE_SUPPORT_MATERIAL(_type) \
-  (((_type) >= OB_MESH && (_type) <= OB_MBALL) || ((_type) == OB_GPENCIL))
+  (((_type) >= OB_MESH && (_type) <= OB_MBALL) || ((_type) >= OB_GPENCIL && (_type) <= OB_VOLUME))
 #define OB_TYPE_SUPPORT_VGROUP(_type) (ELEM(_type, OB_MESH, OB_LATTICE, OB_GPENCIL))
 #define OB_TYPE_SUPPORT_EDITMODE(_type) \
   (ELEM(_type, OB_MESH, OB_FONT, OB_CURVE, OB_SURF, OB_MBALL, OB_LATTICE, OB_ARMATURE))
@@ -468,19 +520,35 @@ enum {
 
 /* is this ID type used as object data */
 #define OB_DATA_SUPPORT_ID(_id_type) \
-  (ELEM(_id_type, ID_ME, ID_CU, ID_MB, ID_LA, ID_SPK, ID_LP, ID_CA, ID_LT, ID_GD, ID_AR))
+  (ELEM(_id_type, \
+        ID_ME, \
+        ID_CU, \
+        ID_MB, \
+        ID_LA, \
+        ID_SPK, \
+        ID_LP, \
+        ID_CA, \
+        ID_LT, \
+        ID_GD, \
+        ID_AR, \
+        ID_HA, \
+        ID_PT, \
+        ID_VO))
 
 #define OB_DATA_SUPPORT_ID_CASE \
-ID_ME: \
-case ID_CU: \
-case ID_MB: \
-case ID_LA: \
-case ID_SPK: \
-case ID_LP: \
-case ID_CA: \
-case ID_LT: \
-case ID_GD: \
-case ID_AR
+  ID_ME: \
+  case ID_CU: \
+  case ID_MB: \
+  case ID_LA: \
+  case ID_SPK: \
+  case ID_LP: \
+  case ID_CA: \
+  case ID_LT: \
+  case ID_GD: \
+  case ID_AR: \
+  case ID_HA: \
+  case ID_PT: \
+  case ID_VO
 
 /* partype: first 4 bits: type */
 enum {
@@ -495,7 +563,7 @@ enum {
 
 /* (short) transflag */
 enum {
-  OB_TRANSFLAG_UNUSED_0 = 1 << 0, /* cleared */
+  OB_TRANSFORM_ADJUST_ROOT_PARENT_FOR_VIEW_LOCK = 1 << 0,
   OB_TRANSFLAG_UNUSED_1 = 1 << 1, /* cleared */
   OB_NEG_SCALE = 1 << 2,
   OB_TRANSFLAG_UNUSED_3 = 1 << 3, /* cleared */
@@ -511,8 +579,6 @@ enum {
   OB_TRANSFLAG_UNUSED_12 = 1 << 12, /* cleared */
   /* runtime constraints disable */
   OB_NO_CONSTRAINTS = 1 << 13,
-  /* hack to work around particle issue */
-  OB_NO_PSYS_UPDATE = 1 << 14,
 
   OB_DUPLI = OB_DUPLIVERTS | OB_DUPLICOLLECTION | OB_DUPLIFACES | OB_DUPLIPARTS,
 };
@@ -527,31 +593,23 @@ enum {
   OB_NEGZ = 5,
 };
 
-/* dt: no flags */
-enum {
-  OB_BOUNDBOX = 1,
-  OB_WIRE = 2,
-  OB_SOLID = 3,
-  OB_MATERIAL = 4,
-  OB_TEXTURE = 5,
-  OB_RENDER = 6,
-};
-
 /* dtx: flags (short) */
 enum {
   OB_DRAWBOUNDOX = 1 << 0,
   OB_AXIS = 1 << 1,
   OB_TEXSPACE = 1 << 2,
   OB_DRAWNAME = 1 << 3,
-  OB_DRAWIMAGE = 1 << 4,
+  /* OB_DRAWIMAGE = 1 << 4, */ /* UNUSED */
   /* for solid+wire display */
   OB_DRAWWIRE = 1 << 5,
-  /* for overdraw s*/
-  OB_DRAWXRAY = 1 << 6,
-  /* enable transparent draw */
+  /* For overdrawing. */
+  OB_DRAW_IN_FRONT = 1 << 6,
+  /* Enable transparent draw. */
   OB_DRAWTRANSP = 1 << 7,
   OB_DRAW_ALL_EDGES = 1 << 8, /* only for meshes currently */
   OB_DRAW_NO_SHADOW_CAST = 1 << 9,
+  /* Enable lights for grease pencil. */
+  OB_USE_GPENCIL_LIGHTS = 1 << 10,
 };
 
 /* empty_drawtype: no flags */
@@ -571,6 +629,9 @@ enum {
   GP_EMPTY = 0,
   GP_STROKE = 1,
   GP_MONKEY = 2,
+  GP_LRT_SCENE = 3,
+  GP_LRT_OBJECT = 4,
+  GP_LRT_COLLECTION = 5,
 };
 
 /* boundtype */
@@ -579,17 +640,10 @@ enum {
   OB_BOUND_SPHERE = 1,
   OB_BOUND_CYLINDER = 2,
   OB_BOUND_CONE = 3,
-  OB_BOUND_TRIANGLE_MESH = 4,
-  OB_BOUND_CONVEX_HULL = 5,
-  /*  OB_BOUND_DYN_MESH      = 6, */ /*UNUSED*/
+  // OB_BOUND_TRIANGLE_MESH = 4, /* UNUSED */
+  // OB_BOUND_CONVEX_HULL = 5,   /* UNUSED */
+  // OB_BOUND_DYN_MESH = 6,      /* UNUSED */
   OB_BOUND_CAPSULE = 7,
-};
-
-/* lod flags */
-enum {
-  OB_LOD_USE_MESH = 1 << 0,
-  OB_LOD_USE_MAT = 1 << 1,
-  OB_LOD_USE_HYST = 1 << 2,
 };
 
 /* **************** BASE ********************* */
@@ -646,13 +700,13 @@ enum {
   /* object-channel expanded status */
   OB_ADS_COLLAPSED = 1 << 10,
   /* object's ipo-block */
-  OB_ADS_SHOWIPO = 1 << 11,
+  /* OB_ADS_SHOWIPO = 1 << 11, */ /* UNUSED */
   /* object's constraint channels */
-  OB_ADS_SHOWCONS = 1 << 12,
+  /* OB_ADS_SHOWCONS = 1 << 12, */ /* UNUSED */
   /* object's material channels */
-  OB_ADS_SHOWMATS = 1 << 13,
-  /* object's marticle channels */
-  OB_ADS_SHOWPARTS = 1 << 14,
+  /* OB_ADS_SHOWMATS = 1 << 13, */ /* UNUSED */
+  /* object's particle channels */
+  /* OB_ADS_SHOWPARTS = 1 << 14, */ /* UNUSED */
 };
 
 /* ob->protectflag */
@@ -702,6 +756,4 @@ enum {
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

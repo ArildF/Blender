@@ -21,8 +21,8 @@
 
 #include "BLI_blenlib.h"
 
-#include "DNA_text_types.h"
 #include "DNA_space_types.h"
+#include "DNA_text_types.h"
 
 #include "BKE_text.h"
 
@@ -644,7 +644,7 @@ static int txtfmt_pov_find_specialvar(const char *string)
   } else if (STR_LITERAL_STARTSWITH(string, "ratio",              len)) { i = len;
   } else if (STR_LITERAL_STARTSWITH(string, "open",               len)) { i = len;
   } else if (STR_LITERAL_STARTSWITH(string, "ior",                len)) { i = len;
-  /* Light Types and options*/
+  /* Light Types and options. */
   } else if (STR_LITERAL_STARTSWITH(string, "area_light",         len)) { i = len;
   } else if (STR_LITERAL_STARTSWITH(string, "looks_like",         len)) { i = len;
   } else if (STR_LITERAL_STARTSWITH(string, "fade_power",         len)) { i = len;
@@ -654,7 +654,7 @@ static int txtfmt_pov_find_specialvar(const char *string)
   } else if (STR_LITERAL_STARTSWITH(string, "point_at",           len)) { i = len;
   } else if (STR_LITERAL_STARTSWITH(string, "falloff",            len)) { i = len;
   } else if (STR_LITERAL_STARTSWITH(string, "radius",             len)) { i = len;
-  /* Camera Types and options*/
+  /* Camera Types and options. */
   } else if (STR_LITERAL_STARTSWITH(string, "omni_directional_stereo",  len)) { i = len;
   } else if (STR_LITERAL_STARTSWITH(string, "lambert_cylindrical",      len)) { i = len;
   } else if (STR_LITERAL_STARTSWITH(string, "miller_cylindrical",       len)) { i = len;
@@ -825,7 +825,7 @@ static void txtfmt_pov_format_line(SpaceText *st, TextLine *line, const bool do_
       continue;
     }
     /* Handle continuations */
-    else if (cont) {
+    if (cont) {
       /* C-Style comments */
       if (cont & FMT_CONT_COMMENT_C) {
         if (*str == '*' && *(str + 1) == '/') {
@@ -864,7 +864,7 @@ static void txtfmt_pov_format_line(SpaceText *st, TextLine *line, const bool do_
       else if (*str == '/' && *(str + 1) == '/') {
         text_format_fill(&str, &fmt, FMT_TYPE_COMMENT, len - (int)(fmt - line->format));
       }
-      else if (*str == '"' || *str == '\'') {
+      else if (ELEM(*str, '"', '\'')) {
         /* Strings */
         find = *str;
         cont = (*str == '"') ? FMT_CONT_QUOTEDOUBLE : FMT_CONT_QUOTESINGLE;

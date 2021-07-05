@@ -29,15 +29,18 @@
 
 #include "DRW_engine.h"
 
-namespace DEG {
+namespace blender::deg {
 
 RuntimeBackup::RuntimeBackup(const Depsgraph *depsgraph)
-    : animation_backup(depsgraph),
+    : have_backup(false),
+      id_data({nullptr}),
+      animation_backup(depsgraph),
       scene_backup(depsgraph),
       sound_backup(depsgraph),
       object_backup(depsgraph),
       drawdata_ptr(nullptr),
-      movieclip_backup(depsgraph)
+      movieclip_backup(depsgraph),
+      volume_backup(depsgraph)
 {
   drawdata_backup.first = drawdata_backup.last = nullptr;
 }
@@ -47,6 +50,9 @@ void RuntimeBackup::init_from_id(ID *id)
   if (!deg_copy_on_write_is_expanded(id)) {
     return;
   }
+  have_backup = true;
+
+  id_data.py_instance = id->py_instance;
 
   animation_backup.init_from_id(id);
 
@@ -64,6 +70,9 @@ void RuntimeBackup::init_from_id(ID *id)
     case ID_MC:
       movieclip_backup.init_from_movieclip(reinterpret_cast<MovieClip *>(id));
       break;
+    case ID_VO:
+      volume_backup.init_from_volume(reinterpret_cast<Volume *>(id));
+      break;
     default:
       break;
   }
@@ -79,6 +88,12 @@ void RuntimeBackup::init_from_id(ID *id)
 
 void RuntimeBackup::restore_to_id(ID *id)
 {
+  if (!have_backup) {
+    return;
+  }
+
+  id->py_instance = id_data.py_instance;
+
   animation_backup.restore_to_id(id);
 
   const ID_Type id_type = GS(id->name);
@@ -95,6 +110,9 @@ void RuntimeBackup::restore_to_id(ID *id)
     case ID_MC:
       movieclip_backup.restore_to_movieclip(reinterpret_cast<MovieClip *>(id));
       break;
+    case ID_VO:
+      volume_backup.restore_to_volume(reinterpret_cast<Volume *>(id));
+      break;
     default:
       break;
   }
@@ -103,4 +121,4 @@ void RuntimeBackup::restore_to_id(ID *id)
   }
 }
 
-}  // namespace DEG
+}  // namespace blender::deg

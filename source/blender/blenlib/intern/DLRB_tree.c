@@ -23,8 +23,8 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_listbase.h"
 #include "BLI_dlrbTree.h"
+#include "BLI_listbase.h"
 
 /* *********************************************** */
 /* Tree API */
@@ -299,9 +299,7 @@ static DLRBT_Node *get_grandparent(DLRBT_Node *node)
   if (node && node->parent) {
     return node->parent->parent;
   }
-  else {
-    return NULL;
-  }
+  return NULL;
 }
 
 /* get the sibling node (e.g. if node is left child of parent, return right child of parent) */
@@ -311,9 +309,7 @@ static DLRBT_Node *get_sibling(DLRBT_Node *node)
     if (node == node->parent->left) {
       return node->parent->right;
     }
-    else {
-      return node->parent->left;
-    }
+    return node->parent->left;
   }
 
   /* sibling not found */
@@ -418,7 +414,7 @@ static void rotate_right(DLRBT_Tree *tree, DLRBT_Node *root)
 }
 
 /* *********************************************** */
-/* Post-Insertion Balancing  */
+/* Post-Insertion Balancing */
 
 /* forward defines for insertion checks */
 static void insert_check_1(DLRBT_Tree *tree, DLRBT_Node *node);
@@ -476,7 +472,7 @@ static void insert_check_2(DLRBT_Tree *tree, DLRBT_Node *node)
   }
 }
 
-/* W. 4+5) Perform rotation on sub-tree containing the 'new' node, then do any  */
+/* W. 4+5) Perform rotation on sub-tree containing the 'new' node, then do any. */
 static void insert_check_3(DLRBT_Tree *tree, DLRBT_Node *node)
 {
   DLRBT_Node *gp = get_grandparent(node);

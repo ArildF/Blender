@@ -21,10 +21,10 @@
  * \ingroup spaction
  */
 
+#include <float.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <float.h>
 
 #include "BLI_blenlib.h"
 #include "BLI_math.h"
@@ -35,9 +35,9 @@
 #include "DNA_anim_types.h"
 #include "DNA_gpencil_types.h"
 #include "DNA_key_types.h"
+#include "DNA_mask_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
-#include "DNA_mask_types.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -47,8 +47,8 @@
 #include "BKE_animsys.h"
 #include "BKE_context.h"
 #include "BKE_fcurve.h"
-#include "BKE_gpencil.h"
 #include "BKE_global.h"
+#include "BKE_gpencil.h"
 #include "BKE_key.h"
 #include "BKE_nla.h"
 #include "BKE_report.h"
@@ -57,11 +57,11 @@
 
 #include "ED_anim_api.h"
 #include "ED_gpencil.h"
-#include "ED_keyframing.h"
 #include "ED_keyframes_edit.h"
-#include "ED_screen.h"
+#include "ED_keyframing.h"
 #include "ED_markers.h"
 #include "ED_mask.h"
+#include "ED_screen.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -73,7 +73,7 @@
 /* ************************************************************************** */
 /* POSE MARKERS STUFF */
 
-/* *************************** Localise Markers ***************************** */
+/* *************************** Localize Markers ***************************** */
 
 /* ensure that there is:
  * 1) an active action editor
@@ -163,7 +163,7 @@ void ACTION_OT_markers_make_local(wmOperatorType *ot)
 
 /* *************************** Calculate Range ************************** */
 
-/* Get the min/max keyframes*/
+/* Get the min/max keyframes. */
 static bool get_keyframe_extents(bAnimContext *ac, float *min, float *max, const short onlySel)
 {
   ListBase anim_data = {NULL, NULL};
@@ -218,7 +218,7 @@ static bool get_keyframe_extents(bAnimContext *ac, float *min, float *max, const
         float tmin, tmax;
 
         /* get range and apply necessary scaling before processing */
-        if (calc_fcurve_range(fcu, &tmin, &tmax, onlySel, false)) {
+        if (BKE_fcurve_calc_range(fcu, &tmin, &tmax, onlySel, false)) {
 
           if (adt) {
             tmin = BKE_nla_tweakedit_remap(adt, tmin, NLATIME_CONVERT_MAP);
@@ -272,9 +272,8 @@ static int actkeys_previewrange_exec(bContext *C, wmOperator *UNUSED(op))
   if (ac.scene == NULL) {
     return OPERATOR_CANCELLED;
   }
-  else {
-    scene = ac.scene;
-  }
+
+  scene = ac.scene;
 
   /* set the range directly */
   get_keyframe_extents(&ac, &min, &max, false);
@@ -287,7 +286,7 @@ static int actkeys_previewrange_exec(bContext *C, wmOperator *UNUSED(op))
   }
 
   /* set notifier that things have changed */
-  // XXX err... there's nothing for frame ranges yet, but this should do fine too
+  /* XXX err... there's nothing for frame ranges yet, but this should do fine too */
   WM_event_add_notifier(C, NC_SCENE | ND_FRAME, ac.scene);
 
   return OPERATOR_FINISHED;
@@ -313,17 +312,17 @@ void ACTION_OT_previewrange_set(wmOperatorType *ot)
 /**
  * Find the extents of the active channel
  *
- * \param[out] min Bottom y-extent of channel
- * \param[out] max Top y-extent of channel
- * \return Success of finding a selected channel
+ * \param r_min: Bottom y-extent of channel.
+ * \param r_max: Top y-extent of channel.
+ * \return Success of finding a selected channel.
  */
-static bool actkeys_channels_get_selected_extents(bAnimContext *ac, float *min, float *max)
+static bool actkeys_channels_get_selected_extents(bAnimContext *ac, float *r_min, float *r_max)
 {
   ListBase anim_data = {NULL, NULL};
   bAnimListElem *ale;
   int filter;
 
-  /* NOTE: not bool, since we want prioritise individual channels over expanders */
+  /* NOTE: not bool, since we want prioritize individual channels over expanders. */
   short found = 0;
 
   /* get all items - we need to do it this way */
@@ -340,14 +339,14 @@ static bool actkeys_channels_get_selected_extents(bAnimContext *ac, float *min, 
     if (acf && acf->has_setting(ac, ale, ACHANNEL_SETTING_SELECT) &&
         ANIM_channel_setting_get(ac, ale, ACHANNEL_SETTING_SELECT)) {
       /* update best estimate */
-      *min = ymax - ACHANNEL_HEIGHT(ac);
-      *max = ymax;
+      *r_min = ymax - ACHANNEL_HEIGHT(ac);
+      *r_max = ymax;
 
       /* is this high enough priority yet? */
       found = acf->channel_role;
 
       /* only stop our search when we've found an actual channel
-       * - datablock expanders get less priority so that we don't abort prematurely
+       * - data-block expanders get less priority so that we don't abort prematurely
        */
       if (found == ACHANNEL_ROLE_CHANNEL) {
         break;
@@ -372,7 +371,7 @@ static int actkeys_viewall(bContext *C, const bool only_sel)
   if (ANIM_animdata_get_context(C, &ac) == 0) {
     return OPERATOR_CANCELLED;
   }
-  v2d = &ac.ar->v2d;
+  v2d = &ac.region->v2d;
 
   /* set the horizontal range, with an extra offset so that the extreme keys will be in view */
   found = get_keyframe_extents(&ac, &min, &max, only_sel);
@@ -448,7 +447,7 @@ static int actkeys_viewsel_exec(bContext *C, wmOperator *UNUSED(op))
 void ACTION_OT_view_all(wmOperatorType *ot)
 {
   /* identifiers */
-  ot->name = "View All";
+  ot->name = "Frame All";
   ot->idname = "ACTION_OT_view_all";
   ot->description = "Reset viewable area to show full keyframe range";
 
@@ -463,7 +462,7 @@ void ACTION_OT_view_all(wmOperatorType *ot)
 void ACTION_OT_view_selected(wmOperatorType *ot)
 {
   /* identifiers */
-  ot->name = "View Selected";
+  ot->name = "Frame Selected";
   ot->idname = "ACTION_OT_view_selected";
   ot->description = "Reset viewable area to show selected keyframes range";
 
@@ -490,7 +489,7 @@ void ACTION_OT_view_frame(wmOperatorType *ot)
   /* identifiers */
   ot->name = "Go to Current Frame";
   ot->idname = "ACTION_OT_view_frame";
-  ot->description = "Move the view to the playhead";
+  ot->description = "Move the view to the current frame";
 
   /* api callbacks */
   ot->exec = actkeys_view_frame_exec;
@@ -540,7 +539,7 @@ static short paste_action_keys(bAnimContext *ac,
    * - First time we try to filter more strictly, allowing only selected channels
    *   to allow copying animation between channels
    * - Second time, we loosen things up if nothing was found the first time, allowing
-   *   users to just paste keyframes back into the original curve again [#31670]
+   *   users to just paste keyframes back into the original curve again T31670.
    */
   filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE |
             ANIMFILTER_FOREDIT /*| ANIMFILTER_CURVESONLY*/ | ANIMFILTER_NODUPLIS);
@@ -577,7 +576,7 @@ static int actkeys_copy_exec(bContext *C, wmOperator *op)
     }
   }
   else if (ac.datatype == ANIMCONT_MASK) {
-    /* FIXME... */
+    /* FIXME: support this case. */
     BKE_report(op->reports, RPT_ERROR, "Keyframe pasting is not available for mask mode");
     return OPERATOR_CANCELLED;
   }
@@ -630,7 +629,7 @@ static int actkeys_paste_exec(bContext *C, wmOperator *op)
     }
   }
   else if (ac.datatype == ANIMCONT_MASK) {
-    /* FIXME... */
+    /* FIXME: support this case. */
     BKE_report(op->reports,
                RPT_ERROR,
                "Keyframe pasting is not available for grease pencil or mask mode");
@@ -649,6 +648,19 @@ static int actkeys_paste_exec(bContext *C, wmOperator *op)
   return OPERATOR_FINISHED;
 }
 
+static char *actkeys_paste_description(bContext *UNUSED(C),
+                                       wmOperatorType *UNUSED(op),
+                                       PointerRNA *ptr)
+{
+  /* Custom description if the 'flipped' option is used. */
+  if (RNA_boolean_get(ptr, "flipped")) {
+    return BLI_strdup("Paste keyframes from mirrored bones if they exist");
+  }
+
+  /* Use the default description in the other cases. */
+  return NULL;
+}
+
 void ACTION_OT_paste(wmOperatorType *ot)
 {
   PropertyRNA *prop;
@@ -661,6 +673,7 @@ void ACTION_OT_paste(wmOperatorType *ot)
 
   /* api callbacks */
   //  ot->invoke = WM_operator_props_popup; // better wait for action redo panel
+  ot->get_description = actkeys_paste_description;
   ot->exec = actkeys_paste_exec;
   ot->poll = ED_operator_action_active;
 
@@ -707,7 +720,7 @@ static void insert_action_keys(bAnimContext *ac, short mode)
   ReportList *reports = ac->reports;
   Scene *scene = ac->scene;
   ToolSettings *ts = scene->toolsettings;
-  short flag = 0;
+  eInsertKeyFlags flag;
 
   /* filter data */
   filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE |
@@ -721,13 +734,14 @@ static void insert_action_keys(bAnimContext *ac, short mode)
 
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
-  /* init keyframing flag */
-  flag = ANIM_get_keyframing_flags(scene, 1);
+  /* Init keyframing flag. */
+  flag = ANIM_get_keyframing_flags(scene, true);
 
   /* insert keyframes */
+  const AnimationEvalContext anim_eval_context = BKE_animsys_eval_context_construct(ac->depsgraph,
+                                                                                    (float)CFRA);
   for (ale = anim_data.first; ale; ale = ale->next) {
     FCurve *fcu = (FCurve *)ale->key_data;
-    float cfra = (float)CFRA;
 
     /* Read value from property the F-Curve represents, or from the curve only?
      * - ale->id != NULL:
@@ -746,7 +760,7 @@ static void insert_action_keys(bAnimContext *ac, short mode)
                       ((fcu->grp) ? (fcu->grp->name) : (NULL)),
                       fcu->rna_path,
                       fcu->array_index,
-                      cfra,
+                      &anim_eval_context,
                       ts->keyframe_type,
                       &nla_cache,
                       flag);
@@ -755,8 +769,9 @@ static void insert_action_keys(bAnimContext *ac, short mode)
       AnimData *adt = ANIM_nla_mapping_get(ac, ale);
 
       /* adjust current frame for NLA-scaling */
+      float cfra = anim_eval_context.eval_time;
       if (adt) {
-        cfra = BKE_nla_tweakedit_remap(adt, (float)CFRA, NLATIME_CONVERT_UNMAP);
+        cfra = BKE_nla_tweakedit_remap(adt, cfra, NLATIME_CONVERT_UNMAP);
       }
 
       const float curval = evaluate_fcurve(fcu, cfra);
@@ -800,10 +815,17 @@ static void insert_gpencil_keys(bAnimContext *ac, short mode)
     add_frame_mode = GP_GETFRAME_ADD_NEW;
   }
 
-  /* insert gp frames */
+  /* Insert gp frames. */
+  bGPdata *gpd_old = NULL;
   for (ale = anim_data.first; ale; ale = ale->next) {
+    bGPdata *gpd = (bGPdata *)ale->id;
     bGPDlayer *gpl = (bGPDlayer *)ale->data;
-    BKE_gpencil_layer_getframe(gpl, CFRA, add_frame_mode);
+    BKE_gpencil_layer_frame_get(gpl, CFRA, add_frame_mode);
+    /* Check if the gpd changes to tag only once. */
+    if (gpd != gpd_old) {
+      BKE_gpencil_tag(gpd);
+      gpd_old = gpd;
+    }
   }
 
   ANIM_animdata_update(ac, &anim_data);
@@ -839,6 +861,9 @@ static int actkeys_insertkey_exec(bContext *C, wmOperator *op)
   }
 
   /* set notifier that keyframes have changed */
+  if (ac.datatype == ANIMCONT_GPENCIL) {
+    WM_event_add_notifier(C, NC_GPENCIL | ND_DATA | NA_EDITED, NULL);
+  }
   WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME | NA_ADDED, NULL);
 
   return OPERATOR_FINISHED;
@@ -888,7 +913,7 @@ static void duplicate_action_keys(bAnimContext *ac)
       duplicate_fcurve_keys((FCurve *)ale->key_data);
     }
     else if (ale->type == ANIMTYPE_GPLAYER) {
-      ED_gplayer_frames_duplicate((bGPDlayer *)ale->data);
+      ED_gpencil_layer_frames_duplicate((bGPDlayer *)ale->data);
     }
     else if (ale->type == ANIMTYPE_MASKLAYER) {
       ED_masklayer_frames_duplicate((MaskLayer *)ale->data);
@@ -964,7 +989,7 @@ static bool delete_action_keys(bAnimContext *ac)
     bool changed = false;
 
     if (ale->type == ANIMTYPE_GPLAYER) {
-      changed = ED_gplayer_frames_delete((bGPDlayer *)ale->data);
+      changed = ED_gpencil_layer_frames_delete((bGPDlayer *)ale->data);
     }
     else if (ale->type == ANIMTYPE_MASKLAYER) {
       changed = ED_masklayer_frames_delete((MaskLayer *)ale->data);
@@ -1025,12 +1050,13 @@ void ACTION_OT_delete(wmOperatorType *ot)
   ot->description = "Remove all selected keyframes";
 
   /* api callbacks */
-  ot->invoke = WM_operator_confirm;
+  ot->invoke = WM_operator_confirm_or_exec;
   ot->exec = actkeys_delete_exec;
   ot->poll = ED_operator_action_active;
 
   /* flags */
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+  WM_operator_properties_confirm_or_exec(ot);
 }
 
 /* ******************** Clean Keyframes Operator ************************* */
@@ -1096,7 +1122,7 @@ void ACTION_OT_clean(wmOperatorType *ot)
   ot->description = "Simplify F-Curves by removing closely spaced keyframes";
 
   /* api callbacks */
-  // ot->invoke =  // XXX we need that number popup for this!
+  // ot->invoke =  /* XXX we need that number popup for this! */
   ot->exec = actkeys_clean_exec;
   ot->poll = ED_operator_action_active;
 
@@ -1111,7 +1137,7 @@ void ACTION_OT_clean(wmOperatorType *ot)
 
 /* ******************** Sample Keyframes Operator *********************** */
 
-/* Evaluates the curves between each selected keyframe on each frame, and keys the value  */
+/* Evaluates the curves between each selected keyframe on each frame, and keys the value. */
 static void sample_action_keys(bAnimContext *ac)
 {
   ListBase anim_data = {NULL, NULL};
@@ -1123,7 +1149,7 @@ static void sample_action_keys(bAnimContext *ac)
             ANIMFILTER_FOREDIT /*| ANIMFILTER_CURVESONLY*/ | ANIMFILTER_NODUPLIS);
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
-  /* loop through filtered data and add keys between selected keyframes on every frame  */
+  /* Loop through filtered data and add keys between selected keyframes on every frame. */
   for (ale = anim_data.first; ale; ale = ale->next) {
     sample_fcurve((FCurve *)ale->key_data);
 
@@ -1311,35 +1337,6 @@ void ACTION_OT_extrapolation_type(wmOperatorType *ot)
 
 /* ******************** Set Interpolation-Type Operator *********************** */
 
-/* this function is responsible for setting interpolation mode for keyframes */
-static void setipo_action_keys(bAnimContext *ac, short mode)
-{
-  ListBase anim_data = {NULL, NULL};
-  bAnimListElem *ale;
-  int filter;
-  KeyframeEditFunc set_cb = ANIM_editkeyframes_ipo(mode);
-
-  /* filter data */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE |
-            ANIMFILTER_FOREDIT /*| ANIMFILTER_CURVESONLY*/ | ANIMFILTER_NODUPLIS);
-  ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
-
-  /* Loop through setting BezTriple interpolation
-   * Note: we do not supply KeyframeEditData to the looper yet.
-   * Currently that's not necessary here.
-   */
-  for (ale = anim_data.first; ale; ale = ale->next) {
-    ANIM_fcurve_keyframes_loop(NULL, ale->key_data, NULL, set_cb, calchandles_fcurve);
-
-    ale->update |= ANIM_UPDATE_DEFAULT;
-  }
-
-  ANIM_animdata_update(ac, &anim_data);
-  ANIM_animdata_freelist(&anim_data);
-}
-
-/* ------------------- */
-
 static int actkeys_ipo_exec(bContext *C, wmOperator *op)
 {
   bAnimContext ac;
@@ -1359,7 +1356,10 @@ static int actkeys_ipo_exec(bContext *C, wmOperator *op)
   mode = RNA_enum_get(op->ptr, "type");
 
   /* set handle type */
-  setipo_action_keys(&ac, mode);
+  ANIM_animdata_keyframe_callback(&ac,
+                                  (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE |
+                                   ANIMFILTER_FOREDIT | ANIMFILTER_NODUPLIS),
+                                  ANIM_editkeyframes_ipo(mode));
 
   /* set notifier that keyframe properties have changed */
   WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME_PROP, NULL);
@@ -1388,6 +1388,54 @@ void ACTION_OT_interpolation_type(wmOperatorType *ot)
       ot->srna, "type", rna_enum_beztriple_interpolation_mode_items, 0, "Type", "");
 }
 
+/* ******************** Set Easing Operator *********************** */
+
+static int actkeys_easing_exec(bContext *C, wmOperator *op)
+{
+  bAnimContext ac;
+  short mode;
+
+  /* get editor data */
+  if (ANIM_animdata_get_context(C, &ac) == 0) {
+    return OPERATOR_CANCELLED;
+  }
+
+  /* get handle setting mode */
+  mode = RNA_enum_get(op->ptr, "type");
+
+  /* set handle type */
+  ANIM_animdata_keyframe_callback(&ac,
+                                  (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE |
+                                   ANIMFILTER_FOREDIT | ANIMFILTER_NODUPLIS),
+                                  ANIM_editkeyframes_easing(mode));
+
+  /* set notifier that keyframe properties have changed */
+  WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME_PROP, NULL);
+
+  return OPERATOR_FINISHED;
+}
+
+void ACTION_OT_easing_type(wmOperatorType *ot)
+{
+  /* identifiers */
+  ot->name = "Set Keyframe Easing Type";
+  ot->idname = "ACTION_OT_easing_type";
+  ot->description =
+      "Set easing type for the F-Curve segments starting from the selected keyframes";
+
+  /* api callbacks */
+  ot->invoke = WM_menu_invoke;
+  ot->exec = actkeys_easing_exec;
+  ot->poll = ED_operator_action_active;
+
+  /* flags */
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+
+  /* id-props */
+  ot->prop = RNA_def_enum(
+      ot->srna, "type", rna_enum_beztriple_interpolation_easing_items, 0, "Type", "");
+}
+
 /* ******************** Set Handle-Type Operator *********************** */
 
 /* this function is responsible for setting handle-type of selected keyframes */
@@ -1406,7 +1454,7 @@ static void sethandles_action_keys(bAnimContext *ac, short mode)
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   /* Loop through setting flags for handles
-   * Note: we do not supply KeyframeEditData to the looper yet.
+   * NOTE: we do not supply KeyframeEditData to the looper yet.
    * Currently that's not necessary here.
    */
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -1489,7 +1537,7 @@ static void setkeytype_action_keys(bAnimContext *ac, short mode)
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   /* Loop through setting BezTriple interpolation
-   * Note: we do not supply KeyframeEditData to the looper yet.
+   * NOTE: we do not supply KeyframeEditData to the looper yet.
    * Currently that's not necessary here.
    */
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -1517,7 +1565,7 @@ static void setkeytype_gpencil_keys(bAnimContext *ac, short mode)
   /* loop through each layer */
   for (ale = anim_data.first; ale; ale = ale->next) {
     if (ale->type == ANIMTYPE_GPLAYER) {
-      ED_gplayer_frames_keytype_set(ale->data, mode);
+      ED_gpencil_layer_frames_keytype_set(ale->data, mode);
       ale->update |= ANIM_UPDATE_DEPS;
     }
   }
@@ -1632,7 +1680,7 @@ static int actkeys_framejump_exec(bContext *C, wmOperator *UNUSED(op))
   if (ked.i1) {
     Scene *scene = ac.scene;
     CFRA = round_fl_to_int(ked.f1 / ked.i1);
-    SUBFRA = 0.f;
+    SUBFRA = 0.0f;
   }
 
   /* set notifier that things have changed */
@@ -1663,23 +1711,23 @@ static const EnumPropertyItem prop_actkeys_snap_types[] = {
     {ACTKEYS_SNAP_CFRA,
      "CFRA",
      0,
-     "Current Frame",
+     "Selection to Current Frame",
      "Snap selected keyframes to the current frame"},
     {ACTKEYS_SNAP_NEAREST_FRAME,
      "NEAREST_FRAME",
      0,
-     "Nearest Frame",
-     "Snap selected keyframes to the nearest (whole) frame (use to fix accidental sub-frame "
+     "Selection to Nearest Frame",
+     "Snap selected keyframes to the nearest (whole) frame (use to fix accidental subframe "
      "offsets)"},
     {ACTKEYS_SNAP_NEAREST_SECOND,
      "NEAREST_SECOND",
      0,
-     "Nearest Second",
+     "Selection to Nearest Second",
      "Snap selected keyframes to the nearest second"},
     {ACTKEYS_SNAP_NEAREST_MARKER,
      "NEAREST_MARKER",
      0,
-     "Nearest Marker",
+     "Selection to Nearest Marker",
      "Snap selected keyframes to the nearest marker"},
     {0, NULL, 0, NULL, NULL},
 };
@@ -1718,7 +1766,7 @@ static void snap_action_keys(bAnimContext *ac, short mode)
     AnimData *adt = ANIM_nla_mapping_get(ac, ale);
 
     if (ale->type == ANIMTYPE_GPLAYER) {
-      ED_gplayer_snap_frames(ale->data, ac->scene, mode);
+      ED_gpencil_layer_snap_frames(ale->data, ac->scene, mode);
     }
     else if (ale->type == ANIMTYPE_MASKLAYER) {
       ED_masklayer_snap_frames(ale->data, ac->scene, mode);
@@ -1794,7 +1842,7 @@ static const EnumPropertyItem prop_actkeys_mirror_types[] = {
     {ACTKEYS_MIRROR_XAXIS,
      "XAXIS",
      0,
-     "By Values Over Value=0",
+     "By Values Over Zero Value",
      "Flip values of selected keyframes (i.e. negative values become positive, and vice versa)"},
     {ACTKEYS_MIRROR_MARKER,
      "MARKER",
@@ -1848,7 +1896,7 @@ static void mirror_action_keys(bAnimContext *ac, short mode)
     AnimData *adt = ANIM_nla_mapping_get(ac, ale);
 
     if (ale->type == ANIMTYPE_GPLAYER) {
-      ED_gplayer_mirror_frames(ale->data, ac->scene, mode);
+      ED_gpencil_layer_mirror_frames(ale->data, ac->scene, mode);
     }
     else if (ale->type == ANIMTYPE_MASKLAYER) {
       /* TODO */

@@ -18,8 +18,8 @@
  * \ingroup sptext
  */
 
-#include <string.h>
 #include <errno.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -33,17 +33,17 @@
 #include "PIL_time.h"
 
 #include "BKE_context.h"
+#include "BKE_main.h"
 #include "BKE_report.h"
 #include "BKE_text.h"
 #include "BKE_undo_system.h"
-#include "BKE_main.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
 
-#include "ED_text.h"
 #include "ED_curve.h"
 #include "ED_screen.h"
+#include "ED_text.h"
 #include "ED_undo.h"
 
 #include "UI_interface.h"
@@ -52,8 +52,8 @@
 #include "RNA_access.h"
 #include "RNA_define.h"
 
-#include "text_intern.h"
 #include "text_format.h"
+#include "text_intern.h"
 
 /* -------------------------------------------------------------------- */
 /** \name Implements ED Undo System
@@ -196,14 +196,19 @@ static bool text_undosys_step_encode(struct bContext *C,
   return true;
 }
 
-static void text_undosys_step_decode(
-    struct bContext *C, struct Main *UNUSED(bmain), UndoStep *us_p, int dir, bool is_final)
+static void text_undosys_step_decode(struct bContext *C,
+                                     struct Main *UNUSED(bmain),
+                                     UndoStep *us_p,
+                                     const eUndoStepDir dir,
+                                     bool is_final)
 {
+  BLI_assert(dir != STEP_INVALID);
+
   TextUndoStep *us = (TextUndoStep *)us_p;
   Text *text = us->text_ref.ptr;
 
   TextState *state;
-  if ((us->states[0].buf_array_state != NULL) && (dir == -1) && !is_final) {
+  if ((us->states[0].buf_array_state != NULL) && (dir == STEP_UNDO) && !is_final) {
     state = &us->states[0];
   }
   else {
@@ -260,7 +265,7 @@ void ED_text_undosys_type(UndoType *ut)
 
   ut->step_foreach_ID_ref = text_undosys_foreach_ID_ref;
 
-  ut->use_context = false;
+  ut->flags = UNDOTYPE_FLAG_NEED_CONTEXT_FOR_ENCODE;
 
   ut->step_size = sizeof(TextUndoStep);
 }

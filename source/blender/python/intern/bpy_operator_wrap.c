@@ -17,7 +17,7 @@
 /** \file
  * \ingroup pythonintern
  *
- * This file is so python can define operators that C can call into.
+ * This file exposes functionality for defining to define operators that C can call into.
  * The generic callback functions for python operators are defines in
  * 'rna_wm.c', some calling into functions here to do python specific
  * functionality.
@@ -33,14 +33,14 @@
 #include "RNA_access.h"
 #include "RNA_define.h"
 
-#include "bpy_rna.h"
 #include "bpy_intern_string.h"
 #include "bpy_operator_wrap.h" /* own include */
+#include "bpy_rna.h"
 
 static void operator_properties_init(wmOperatorType *ot)
 {
-  PyTypeObject *py_class = ot->ext.data;
-  RNA_struct_blender_type_set(ot->ext.srna, ot);
+  PyTypeObject *py_class = ot->rna_ext.data;
+  RNA_struct_blender_type_set(ot->rna_ext.srna, ot);
 
   /* Only call this so pyrna_deferred_register_class gives a useful error
    * WM_operatortype_append_ptr will call RNA_def_struct_identifier later.
@@ -68,7 +68,7 @@ static void operator_properties_init(wmOperatorType *ot)
     if (bl_property) {
       if (PyUnicode_Check(bl_property)) {
         /* since the property is explicitly given, raise an error if its not found */
-        prop_id = _PyUnicode_AsString(bl_property);
+        prop_id = PyUnicode_AsUTF8(bl_property);
         prop_raise_error = true;
       }
       else {
@@ -115,6 +115,10 @@ static void operator_properties_init(wmOperatorType *ot)
   /* end 'ot->prop' assignment */
 }
 
+/**
+ * Generic function used by all Python defined operators
+ * it's passed as an argument to #WM_operatortype_append_ptr in for operator registration.
+ */
 void BPY_RNA_operator_wrapper(wmOperatorType *ot, void *userdata)
 {
   /* take care not to overwrite anything set in
@@ -123,14 +127,18 @@ void BPY_RNA_operator_wrapper(wmOperatorType *ot, void *userdata)
   *ot = *((wmOperatorType *)userdata);
   ot->srna = srna; /* restore */
 
-  /* Use i18n context from ext.srna if possible (py operators). */
-  if (ot->ext.srna) {
-    RNA_def_struct_translation_context(ot->srna, RNA_struct_translation_context(ot->ext.srna));
+  /* Use i18n context from rna_ext.srna if possible (py operators). */
+  if (ot->rna_ext.srna) {
+    RNA_def_struct_translation_context(ot->srna, RNA_struct_translation_context(ot->rna_ext.srna));
   }
 
   operator_properties_init(ot);
 }
 
+/**
+ * Generic function used by all Python defined macro-operators
+ * it's passed as an argument to #WM_operatortype_append_ptr in for operator registration.
+ */
 void BPY_RNA_operator_macro_wrapper(wmOperatorType *ot, void *userdata)
 {
   wmOperatorType *data = (wmOperatorType *)userdata;
@@ -142,11 +150,11 @@ void BPY_RNA_operator_macro_wrapper(wmOperatorType *ot, void *userdata)
   ot->flag |= data->flag; /* append flags to the one set by registration */
   ot->pyop_poll = data->pyop_poll;
   ot->ui = data->ui;
-  ot->ext = data->ext;
+  ot->rna_ext = data->rna_ext;
 
-  /* Use i18n context from ext.srna if possible (py operators). */
-  if (ot->ext.srna) {
-    RNA_def_struct_translation_context(ot->srna, RNA_struct_translation_context(ot->ext.srna));
+  /* Use i18n context from rna_ext.srna if possible (py operators). */
+  if (ot->rna_ext.srna) {
+    RNA_def_struct_translation_context(ot->srna, RNA_struct_translation_context(ot->rna_ext.srna));
   }
 
   operator_properties_init(ot);

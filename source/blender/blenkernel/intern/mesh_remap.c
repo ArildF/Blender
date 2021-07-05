@@ -29,7 +29,6 @@
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_alloca.h"
 #include "BLI_astar.h"
 #include "BLI_bitmap.h"
@@ -37,6 +36,7 @@
 #include "BLI_memarena.h"
 #include "BLI_polyfill_2d.h"
 #include "BLI_rand.h"
+#include "BLI_utildefines.h"
 
 #include "BKE_bvhutils.h"
 #include "BKE_customdata.h"
@@ -61,7 +61,12 @@ static bool mesh_remap_bvhtree_query_nearest(BVHTreeFromMesh *treedata,
 {
   /* Use local proximity heuristics (to reduce the nearest search). */
   if (nearest->index != -1) {
-    nearest->dist_sq = min_ff(len_squared_v3v3(co, nearest->co), max_dist_sq);
+    nearest->dist_sq = len_squared_v3v3(co, nearest->co);
+    if (nearest->dist_sq > max_dist_sq) {
+      /* The previous valid index is too far away and not valid for this check. */
+      nearest->dist_sq = max_dist_sq;
+      nearest->index = -1;
+    }
   }
   else {
     nearest->dist_sq = max_dist_sq;
@@ -73,9 +78,8 @@ static bool mesh_remap_bvhtree_query_nearest(BVHTreeFromMesh *treedata,
     *r_hit_dist = sqrtf(nearest->dist_sq);
     return true;
   }
-  else {
-    return false;
-  }
+
+  return false;
 }
 
 static bool mesh_remap_bvhtree_query_raycast(BVHTreeFromMesh *treedata,
@@ -107,9 +111,8 @@ static bool mesh_remap_bvhtree_query_raycast(BVHTreeFromMesh *treedata,
     *r_hit_dist = rayhit->dist;
     return true;
   }
-  else {
-    return false;
-  }
+
+  return false;
 }
 
 /** \} */
@@ -213,7 +216,7 @@ static void mesh_calc_eigen_matrix(const MVert *verts,
   }
   unit_m4(r_mat);
 
-  /* Note: here we apply sample correction to covariance matrix, since we consider the vertices
+  /* NOTE: here we apply sample correction to covariance matrix, since we consider the vertices
    *       as a sample of the whole 'surface' population of our mesh. */
   BLI_covariance_m3_v3n(vcos, numverts, true, covmat, center);
 
@@ -253,7 +256,7 @@ static void mesh_calc_eigen_matrix(const MVert *verts,
     float evi = eigen_val[i];
 
     /* Protect against 1D/2D degenerated cases! */
-    /* Note: not sure why we need square root of eigen values here
+    /* NOTE: not sure why we need square root of eigen values here
      * (which are equivalent to singular values, as far as I have understood),
      * but it seems to heavily reduce (if not completely nullify)
      * the error due to non-uniform scalings... */
@@ -324,6 +327,7 @@ void BKE_mesh_remap_find_best_match_from_mesh(const MVert *verts_dst,
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Mesh to mesh mapping
  * \{ */
 
@@ -466,7 +470,7 @@ typedef struct IslandResult {
 } IslandResult;
 
 /**
- * \note About all bvh/raycasting stuff below:
+ * \note About all BVH/ray-casting stuff below:
  *
  * * We must use our ray radius as BVH epsilon too, else rays not hitting anything but
  *   'passing near' an item would be missed (since BVH handling would not detect them,
@@ -474,8 +478,8 @@ typedef struct IslandResult {
  * * However, in 'islands' case where each hit gets a weight, 'precise' hits should have a better
  *   weight than 'approximate' hits.
  *   To address that, we simplify things with:
- *   * A first raycast with default, given rayradius;
- *   * If first one fails, we do more raycasting with bigger radius, but if hit is found
+ *   * A first ray-cast with default, given ray-radius;
+ *   * If first one fails, we do more ray-casting with bigger radius, but if hit is found
  *     it will get smaller weight.
  *
  *   This only concerns loops, currently (because of islands), and 'sampled' edges/polys norproj.
@@ -783,7 +787,7 @@ void BKE_mesh_remap_calc_edges_from_mesh(const int mode,
         int j = 2;
 
         while (j--) {
-          const unsigned int vidx_dst = j ? e_dst->v1 : e_dst->v2;
+          const uint vidx_dst = j ? e_dst->v1 : e_dst->v2;
 
           /* Compute closest verts only once! */
           if (v_dst_to_src_map[vidx_dst].hit_dist == -1.0f) {
@@ -809,7 +813,7 @@ void BKE_mesh_remap_calc_edges_from_mesh(const int mode,
         /* Now, check all source edges of closest sources vertices,
          * and select the one giving the smallest total verts-to-verts distance. */
         for (j = 2; j--;) {
-          const unsigned int vidx_dst = j ? e_dst->v1 : e_dst->v2;
+          const uint vidx_dst = j ? e_dst->v1 : e_dst->v2;
           const float first_dist = v_dst_to_src_map[vidx_dst].hit_dist;
           const int vidx_src = v_dst_to_src_map[vidx_dst].index;
           int *eidx_src, k;
@@ -1031,7 +1035,7 @@ void BKE_mesh_remap_calc_edges_from_mesh(const int mode,
             if (!weights[j]) {
               continue;
             }
-            /* Note: sources_num is always <= j! */
+            /* NOTE: sources_num is always <= j! */
             weights[sources_num] = weights[j] / totweights;
             indices[sources_num] = j;
             sources_num++;
@@ -1071,7 +1075,7 @@ static void mesh_island_to_astar_graph_edge_process(MeshIslandStore *islands,
                                                     BLI_bitmap *done_edges,
                                                     MeshElemMap *edge_to_poly_map,
                                                     const bool is_edge_innercut,
-                                                    int *poly_island_index_map,
+                                                    const int *poly_island_index_map,
                                                     float (*poly_centers)[3],
                                                     unsigned char *poly_status)
 {
@@ -1538,7 +1542,7 @@ void BKE_mesh_remap_calc_loops_from_mesh(const int mode,
             mp_src = &polys_src[isld->indices[i]];
             for (lidx_src = mp_src->loopstart; lidx_src < mp_src->loopstart + mp_src->totloop;
                  lidx_src++) {
-              const unsigned int vidx_src = loops_src[lidx_src].v;
+              const uint vidx_src = loops_src[lidx_src].v;
               if (!BLI_BITMAP_TEST(verts_active, vidx_src)) {
                 BLI_BITMAP_ENABLE(verts_active, loops_src[lidx_src].v);
                 num_verts_active++;
@@ -1555,6 +1559,7 @@ void BKE_mesh_remap_calc_loops_from_mesh(const int mode,
                                      2,
                                      6,
                                      0,
+                                     NULL,
                                      NULL);
         }
 
@@ -1598,6 +1603,7 @@ void BKE_mesh_remap_calc_loops_from_mesh(const int mode,
                                        2,
                                        6,
                                        0,
+                                       NULL,
                                        NULL);
         }
 
@@ -2326,7 +2332,7 @@ void BKE_mesh_remap_calc_polys_from_mesh(const int mode,
       for (i = 0; i < numpolys_dst; i++) {
         /* For each dst poly, we sample some rays from it (2D grid in pnor space)
          * and use their hits to interpolate from source polys. */
-        /* Note: dst poly is early-converted into src space! */
+        /* NOTE: dst poly is early-converted into src space! */
         MPoly *mp = &polys_dst[i];
 
         int tot_rays, done_rays = 0;
@@ -2393,8 +2399,7 @@ void BKE_mesh_remap_calc_polys_from_mesh(const int mode,
         }
         tot_rays *= tot_rays;
 
-        poly_area_2d_inv = area_poly_v2((const float(*)[2])poly_vcos_2d,
-                                        (unsigned int)mp->totloop);
+        poly_area_2d_inv = area_poly_v2(poly_vcos_2d, (uint)mp->totloop);
         /* In case we have a null-area degenerated poly... */
         poly_area_2d_inv = 1.0f / max_ff(poly_area_2d_inv, 1e-9f);
 
@@ -2413,8 +2418,7 @@ void BKE_mesh_remap_calc_polys_from_mesh(const int mode,
           tri_vidx_2d[1][2] = 3;
         }
         else {
-          BLI_polyfill_calc(
-              poly_vcos_2d, (unsigned int)mp->totloop, -1, (unsigned int(*)[3])tri_vidx_2d);
+          BLI_polyfill_calc(poly_vcos_2d, (uint)mp->totloop, -1, (uint(*)[3])tri_vidx_2d);
         }
 
         for (j = 0; j < tris_num; j++) {
@@ -2461,7 +2465,7 @@ void BKE_mesh_remap_calc_polys_from_mesh(const int mode,
             if (!weights[j]) {
               continue;
             }
-            /* Note: sources_num is always <= j! */
+            /* NOTE: sources_num is always <= j! */
             weights[sources_num] = weights[j] / totweights;
             indices[sources_num] = j;
             sources_num++;

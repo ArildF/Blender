@@ -21,8 +21,8 @@
  * \ingroup spclip
  */
 
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -30,23 +30,22 @@
 #include "DNA_screen_types.h"
 #include "DNA_space_types.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_path_util.h"
 #include "BLI_string.h"
+#include "BLI_utildefines.h"
 
 #include "BLT_translation.h"
 
 #include "BKE_context.h"
-#include "BKE_screen.h"
 #include "BKE_movieclip.h"
+#include "BKE_screen.h"
 #include "BKE_tracking.h"
 
 #include "DEG_depsgraph.h"
 
 #include "ED_clip.h"
-#include "ED_gpencil.h"
 #include "ED_screen.h"
 
 #include "UI_interface.h"
@@ -57,8 +56,8 @@
 #include "WM_api.h"
 #include "WM_types.h"
 
-#include "IMB_imbuf_types.h"
 #include "IMB_imbuf.h"
+#include "IMB_imbuf_types.h"
 
 #include "clip_intern.h" /* own include */
 
@@ -95,7 +94,7 @@ void ED_clip_buttons_register(ARegionType *art)
   strcpy(pt->translation_context, BLT_I18NCONTEXT_DEFAULT_BPYRNA);
   pt->poll = metadata_panel_context_poll;
   pt->draw = metadata_panel_context_draw;
-  pt->flag |= PNL_DEFAULT_CLOSED;
+  pt->flag |= PANEL_TYPE_DEFAULT_CLOSED;
   BLI_addtail(&art->paneltypes, pt);
 }
 
@@ -104,17 +103,11 @@ void ED_clip_buttons_register(ARegionType *art)
 void uiTemplateMovieClip(
     uiLayout *layout, bContext *C, PointerRNA *ptr, const char *propname, bool compact)
 {
-  PropertyRNA *prop;
-  PointerRNA clipptr;
-  MovieClip *clip;
-  uiLayout *row, *split;
-  uiBlock *block;
-
   if (!ptr->data) {
     return;
   }
 
-  prop = RNA_struct_find_property(ptr, propname);
+  PropertyRNA *prop = RNA_struct_find_property(ptr, propname);
   if (!prop) {
     printf(
         "%s: property not found: %s.%s\n", __func__, RNA_struct_identifier(ptr->type), propname);
@@ -129,8 +122,8 @@ void uiTemplateMovieClip(
     return;
   }
 
-  clipptr = RNA_property_pointer_get(ptr, prop);
-  clip = clipptr.data;
+  PointerRNA clipptr = RNA_property_pointer_get(ptr, prop);
+  MovieClip *clip = clipptr.data;
 
   uiLayoutSetContextPointer(layout, "edit_movieclip", &clipptr);
 
@@ -148,20 +141,18 @@ void uiTemplateMovieClip(
   }
 
   if (clip) {
-    uiLayout *col;
-
-    row = uiLayoutRow(layout, false);
-    block = uiLayoutGetBlock(row);
+    uiLayout *row = uiLayoutRow(layout, false);
+    uiBlock *block = uiLayoutGetBlock(row);
     uiDefBut(block, UI_BTYPE_LABEL, 0, IFACE_("File Path:"), 0, 19, 145, 19, NULL, 0, 0, 0, 0, "");
 
     row = uiLayoutRow(layout, false);
-    split = uiLayoutSplit(row, 0.0f, false);
+    uiLayout *split = uiLayoutSplit(row, 0.0f, false);
     row = uiLayoutRow(split, true);
 
     uiItemR(row, &clipptr, "filepath", 0, "", ICON_NONE);
     uiItemO(row, "", ICON_FILE_REFRESH, "clip.reload");
 
-    col = uiLayoutColumn(layout, false);
+    uiLayout *col = uiLayoutColumn(layout, false);
     uiTemplateColorspaceSettings(col, &clipptr, "colorspace_settings");
   }
 }
@@ -170,17 +161,11 @@ void uiTemplateMovieClip(
 
 void uiTemplateTrack(uiLayout *layout, PointerRNA *ptr, const char *propname)
 {
-  PropertyRNA *prop;
-  PointerRNA scopesptr;
-  uiBlock *block;
-  uiLayout *col;
-  MovieClipScopes *scopes;
-
   if (!ptr->data) {
     return;
   }
 
-  prop = RNA_struct_find_property(ptr, propname);
+  PropertyRNA *prop = RNA_struct_find_property(ptr, propname);
   if (!prop) {
     printf(
         "%s: property not found: %s.%s\n", __func__, RNA_struct_identifier(ptr->type), propname);
@@ -195,8 +180,8 @@ void uiTemplateTrack(uiLayout *layout, PointerRNA *ptr, const char *propname)
     return;
   }
 
-  scopesptr = RNA_property_pointer_get(ptr, prop);
-  scopes = (MovieClipScopes *)scopesptr.data;
+  PointerRNA scopesptr = RNA_property_pointer_get(ptr, prop);
+  MovieClipScopes *scopes = (MovieClipScopes *)scopesptr.data;
 
   if (scopes->track_preview_height < UI_UNIT_Y) {
     scopes->track_preview_height = UI_UNIT_Y;
@@ -205,8 +190,8 @@ void uiTemplateTrack(uiLayout *layout, PointerRNA *ptr, const char *propname)
     scopes->track_preview_height = UI_UNIT_Y * 20;
   }
 
-  col = uiLayoutColumn(layout, true);
-  block = uiLayoutGetBlock(col);
+  uiLayout *col = uiLayoutColumn(layout, true);
+  uiBlock *block = uiLayoutGetBlock(col);
 
   uiDefBut(block,
            UI_BTYPE_TRACK_PREVIEW,
@@ -273,7 +258,7 @@ typedef struct {
   int marker_flag;
 } MarkerUpdateCb;
 
-static void to_pixel_space(float r[2], float a[2], int width, int height)
+static void to_pixel_space(float r[2], const float a[2], int width, int height)
 {
   copy_v2_v2(r, a);
   r[0] *= width;
@@ -283,14 +268,13 @@ static void to_pixel_space(float r[2], float a[2], int width, int height)
 static void marker_update_cb(bContext *C, void *arg_cb, void *UNUSED(arg))
 {
   MarkerUpdateCb *cb = (MarkerUpdateCb *)arg_cb;
-  MovieTrackingMarker *marker;
 
   if (!cb->compact) {
     return;
   }
 
-  marker = BKE_tracking_marker_ensure(cb->track, cb->framenr);
-
+  int clip_framenr = BKE_movieclip_remap_scene_to_clip_frame(cb->clip, cb->framenr);
+  MovieTrackingMarker *marker = BKE_tracking_marker_ensure(cb->track, clip_framenr);
   marker->flag = cb->marker_flag;
 
   WM_event_add_notifier(C, NC_MOVIECLIP | NA_EDITED, NULL);
@@ -299,13 +283,13 @@ static void marker_update_cb(bContext *C, void *arg_cb, void *UNUSED(arg))
 static void marker_block_handler(bContext *C, void *arg_cb, int event)
 {
   MarkerUpdateCb *cb = (MarkerUpdateCb *)arg_cb;
-  MovieTrackingMarker *marker;
   int width, height;
   bool ok = false;
 
   BKE_movieclip_get_size(cb->clip, cb->user, &width, &height);
 
-  marker = BKE_tracking_marker_ensure(cb->track, cb->framenr);
+  int clip_framenr = BKE_movieclip_remap_scene_to_clip_frame(cb->clip, cb->framenr);
+  MovieTrackingMarker *marker = BKE_tracking_marker_ensure(cb->track, clip_framenr);
 
   if (event == B_MARKER_POS) {
     marker->pos[0] = cb->marker_pos[0] / width;
@@ -319,8 +303,6 @@ static void marker_block_handler(bContext *C, void *arg_cb, int event)
   }
   else if (event == B_MARKER_PAT_DIM) {
     float dim[2], pat_dim[2], pat_min[2], pat_max[2];
-    float scale_x, scale_y;
-    int a;
 
     BKE_tracking_marker_pattern_minmax(cb->marker, pat_min, pat_max);
 
@@ -329,10 +311,10 @@ static void marker_block_handler(bContext *C, void *arg_cb, int event)
     dim[0] = cb->marker_pat[0] / width;
     dim[1] = cb->marker_pat[1] / height;
 
-    scale_x = dim[0] / pat_dim[0];
-    scale_y = dim[1] / pat_dim[1];
+    float scale_x = dim[0] / pat_dim[0];
+    float scale_y = dim[1] / pat_dim[1];
 
-    for (a = 0; a < 4; a++) {
+    for (int a = 0; a < 4; a++) {
       cb->marker->pattern_corners[a][0] *= scale_x;
       cb->marker->pattern_corners[a][1] *= scale_y;
     }
@@ -385,7 +367,6 @@ static void marker_block_handler(bContext *C, void *arg_cb, int event)
   }
   else if (event == B_MARKER_OFFSET) {
     float offset[2], delta[2];
-    int i;
 
     offset[0] = cb->track_offset[0] / width;
     offset[1] = cb->track_offset[1] / height;
@@ -393,7 +374,7 @@ static void marker_block_handler(bContext *C, void *arg_cb, int event)
     sub_v2_v2v2(delta, offset, cb->track->offset);
     copy_v2_v2(cb->track->offset, offset);
 
-    for (i = 0; i < cb->track->markersnr; i++) {
+    for (int i = 0; i < cb->track->markersnr; i++) {
       sub_v2_v2(cb->track->markers[i].pos, delta);
     }
 
@@ -416,23 +397,11 @@ void uiTemplateMarker(uiLayout *layout,
                       PointerRNA *trackptr,
                       bool compact)
 {
-  PropertyRNA *prop;
-  uiBlock *block;
-  uiBut *bt;
-  PointerRNA clipptr;
-  MovieClip *clip;
-  MovieClipUser *user;
-  MovieTrackingTrack *track;
-  MovieTrackingMarker *marker;
-  MarkerUpdateCb *cb;
-  const char *tip;
-  float pat_min[2], pat_max[2];
-
   if (!ptr->data) {
     return;
   }
 
-  prop = RNA_struct_find_property(ptr, propname);
+  PropertyRNA *prop = RNA_struct_find_property(ptr, propname);
   if (!prop) {
     printf(
         "%s: property not found: %s.%s\n", __func__, RNA_struct_identifier(ptr->type), propname);
@@ -447,14 +416,15 @@ void uiTemplateMarker(uiLayout *layout,
     return;
   }
 
-  clipptr = RNA_property_pointer_get(ptr, prop);
-  clip = (MovieClip *)clipptr.data;
-  user = userptr->data;
-  track = trackptr->data;
+  PointerRNA clipptr = RNA_property_pointer_get(ptr, prop);
+  MovieClip *clip = (MovieClip *)clipptr.data;
+  MovieClipUser *user = userptr->data;
+  MovieTrackingTrack *track = trackptr->data;
 
-  marker = BKE_tracking_marker_get(track, user->framenr);
+  int clip_framenr = BKE_movieclip_remap_scene_to_clip_frame(clip, user->framenr);
+  MovieTrackingMarker *marker = BKE_tracking_marker_get(track, clip_framenr);
 
-  cb = MEM_callocN(sizeof(MarkerUpdateCb), "uiTemplateMarker update_cb");
+  MarkerUpdateCb *cb = MEM_callocN(sizeof(MarkerUpdateCb), "uiTemplateMarker update_cb");
   cb->compact = compact;
   cb->clip = clip;
   cb->user = user;
@@ -464,7 +434,8 @@ void uiTemplateMarker(uiLayout *layout,
   cb->framenr = user->framenr;
 
   if (compact) {
-    block = uiLayoutGetBlock(layout);
+    const char *tip;
+    uiBlock *block = uiLayoutGetBlock(layout);
 
     if (cb->marker_flag & MARKER_DISABLED) {
       tip = TIP_("Marker is disabled at current frame");
@@ -473,34 +444,32 @@ void uiTemplateMarker(uiLayout *layout,
       tip = TIP_("Marker is enabled at current frame");
     }
 
-    bt = uiDefIconButBitI(block,
-                          UI_BTYPE_TOGGLE_N,
-                          MARKER_DISABLED,
-                          0,
-                          ICON_HIDE_OFF,
-                          0,
-                          0,
-                          UI_UNIT_X,
-                          UI_UNIT_Y,
-                          &cb->marker_flag,
-                          0,
-                          0,
-                          1,
-                          0,
-                          tip);
+    uiBut *bt = uiDefIconButBitI(block,
+                                 UI_BTYPE_TOGGLE_N,
+                                 MARKER_DISABLED,
+                                 0,
+                                 ICON_HIDE_OFF,
+                                 0,
+                                 0,
+                                 UI_UNIT_X,
+                                 UI_UNIT_Y,
+                                 &cb->marker_flag,
+                                 0,
+                                 0,
+                                 1,
+                                 0,
+                                 tip);
     UI_but_funcN_set(bt, marker_update_cb, cb, NULL);
     UI_but_drawflag_enable(bt, UI_BUT_ICON_REVERSE);
   }
   else {
-    int width, height, step, digits;
-    float pat_dim[2], search_dim[2], search_pos[2];
-    uiLayout *col;
+    int width, height;
 
     BKE_movieclip_get_size(clip, user, &width, &height);
 
     if (track->flag & TRACK_LOCKED) {
       uiLayoutSetActive(layout, false);
-      block = uiLayoutAbsoluteBlock(layout);
+      uiBlock *block = uiLayoutAbsoluteBlock(layout);
       uiDefBut(block,
                UI_BTYPE_LABEL,
                0,
@@ -519,8 +488,8 @@ void uiTemplateMarker(uiLayout *layout,
       return;
     }
 
-    step = 100;
-    digits = 2;
+    float pat_min[2], pat_max[2];
+    float pat_dim[2], search_dim[2], search_pos[2];
 
     BKE_tracking_marker_pattern_minmax(marker, pat_min, pat_max);
 
@@ -538,9 +507,13 @@ void uiTemplateMarker(uiLayout *layout,
 
     cb->marker_flag = marker->flag;
 
-    block = uiLayoutAbsoluteBlock(layout);
+    uiBlock *block = uiLayoutAbsoluteBlock(layout);
     UI_block_func_handle_set(block, marker_block_handler, cb);
     UI_block_funcN_set(block, marker_update_cb, cb, NULL);
+
+    const char *tip;
+    int step = 100;
+    int digits = 2;
 
     if (cb->marker_flag & MARKER_DISABLED) {
       tip = TIP_("Marker is disabled at current frame");
@@ -565,7 +538,7 @@ void uiTemplateMarker(uiLayout *layout,
                  0,
                  tip);
 
-    col = uiLayoutColumn(layout, true);
+    uiLayout *col = uiLayoutColumn(layout, true);
     uiLayoutSetActive(col, (cb->marker_flag & MARKER_DISABLED) == 0);
 
     block = uiLayoutAbsoluteBlock(col);
@@ -585,34 +558,38 @@ void uiTemplateMarker(uiLayout *layout,
              0,
              0,
              "");
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_POS,
-              IFACE_("X:"),
-              0.5 * UI_UNIT_X,
-              9 * UI_UNIT_Y,
-              7.25 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->marker_pos[0],
-              -10 * width,
-              10.0 * width,
-              step,
-              digits,
-              TIP_("X-position of marker at frame in screen coordinates"));
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_POS,
-              IFACE_("Y:"),
-              8.25 * UI_UNIT_X,
-              9 * UI_UNIT_Y,
-              7.25 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->marker_pos[1],
-              -10 * height,
-              10.0 * height,
-              step,
-              digits,
-              TIP_("Y-position of marker at frame in screen coordinates"));
+    uiBut *bt = uiDefButF(block,
+                          UI_BTYPE_NUM,
+                          B_MARKER_POS,
+                          IFACE_("X:"),
+                          0.5 * UI_UNIT_X,
+                          9 * UI_UNIT_Y,
+                          7.25 * UI_UNIT_X,
+                          UI_UNIT_Y,
+                          &cb->marker_pos[0],
+                          -10 * width,
+                          10.0 * width,
+                          0,
+                          0,
+                          TIP_("X-position of marker at frame in screen coordinates"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_POS,
+                   IFACE_("Y:"),
+                   8.25 * UI_UNIT_X,
+                   9 * UI_UNIT_Y,
+                   7.25 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->marker_pos[1],
+                   -10 * height,
+                   10.0 * height,
+                   0,
+                   0,
+                   TIP_("Y-position of marker at frame in screen coordinates"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
 
     uiDefBut(block,
              UI_BTYPE_LABEL,
@@ -628,34 +605,38 @@ void uiTemplateMarker(uiLayout *layout,
              0,
              0,
              "");
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_OFFSET,
-              IFACE_("X:"),
-              0.5 * UI_UNIT_X,
-              7 * UI_UNIT_Y,
-              7.25 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->track_offset[0],
-              -10 * width,
-              10.0 * width,
-              step,
-              digits,
-              TIP_("X-offset to parenting point"));
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_OFFSET,
-              IFACE_("Y:"),
-              8.25 * UI_UNIT_X,
-              7 * UI_UNIT_Y,
-              7.25 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->track_offset[1],
-              -10 * height,
-              10.0 * height,
-              step,
-              digits,
-              TIP_("Y-offset to parenting point"));
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_OFFSET,
+                   IFACE_("X:"),
+                   0.5 * UI_UNIT_X,
+                   7 * UI_UNIT_Y,
+                   7.25 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->track_offset[0],
+                   -10 * width,
+                   10.0 * width,
+                   0,
+                   0,
+                   TIP_("X-offset to parenting point"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_OFFSET,
+                   IFACE_("Y:"),
+                   8.25 * UI_UNIT_X,
+                   7 * UI_UNIT_Y,
+                   7.25 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->track_offset[1],
+                   -10 * height,
+                   10.0 * height,
+                   0,
+                   0,
+                   TIP_("Y-offset to parenting point"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
 
     uiDefBut(block,
              UI_BTYPE_LABEL,
@@ -671,34 +652,38 @@ void uiTemplateMarker(uiLayout *layout,
              0,
              0,
              "");
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_PAT_DIM,
-              IFACE_("Width:"),
-              0.5 * UI_UNIT_X,
-              5 * UI_UNIT_Y,
-              15 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->marker_pat[0],
-              3.0f,
-              10.0 * width,
-              step,
-              digits,
-              TIP_("Width of marker's pattern in screen coordinates"));
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_PAT_DIM,
-              IFACE_("Height:"),
-              0.5 * UI_UNIT_X,
-              4 * UI_UNIT_Y,
-              15 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->marker_pat[1],
-              3.0f,
-              10.0 * height,
-              step,
-              digits,
-              TIP_("Height of marker's pattern in screen coordinates"));
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_PAT_DIM,
+                   IFACE_("Width:"),
+                   0.5 * UI_UNIT_X,
+                   5 * UI_UNIT_Y,
+                   15 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->marker_pat[0],
+                   3.0f,
+                   10.0 * width,
+                   0,
+                   0,
+                   TIP_("Width of marker's pattern in screen coordinates"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_PAT_DIM,
+                   IFACE_("Height:"),
+                   0.5 * UI_UNIT_X,
+                   4 * UI_UNIT_Y,
+                   15 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->marker_pat[1],
+                   3.0f,
+                   10.0 * height,
+                   0,
+                   0,
+                   TIP_("Height of marker's pattern in screen coordinates"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
 
     uiDefBut(block,
              UI_BTYPE_LABEL,
@@ -714,62 +699,70 @@ void uiTemplateMarker(uiLayout *layout,
              0,
              0,
              "");
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_SEARCH_POS,
-              IFACE_("X:"),
-              0.5 * UI_UNIT_X,
-              2 * UI_UNIT_Y,
-              7.25 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->marker_search_pos[0],
-              -width,
-              width,
-              step,
-              digits,
-              TIP_("X-position of search at frame relative to marker's position"));
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_SEARCH_POS,
-              IFACE_("Y:"),
-              8.25 * UI_UNIT_X,
-              2 * UI_UNIT_Y,
-              7.25 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->marker_search_pos[1],
-              -height,
-              height,
-              step,
-              digits,
-              TIP_("Y-position of search at frame relative to marker's position"));
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_SEARCH_DIM,
-              IFACE_("Width:"),
-              0.5 * UI_UNIT_X,
-              1 * UI_UNIT_Y,
-              15 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->marker_search[0],
-              3.0f,
-              10.0 * width,
-              step,
-              digits,
-              TIP_("Width of marker's search in screen coordinates"));
-    uiDefButF(block,
-              UI_BTYPE_NUM,
-              B_MARKER_SEARCH_DIM,
-              IFACE_("Height:"),
-              0.5 * UI_UNIT_X,
-              0 * UI_UNIT_Y,
-              15 * UI_UNIT_X,
-              UI_UNIT_Y,
-              &cb->marker_search[1],
-              3.0f,
-              10.0 * height,
-              step,
-              digits,
-              TIP_("Height of marker's search in screen coordinates"));
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_SEARCH_POS,
+                   IFACE_("X:"),
+                   0.5 * UI_UNIT_X,
+                   2 * UI_UNIT_Y,
+                   7.25 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->marker_search_pos[0],
+                   -width,
+                   width,
+                   0,
+                   0,
+                   TIP_("X-position of search at frame relative to marker's position"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_SEARCH_POS,
+                   IFACE_("Y:"),
+                   8.25 * UI_UNIT_X,
+                   2 * UI_UNIT_Y,
+                   7.25 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->marker_search_pos[1],
+                   -height,
+                   height,
+                   0,
+                   0,
+                   TIP_("Y-position of search at frame relative to marker's position"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_SEARCH_DIM,
+                   IFACE_("Width:"),
+                   0.5 * UI_UNIT_X,
+                   1 * UI_UNIT_Y,
+                   15 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->marker_search[0],
+                   3.0f,
+                   10.0 * width,
+                   0,
+                   0,
+                   TIP_("Width of marker's search in screen coordinates"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
+    bt = uiDefButF(block,
+                   UI_BTYPE_NUM,
+                   B_MARKER_SEARCH_DIM,
+                   IFACE_("Height:"),
+                   0.5 * UI_UNIT_X,
+                   0 * UI_UNIT_Y,
+                   15 * UI_UNIT_X,
+                   UI_UNIT_Y,
+                   &cb->marker_search[1],
+                   3.0f,
+                   10.0 * height,
+                   0,
+                   0,
+                   TIP_("Height of marker's search in screen coordinates"));
+    UI_but_number_step_size_set(bt, step);
+    UI_but_number_precision_set(bt, digits);
 
     UI_block_align_end(block);
   }
@@ -782,21 +775,11 @@ void uiTemplateMovieclipInformation(uiLayout *layout,
                                     const char *propname,
                                     PointerRNA *userptr)
 {
-  PropertyRNA *prop;
-  PointerRNA clipptr;
-  MovieClip *clip;
-  MovieClipUser *user;
-  uiLayout *col;
-  char str[1024];
-  int width, height, framenr;
-  ImBuf *ibuf;
-  size_t ofs = 0;
-
   if (!ptr->data) {
     return;
   }
 
-  prop = RNA_struct_find_property(ptr, propname);
+  PropertyRNA *prop = RNA_struct_find_property(ptr, propname);
   if (!prop) {
     printf(
         "%s: property not found: %s.%s\n", __func__, RNA_struct_identifier(ptr->type), propname);
@@ -811,23 +794,27 @@ void uiTemplateMovieclipInformation(uiLayout *layout,
     return;
   }
 
-  clipptr = RNA_property_pointer_get(ptr, prop);
-  clip = (MovieClip *)clipptr.data;
-  user = userptr->data;
+  PointerRNA clipptr = RNA_property_pointer_get(ptr, prop);
+  MovieClip *clip = (MovieClip *)clipptr.data;
+  MovieClipUser *user = userptr->data;
 
-  col = uiLayoutColumn(layout, false);
+  uiLayout *col = uiLayoutColumn(layout, false);
   uiLayoutSetAlignment(col, UI_LAYOUT_ALIGN_RIGHT);
 
-  ibuf = BKE_movieclip_get_ibuf_flag(clip, user, clip->flag, MOVIECLIP_CACHE_SKIP);
+  ImBuf *ibuf = BKE_movieclip_get_ibuf_flag(clip, user, clip->flag, MOVIECLIP_CACHE_SKIP);
 
-  /* Display frame dimensions, channels number and byffer type. */
+  int width, height;
+  /* Display frame dimensions, channels number and buffer type. */
   BKE_movieclip_get_size(clip, user, &width, &height);
-  ofs += BLI_snprintf(str + ofs, sizeof(str) - ofs, TIP_("%d x %d"), width, height);
+
+  char str[1024];
+  size_t ofs = 0;
+  ofs += BLI_snprintf_rlen(str + ofs, sizeof(str) - ofs, TIP_("%d x %d"), width, height);
 
   if (ibuf) {
     if (ibuf->rect_float) {
       if (ibuf->channels != 4) {
-        ofs += BLI_snprintf(
+        ofs += BLI_snprintf_rlen(
             str + ofs, sizeof(str) - ofs, TIP_(", %d float channel(s)"), ibuf->channels);
       }
       else if (ibuf->planes == R_IMF_PLANES_RGBA) {
@@ -850,7 +837,7 @@ void uiTemplateMovieclipInformation(uiLayout *layout,
       short frs_sec;
       float frs_sec_base;
       if (IMB_anim_get_fps(clip->anim, &frs_sec, &frs_sec_base, true)) {
-        ofs += BLI_snprintf(
+        ofs += BLI_snprintf_rlen(
             str + ofs, sizeof(str) - ofs, TIP_(", %.2f fps"), (float)frs_sec / frs_sec_base);
       }
     }
@@ -862,7 +849,7 @@ void uiTemplateMovieclipInformation(uiLayout *layout,
   uiItemL(col, str, ICON_NONE);
 
   /* Display current frame number. */
-  framenr = BKE_movieclip_remap_scene_to_clip_frame(clip, user->framenr);
+  int framenr = BKE_movieclip_remap_scene_to_clip_frame(clip, user->framenr);
   if (framenr <= clip->len) {
     BLI_snprintf(str, sizeof(str), TIP_("Frame: %d / %d"), framenr, clip->len);
   }
@@ -878,7 +865,7 @@ void uiTemplateMovieclipInformation(uiLayout *layout,
 
     if (framenr <= clip->len) {
       BKE_movieclip_filename_for_frame(clip, user, filepath);
-      file = BLI_last_slash(filepath);
+      file = BLI_path_slash_rfind(filepath);
     }
     else {
       file = "-";

@@ -21,8 +21,7 @@
  * \ingroup spclip
  */
 
-#ifndef __CLIP_INTERN_H__
-#define __CLIP_INTERN_H__
+#pragma once
 
 struct ARegion;
 struct MovieClip;
@@ -54,26 +53,26 @@ struct wmOperatorType;
 void ED_clip_buttons_register(struct ARegionType *art);
 
 /* clip_dopesheet_draw.c */
-void clip_draw_dopesheet_main(struct SpaceClip *sc, struct ARegion *ar, struct Scene *scene);
-void clip_draw_dopesheet_channels(const struct bContext *C, struct ARegion *ar);
+void clip_draw_dopesheet_main(struct SpaceClip *sc, struct ARegion *region, struct Scene *scene);
+void clip_draw_dopesheet_channels(const struct bContext *C, struct ARegion *region);
 
 /* clip_dopesheet_ops.c */
 void CLIP_OT_dopesheet_select_channel(struct wmOperatorType *ot);
 void CLIP_OT_dopesheet_view_all(struct wmOperatorType *ot);
 
 /* clip_draw.c */
-void clip_draw_main(const struct bContext *C, struct SpaceClip *sc, struct ARegion *ar);
+void clip_draw_main(const struct bContext *C, struct SpaceClip *sc, struct ARegion *region);
 void clip_draw_grease_pencil(struct bContext *C, int onlyv2d);
-void clip_draw_cache_and_notes(const bContext *C, SpaceClip *sc, ARegion *ar);
+void clip_draw_cache_and_notes(const bContext *C, SpaceClip *sc, ARegion *region);
 
 /* clip_editor.c */
 void clip_start_prefetch_job(const struct bContext *C);
 
 /* clip_graph_draw.c */
-void clip_draw_graph(struct SpaceClip *sc, struct ARegion *ar, struct Scene *scene);
+void clip_draw_graph(struct SpaceClip *sc, struct ARegion *region, struct Scene *scene);
 
 /* clip_graph_ops.c */
-void ED_clip_graph_center_current_frame(struct Scene *scene, struct ARegion *ar);
+void ED_clip_graph_center_current_frame(struct Scene *scene, struct ARegion *region);
 
 void CLIP_OT_graph_select(struct wmOperatorType *ot);
 void CLIP_OT_graph_select_box(struct wmOperatorType *ot);
@@ -112,7 +111,7 @@ void CLIP_OT_cursor_set(struct wmOperatorType *ot);
 void CLIP_OT_lock_selection_toggle(struct wmOperatorType *ot);
 
 /* clip_toolbar.c */
-struct ARegion *ED_clip_has_properties_region(struct ScrArea *sa);
+struct ARegion *ED_clip_has_properties_region(struct ScrArea *area);
 
 /* clip_utils.c */
 
@@ -172,13 +171,20 @@ void clip_delete_plane_track(struct bContext *C,
                              struct MovieClip *clip,
                              struct MovieTrackingPlaneTrack *plane_track);
 
+void clip_view_offset_for_center_to_point(
+    SpaceClip *sc, const float x, const float y, float *r_offset_x, float *r_offset_y);
 void clip_view_center_to_point(SpaceClip *sc, float x, float y);
+
+bool clip_view_calculate_view_selection(
+    const struct bContext *C, bool fit, float *r_offset_x, float *r_offset_y, float *r_zoom);
+
+bool clip_view_has_locked_selection(const struct bContext *C);
 
 void clip_draw_sfra_efra(struct View2D *v2d, struct Scene *scene);
 
 /* tracking_ops.c */
 struct MovieTrackingTrack *tracking_marker_check_slide(
-    struct bContext *C, const struct wmEvent *event, int *area_r, int *action_r, int *corner_r);
+    struct bContext *C, const struct wmEvent *event, int *r_area, int *r_action, int *r_corner);
 
 void CLIP_OT_add_marker(struct wmOperatorType *ot);
 void CLIP_OT_add_marker_at_click(struct wmOperatorType *ot);
@@ -192,6 +198,7 @@ void CLIP_OT_clear_solution(struct wmOperatorType *ot);
 
 void CLIP_OT_clear_track_path(struct wmOperatorType *ot);
 void CLIP_OT_join_tracks(struct wmOperatorType *ot);
+void CLIP_OT_average_tracks(struct wmOperatorType *ot);
 
 void CLIP_OT_disable_markers(struct wmOperatorType *ot);
 void CLIP_OT_hide_tracks(struct wmOperatorType *ot);
@@ -245,5 +252,3 @@ void CLIP_OT_select_box(struct wmOperatorType *ot);
 void CLIP_OT_select_lasso(struct wmOperatorType *ot);
 void CLIP_OT_select_circle(struct wmOperatorType *ot);
 void CLIP_OT_select_grouped(struct wmOperatorType *ot);
-
-#endif /* __CLIP_INTERN_H__ */

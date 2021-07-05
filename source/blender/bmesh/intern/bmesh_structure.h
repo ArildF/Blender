@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BMESH_STRUCTURE_H__
-#define __BMESH_STRUCTURE_H__
+#pragma once
 
 /** \file
  * \ingroup bmesh
@@ -64,7 +63,7 @@ BMEdge *bmesh_disk_faceedge_find_next(const BMEdge *e, const BMVert *v) ATTR_WAR
 void bmesh_radial_loop_append(BMEdge *e, BMLoop *l) ATTR_NONNULL();
 void bmesh_radial_loop_remove(BMEdge *e, BMLoop *l) ATTR_NONNULL();
 void bmesh_radial_loop_unlink(BMLoop *l) ATTR_NONNULL();
-/* note:
+/* NOTE:
  *      bmesh_radial_loop_next(BMLoop *l) / prev.
  * just use member access l->radial_next, l->radial_prev now */
 
@@ -93,5 +92,3 @@ BMEdge *bmesh_disk_edge_exists(const BMVert *v1, const BMVert *v2) ATTR_WARN_UNU
 bool bmesh_disk_validate(int len, BMEdge *e, BMVert *v) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 
 #include "intern/bmesh_structure_inline.h"
-
-#endif /* __BMESH_STRUCTURE_H__ */

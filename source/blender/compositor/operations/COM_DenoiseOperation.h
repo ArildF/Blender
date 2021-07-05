@@ -16,11 +16,12 @@
  * Copyright 2019, Blender Foundation.
  */
 
-#ifndef __COM_DENOISEOPERATION_H__
-#define __COM_DENOISEOPERATION_H__
+#pragma once
 
 #include "COM_SingleThreadedOperation.h"
 #include "DNA_node_types.h"
+
+namespace blender::compositor {
 
 class DenoiseOperation : public SingleThreadedOperation {
  private:
@@ -41,12 +42,12 @@ class DenoiseOperation : public SingleThreadedOperation {
   /**
    * Initialize the execution
    */
-  void initExecution();
+  void initExecution() override;
 
   /**
    * Deinitialize the execution
    */
-  void deinitExecution();
+  void deinitExecution() override;
 
   void setDenoiseSettings(NodeDenoise *settings)
   {
@@ -54,7 +55,7 @@ class DenoiseOperation : public SingleThreadedOperation {
   }
   bool determineDependingAreaOfInterest(rcti *input,
                                         ReadBufferOperation *readOperation,
-                                        rcti *output);
+                                        rcti *output) override;
 
  protected:
   void generateDenoise(float *data,
@@ -63,7 +64,7 @@ class DenoiseOperation : public SingleThreadedOperation {
                        MemoryBuffer *inputTileAlbedo,
                        NodeDenoise *settings);
 
-  MemoryBuffer *createMemoryBuffer(rcti *rect);
+  MemoryBuffer *createMemoryBuffer(rcti *rect) override;
 };
 
-#endif /* __COM_DENOISEOPERATION_H__ */
+}  // namespace blender::compositor

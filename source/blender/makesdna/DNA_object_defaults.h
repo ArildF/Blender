@@ -18,8 +18,7 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_OBJECT_DEFAULTS_H__
-#define __DNA_OBJECT_DEFAULTS_H__
+#pragma once
 
 #include "DNA_vec_defaults.h"
 
@@ -67,10 +66,9 @@
     .preview = NULL, \
     .duplicator_visibility_flag = OB_DUPLI_FLAG_VIEWPORT | OB_DUPLI_FLAG_RENDER, \
     .pc_ids = {NULL, NULL}, \
+    .lineart = { .crease_threshold = DEG2RAD(140.0f) }, \
   }
 
 /** \} */
 
 /* clang-format on */
-
-#endif /* __DNA_OBJECT_DEFAULTS_H__ */

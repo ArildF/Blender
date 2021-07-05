@@ -27,7 +27,7 @@
 static PyTypeObject BlenderAppBuildOptionsType;
 
 static PyStructSequence_Field app_builtopts_info_fields[] = {
-    /* names mostly follow CMake options, lowercase, after WITH_ */
+    /* names mostly follow CMake options, lowercase, after `WITH_` */
     {"bullet", NULL},
     {"codec_avi", NULL},
     {"codec_ffmpeg", NULL},
@@ -49,7 +49,10 @@ static PyStructSequence_Field app_builtopts_info_fields[] = {
     {"opensubdiv", NULL},
     {"sdl", NULL},
     {"sdl_dynload", NULL},
+    {"coreaudio", NULL},
     {"jack", NULL},
+    {"pulseaudio", NULL},
+    {"wasapi", NULL},
     {"libmv", NULL},
     {"mod_oceansim", NULL},
     {"mod_remesh", NULL},
@@ -60,6 +63,11 @@ static PyStructSequence_Field app_builtopts_info_fields[] = {
     {"alembic", NULL},
     {"usd", NULL},
     {"fluid", NULL},
+    {"xr_openxr", NULL},
+    {"potrace", NULL},
+    {"pugixml", NULL},
+    {"haru", NULL},
+    /* Sentinel (this line prevents `clang-format` wrapping into columns). */
     {NULL},
 };
 
@@ -209,7 +217,25 @@ static PyObject *make_builtopts_info(void)
   SetObjIncref(Py_False);
 #endif
 
+#ifdef WITH_COREAUDIO
+  SetObjIncref(Py_True);
+#else
+  SetObjIncref(Py_False);
+#endif
+
 #ifdef WITH_JACK
+  SetObjIncref(Py_True);
+#else
+  SetObjIncref(Py_False);
+#endif
+
+#ifdef WITH_PULSEAUDIO
+  SetObjIncref(Py_True);
+#else
+  SetObjIncref(Py_False);
+#endif
+
+#ifdef WITH_WASAPI
   SetObjIncref(Py_True);
 #else
   SetObjIncref(Py_False);
@@ -275,6 +301,30 @@ static PyObject *make_builtopts_info(void)
   SetObjIncref(Py_False);
 #endif
 
+#ifdef WITH_XR_OPENXR
+  SetObjIncref(Py_True);
+#else
+  SetObjIncref(Py_False);
+#endif
+
+#ifdef WITH_POTRACE
+  SetObjIncref(Py_True);
+#else
+  SetObjIncref(Py_False);
+#endif
+
+#ifdef WITH_PUGIXML
+  SetObjIncref(Py_True);
+#else
+  SetObjIncref(Py_False);
+#endif
+
+#ifdef WITH_HARU
+  SetObjIncref(Py_True);
+#else
+  SetObjIncref(Py_False);
+#endif
+
 #undef SetObjIncref
 
   return builtopts_info;
@@ -292,7 +342,7 @@ PyObject *BPY_app_build_options_struct(void)
   BlenderAppBuildOptionsType.tp_init = NULL;
   BlenderAppBuildOptionsType.tp_new = NULL;
   BlenderAppBuildOptionsType.tp_hash = (hashfunc)
-      _Py_HashPointer; /* without this we can't do set(sys.modules) [#29635] */
+      _Py_HashPointer; /* without this we can't do set(sys.modules) T29635. */
 
   return ret;
 }

@@ -27,15 +27,15 @@
 
 #include "intern/depsgraph_type.h"
 
-namespace DEG {
+namespace blender {
+namespace deg {
 
 struct Depsgraph;
 
 class AnimationValueBackup {
  public:
-  AnimationValueBackup();
+  AnimationValueBackup() = default;
   AnimationValueBackup(const string &rna_path, int array_index, float value);
-  ~AnimationValueBackup();
 
   AnimationValueBackup(const AnimationValueBackup &other) = default;
   AnimationValueBackup(AnimationValueBackup &&other) noexcept = default;
@@ -59,7 +59,8 @@ class AnimationBackup {
   void restore_to_id(ID *id);
 
   bool meed_value_backup;
-  vector<AnimationValueBackup> values_backup;
+  Vector<AnimationValueBackup> values_backup;
 };
 
-}  // namespace DEG
+}  // namespace deg
+}  // namespace blender

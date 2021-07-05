@@ -14,17 +14,16 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_STROKE_RENDERER_H__
-#define __FREESTYLE_STROKE_RENDERER_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
  * \brief Classes to render a stroke with OpenGL
  */
 
+#include <algorithm>
 #include <map>
 #include <string.h>
-#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -47,7 +46,7 @@ namespace Freestyle {
 /*                                */
 /**********************************/
 
-/*! Class to load textures */
+/** Class to load textures */
 class TextureManager {
  public:
   TextureManager();
@@ -118,14 +117,13 @@ class TextureManager {
 /*                                */
 /**********************************/
 
-/*! Class to render a stroke. Creates a triangle strip and stores it strip is lazily created at the
+/** Class to render a stroke. Creates a triangle strip and stores it strip is lazily created at the
  * first rendering */
 class StrokeRenderer {
  public:
-  StrokeRenderer();
   virtual ~StrokeRenderer();
 
-  /*! Renders a stroke rep */
+  /** Renders a stroke rep */
   virtual void RenderStrokeRep(StrokeRep *iStrokeRep) const = 0;
   virtual void RenderStrokeRepBasic(StrokeRep *iStrokeRep) const = 0;
 
@@ -142,5 +140,3 @@ class StrokeRenderer {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_STROKE_RENDERER_H__

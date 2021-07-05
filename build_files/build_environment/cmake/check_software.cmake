@@ -26,11 +26,22 @@ if(UNIX)
   set(_required_software
     autoconf
     automake
+    bison
     ${_libtoolize_name}
-    nasm
-    yasm
+    pkg-config
     tclsh
+    yasm
   )
+
+  if(NOT APPLE)
+    set(_required_software
+      ${_required_software}
+
+      # Needed for Mesa.
+      meson
+      ninja
+    )
+  endif()
 
   foreach(_software ${_required_software})
     find_program(_software_find NAMES ${_software})
@@ -40,6 +51,18 @@ if(UNIX)
     unset(_software_find CACHE)
   endforeach()
 
+  if(APPLE)
+    # Homebrew has different default locations for ARM and Intel macOS.
+    if("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "arm64")
+      set(HOMEBREW_LOCATION "/opt/homebrew")
+    else()
+      set(HOMEBREW_LOCATION "/usr/local")
+    endif()
+    if(NOT EXISTS "${HOMEBREW_LOCATION}/opt/bison/bin/bison")
+      string(APPEND _software_missing " bison")
+    endif()
+  endif()
+
   if(_software_missing)
     message(
       "\n"
@@ -47,10 +70,13 @@ if(UNIX)
       "  ${_software_missing}\n"
       "\n"
       "On Debian and Ubuntu:\n"
-      "  apt install autoconf automake libtool yasm nasm tcl\n"
+      "  apt install autoconf automake libtool yasm tcl ninja-build meson python3-mako\n"
       "\n"
-      "On macOS (with homebrew):\n"
-      "  brew install cmake autoconf automake libtool yasm nasm\n"
+      "On macOS Intel (with homebrew):\n"
+      "  brew install autoconf automake bison libtool pkg-config yasm\n"
+      "\n"
+      "On macOS ARM (with homebrew):\n"
+      "  brew install autoconf automake bison flex libtool pkg-config yasm\n"
       "\n"
       "Other platforms:\n"
       "  Install equivalent packages.\n")

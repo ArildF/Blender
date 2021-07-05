@@ -18,15 +18,12 @@
  * \ingroup editors
  */
 
-#ifndef __TRANSFORM_SNAP_H__
-#define __TRANSFORM_SNAP_H__
+#pragma once
 
 #define SNAP_MIN_DISTANCE 30
 
 /* For enum. */
 #include "DNA_space_types.h"
-
-struct SnapObjectParams;
 
 bool peelObjectsTransform(struct TransInfo *t,
                           const float mval[2],
@@ -35,14 +32,6 @@ bool peelObjectsTransform(struct TransInfo *t,
                           float r_loc[3],
                           float r_no[3],
                           float *r_thickness);
-bool peelObjectsSnapContext(struct SnapObjectContext *sctx,
-                            const float mval[2],
-                            const struct SnapObjectParams *params,
-                            const bool use_peel_object,
-                            /* return args */
-                            float r_loc[3],
-                            float r_no[3],
-                            float *r_thickness);
 
 short snapObjectsTransform(struct TransInfo *t,
                            const float mval[2],
@@ -63,20 +52,15 @@ void snapFrameTransform(struct TransInfo *t,
                         /* return args */
                         float *r_val);
 
-typedef enum {
-  NO_GEARS = 0,
-  BIG_GEARS = 1,
-  SMALL_GEARS = 2,
-} GearsType;
-
 bool transformModeUseSnap(const TransInfo *t);
 
-void snapGridIncrement(TransInfo *t, float *val);
-void snapGridIncrementAction(TransInfo *t, float *val, GearsType action);
-
-void snapSequenceBounds(TransInfo *t, const int mval[2]);
+bool transform_snap_increment_ex(const TransInfo *t, bool use_local_space, float *r_val);
+bool transform_snap_increment(const TransInfo *t, float *val);
+bool transform_snap_grid(TransInfo *t, float *val);
 
 bool activeSnap(const TransInfo *t);
+bool activeSnap_with_project(const TransInfo *t);
+
 bool validSnap(const TransInfo *t);
 
 void initSnapping(struct TransInfo *t, struct wmOperator *op);
@@ -95,4 +79,10 @@ void addSnapPoint(TransInfo *t);
 eRedrawFlag updateSelectedSnapPoint(TransInfo *t);
 void removeSnapPoint(TransInfo *t);
 
-#endif /* __TRANSFORM_SNAP_H__ */
+float transform_snap_distance_len_squared_fn(TransInfo *t, const float p1[3], const float p2[3]);
+
+/* transform_snap_sequencer.c */
+struct TransSeqSnapData *transform_snap_sequencer_data_alloc(const TransInfo *t);
+void transform_snap_sequencer_data_free(struct TransSeqSnapData *data);
+bool transform_snap_sequencer_calc(struct TransInfo *t);
+void transform_snap_sequencer_apply_translate(TransInfo *t, float *vec);

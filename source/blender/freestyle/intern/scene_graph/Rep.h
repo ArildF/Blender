@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_REP_H__
-#define __FREESTYLE_REP_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -103,7 +102,7 @@ class Rep : public BaseObject {
     }
   }
 
-  /*! Accept the corresponding visitor
+  /** Accept the corresponding visitor
    *  Must be overload by inherited classes
    */
   virtual void accept(SceneVisitor &v)
@@ -114,13 +113,13 @@ class Rep : public BaseObject {
     v.visitRep(*this);
   }
 
-  /*! Computes the rep bounding box.
+  /** Computes the rep bounding box.
    *  Each Inherited rep must compute its bbox depending on the way the data are stored. So, each
    * inherited class must overload this method
    */
   virtual void ComputeBBox() = 0;
 
-  /*! Returns the rep bounding box */
+  /** Returns the rep bounding box */
   virtual const BBox<Vec3f> &bbox() const
   {
     return _BBox;
@@ -146,7 +145,7 @@ class Rep : public BaseObject {
     return _FrsMaterial;
   }
 
-  /*! Sets the Rep bounding box */
+  /** Sets the Rep bounding box */
   virtual void setBBox(const BBox<Vec3f> &iBox)
   {
     _BBox = iBox;
@@ -181,5 +180,3 @@ class Rep : public BaseObject {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_REP_H__

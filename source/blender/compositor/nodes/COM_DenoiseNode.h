@@ -16,10 +16,11 @@
  * Copyright 2019, Blender Foundation.
  */
 
-#ifndef __COM_DENOISENODE_H__
-#define __COM_DENOISENODE_H__
+#pragma once
 
 #include "COM_Node.h"
+
+namespace blender::compositor {
 
 /**
  * \brief DenoiseNode
@@ -28,7 +29,8 @@
 class DenoiseNode : public Node {
  public:
   DenoiseNode(bNode *editorNode);
-  void convertToOperations(NodeConverter &converter, const CompositorContext &context) const;
+  void convertToOperations(NodeConverter &converter,
+                           const CompositorContext &context) const override;
 };
 
-#endif
+}  // namespace blender::compositor

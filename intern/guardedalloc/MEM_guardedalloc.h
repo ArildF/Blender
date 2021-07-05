@@ -49,19 +49,19 @@
 #ifndef __MEM_GUARDEDALLOC_H__
 #define __MEM_GUARDEDALLOC_H__
 
-#include <stdio.h> /* needed for FILE* */
-
-/* needed for uintptr_t and attributes, exception, dont use BLI anywhere else in MEM_* */
-#include "../../source/blender/blenlib/BLI_sys_types.h"
+/* Needed for uintptr_t and attributes, exception, don't use BLI anywhere else in `MEM_*` */
 #include "../../source/blender/blenlib/BLI_compiler_attrs.h"
+#include "../../source/blender/blenlib/BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/** Returns the length of the allocated memory segment pointed at
+/**
+ * Returns the length of the allocated memory segment pointed at
  * by vmemh. If the pointer was not previously allocated by this
- * module, the result is undefined.*/
+ * module, the result is undefined.
+ */
 extern size_t (*MEM_allocN_len)(const void *vmemh) ATTR_WARN_UNUSED_RESULT;
 
 /**
@@ -78,7 +78,7 @@ extern short (*MEM_testN)(void *vmemh);
 
 /**
  * Duplicates a block of memory, and returns a pointer to the
- * newly allocated block.  */
+ * newly allocated block. */
 extern void *(*MEM_dupallocN)(const void *vmemh) /* ATTR_MALLOC */ ATTR_WARN_UNUSED_RESULT;
 
 /**
@@ -105,7 +105,8 @@ extern void *(*MEM_recallocN_id)(void *vmemh,
 /**
  * Allocate a block of memory of size len, with tag name str. The
  * memory is cleared. The name must be static, because only a
- * pointer to it is stored ! */
+ * pointer to it is stored!
+ */
 extern void *(*MEM_callocN)(size_t len, const char *str) /* ATTR_MALLOC */ ATTR_WARN_UNUSED_RESULT
     ATTR_ALLOC_SIZE(1) ATTR_NONNULL(2);
 
@@ -122,7 +123,7 @@ extern void *(*MEM_calloc_arrayN)(size_t len,
 /**
  * Allocate a block of memory of size len, with tag name str. The
  * name must be a static, because only a pointer to it is stored !
- * */
+ */
 extern void *(*MEM_mallocN)(size_t len, const char *str) /* ATTR_MALLOC */ ATTR_WARN_UNUSED_RESULT
     ATTR_ALLOC_SIZE(1) ATTR_NONNULL(2);
 
@@ -130,7 +131,7 @@ extern void *(*MEM_mallocN)(size_t len, const char *str) /* ATTR_MALLOC */ ATTR_
  * Allocate a block of memory of size (len * size), with tag name str,
  * aborting in case of integer overflow to prevent vulnerabilities. The
  * name must be a static, because only a pointer to it is stored !
- * */
+ */
 extern void *(*MEM_malloc_arrayN)(size_t len,
                                   size_t size,
                                   const char *str) /* ATTR_MALLOC */ ATTR_WARN_UNUSED_RESULT
@@ -139,26 +140,21 @@ extern void *(*MEM_malloc_arrayN)(size_t len,
 /**
  * Allocate an aligned block of memory of size len, with tag name str. The
  * name must be a static, because only a pointer to it is stored !
- * */
+ */
 extern void *(*MEM_mallocN_aligned)(size_t len,
                                     size_t alignment,
                                     const char *str) /* ATTR_MALLOC */ ATTR_WARN_UNUSED_RESULT
     ATTR_ALLOC_SIZE(1) ATTR_NONNULL(3);
 
 /**
- * Same as callocN, clears memory and uses mmap (disk cached) if supported.
- * Can be free'd with MEM_freeN as usual.
- * */
-extern void *(*MEM_mapallocN)(size_t len,
-                              const char *str) /* ATTR_MALLOC */ ATTR_WARN_UNUSED_RESULT
-    ATTR_ALLOC_SIZE(1) ATTR_NONNULL(2);
-
-/** Print a list of the names and sizes of all allocated memory
- * blocks. as a python dict for easy investigation */
+ * Print a list of the names and sizes of all allocated memory
+ * blocks. as a python dict for easy investigation.
+ */
 extern void (*MEM_printmemlist_pydict)(void);
 
-/** Print a list of the names and sizes of all allocated memory
- * blocks. */
+/**
+ * Print a list of the names and sizes of all allocated memory blocks.
+ */
 extern void (*MEM_printmemlist)(void);
 
 /** calls the function on all allocated memory blocks. */
@@ -173,23 +169,15 @@ extern void (*MEM_set_error_callback)(void (*func)(const char *));
 /**
  * Are the start/end block markers still correct ?
  *
- * @retval true for correct memory, false for corrupted memory. */
+ * \retval true for correct memory, false for corrupted memory.
+ */
 extern bool (*MEM_consistency_check)(void);
-
-/** Set thread locking functions for safe memory allocation from multiple
- * threads, pass NULL pointers to disable thread locking again. */
-extern void (*MEM_set_lock_callback)(void (*lock)(void), void (*unlock)(void));
 
 /** Attempt to enforce OSX (or other OS's) to have malloc and stack nonzero */
 extern void (*MEM_set_memory_debug)(void);
 
-/**
- * Memory usage stats
- * - MEM_get_memory_in_use is all memory
- * - MEM_get_mapped_memory_in_use is a subset of all memory */
+/** Memory usage stats. */
 extern size_t (*MEM_get_memory_in_use)(void);
-/** Get mapped memory usage. */
-extern size_t (*MEM_get_mapped_memory_in_use)(void);
 /** Get amount of memory blocks in use. */
 extern unsigned int (*MEM_get_memory_blocks_in_use)(void);
 
@@ -204,7 +192,8 @@ extern size_t (*MEM_get_peak_memory)(void) ATTR_WARN_UNUSED_RESULT;
     do { \
       typeof(&(v)) _v = &(v); \
       if (*_v) { \
-        MEM_freeN(*_v); \
+        /* Cast so we can free constant arrays. */ \
+        MEM_freeN((void *)*_v); \
         *_v = NULL; \
       } \
     } while (0)
@@ -227,7 +216,41 @@ extern size_t (*MEM_get_peak_memory)(void) ATTR_WARN_UNUSED_RESULT;
 extern const char *(*MEM_name_ptr)(void *vmemh);
 #endif
 
-/* Switch allocator to slower but fully guarded mode. */
+/**
+ * This should be called as early as possible in the program. When it has been called, information
+ * about memory leaks will be printed on exit.
+ */
+void MEM_init_memleak_detection(void);
+
+/**
+ * Use this if we want to call #exit during argument parsing for example,
+ * without having to free all data.
+ */
+void MEM_use_memleak_detection(bool enabled);
+
+/**
+ * When this has been called and memory leaks have been detected, the process will have an exit
+ * code that indicates failure. This can be used for when checking for memory leaks with automated
+ * tests.
+ */
+void MEM_enable_fail_on_memleak(void);
+
+/* Switch allocator to fast mode, with less tracking.
+ *
+ * Use in the production code where performance is the priority, and exact details about allocation
+ * is not. This allocator keeps track of number of allocation and amount of allocated bytes, but it
+ * does not track of names of allocated blocks.
+ *
+ * NOTE: The switch between allocator types can only happen before any allocation did happen. */
+void MEM_use_lockfree_allocator(void);
+
+/* Switch allocator to slow fully guarded mode.
+ *
+ * Use for debug purposes. This allocator contains lock section around every allocator call, which
+ * makes it slow. What is gained with this is the ability to have list of allocated blocks (in an
+ * addition to the tracking of number of allocations and amount of allocated bytes).
+ *
+ * NOTE: The switch between allocator types can only happen before any allocation did happen. */
 void MEM_use_guarded_allocator(void);
 
 #ifdef __cplusplus
@@ -235,7 +258,7 @@ void MEM_use_guarded_allocator(void);
 #endif /* __cplusplus */
 
 #ifdef __cplusplus
-/* alloc funcs for C++ only */
+/* Allocation functions (for C++ only). */
 #  define MEM_CXX_CLASS_ALLOC_FUNCS(_id) \
    public: \
     void *operator new(size_t num_bytes) \
@@ -244,8 +267,9 @@ void MEM_use_guarded_allocator(void);
     } \
     void operator delete(void *mem) \
     { \
-      if (mem) \
+      if (mem) { \
         MEM_freeN(mem); \
+      } \
     } \
     void *operator new[](size_t num_bytes) \
     { \
@@ -253,8 +277,18 @@ void MEM_use_guarded_allocator(void);
     } \
     void operator delete[](void *mem) \
     { \
-      if (mem) \
+      if (mem) { \
         MEM_freeN(mem); \
+      } \
+    } \
+    void *operator new(size_t /*count*/, void *ptr) \
+    { \
+      return ptr; \
+    } \
+    /* This is the matching delete operator to the placement-new operator above. Both parameters \
+     * will have the same value. Without this, we get the warning C4291 on windows. */ \
+    void operator delete(void * /*ptr_to_free*/, void * /*ptr*/) \
+    { \
     }
 
 /* Needed when type includes a namespace, then the namespace should not be

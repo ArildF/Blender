@@ -18,8 +18,8 @@
  * \ingroup RNA
  */
 
-#include <stdlib.h>
 #include <limits.h>
+#include <stdlib.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -39,8 +39,8 @@
 
 #include "WM_types.h"
 
-#include "IMB_imbuf_types.h"
 #include "IMB_imbuf.h"
+#include "IMB_imbuf_types.h"
 
 #ifdef RNA_RUNTIME
 
@@ -115,7 +115,7 @@ static void rna_Mask_update_parent(Main *bmain, Scene *scene, PointerRNA *ptr)
   rna_Mask_update_data(bmain, scene, ptr);
 }
 
-/* note: this function exists only to avoid id refcounting */
+/* NOTE: this function exists only to avoid id refcounting. */
 static void rna_MaskParent_id_set(PointerRNA *ptr,
                                   PointerRNA value,
                                   struct ReportList *UNUSED(reports))
@@ -182,7 +182,7 @@ static char *rna_MaskLayer_path(PointerRNA *ptr)
 {
   MaskLayer *masklay = (MaskLayer *)ptr->data;
   char name_esc[sizeof(masklay->name) * 2];
-  BLI_strescape(name_esc, masklay->name, sizeof(name_esc));
+  BLI_str_escape(name_esc, masklay->name, sizeof(name_esc));
   return BLI_sprintfN("layers[\"%s\"]", name_esc);
 }
 
@@ -396,7 +396,7 @@ static void rna_MaskSplinePoint_handle_right_type_set(PointerRNA *ptr, int value
   BKE_mask_calc_handle_point(spline, point);
 }
 
-/* ** API **  */
+/* ** API ** */
 
 static MaskLayer *rna_Mask_layers_new(Mask *mask, const char *name)
 {
@@ -631,11 +631,11 @@ static void rna_def_maskParent(BlenderRNA *brna)
   RNA_def_property_struct_type(prop, "ID");
   RNA_def_property_flag(prop, PROP_EDITABLE);
   // RNA_def_property_editable_func(prop, "rna_maskSpline_id_editable");
-  /* note: custom set function is ONLY to avoid rna setting a user for this. */
+  /* NOTE: custom set function is ONLY to avoid rna setting a user for this. */
   RNA_def_property_pointer_funcs(
       prop, NULL, "rna_MaskParent_id_set", "rna_MaskParent_id_typef", NULL);
   RNA_def_property_ui_text(
-      prop, "ID", "ID-block to which masking element would be parented to or to it's property");
+      prop, "ID", "ID-block to which masking element would be parented to or to its property");
   RNA_def_property_update(prop, 0, "rna_Mask_update_parent");
 
   prop = RNA_def_property(srna, "id_type", PROP_ENUM, PROP_NONE);
@@ -1008,7 +1008,7 @@ static void rna_def_mask_layer(BlenderRNA *brna)
   RNA_def_property_ui_icon(prop, ICON_RESTRICT_RENDER_OFF, -1);
   RNA_def_property_update(prop, NC_MASK | NA_EDITED, NULL);
 
-  /* select (for dopesheet)*/
+  /* Select (for dope-sheet). */
   prop = RNA_def_property(srna, "select", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", MASK_LAYERFLAG_SELECT);
   RNA_def_property_ui_text(prop, "Select", "Layer is selected for editing in the Dope Sheet");

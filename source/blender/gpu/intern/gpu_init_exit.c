@@ -21,14 +21,16 @@
  * \ingroup gpu
  */
 
-#include "BLI_sys_types.h"
-#include "GPU_buffers.h"
 #include "GPU_init_exit.h" /* interface */
-#include "GPU_immediate.h"
-#include "GPU_batch.h"
 #include "BKE_global.h"
+#include "BLI_sys_types.h"
+#include "GPU_batch.h"
+#include "GPU_buffers.h"
+#include "GPU_context.h"
+#include "GPU_immediate.h"
 
 #include "intern/gpu_codegen.h"
+#include "intern/gpu_material_library.h"
 #include "intern/gpu_private.h"
 
 /**
@@ -46,49 +48,32 @@ void GPU_init(void)
   }
 
   initialized = true;
-  gpu_platform_init();
-  gpu_extensions_init(); /* must come first */
 
   gpu_codegen_init();
-  gpu_framebuffer_module_init();
-
-  if (G.debug & G_DEBUG_GPU) {
-    gpu_debug_init();
-  }
+  gpu_material_library_init();
 
   gpu_batch_init();
 
-  if (!G.background) {
-    immInit();
-  }
-
+#ifndef GPU_STANDALONE
   gpu_pbvh_init();
+#endif
 }
 
 void GPU_exit(void)
 {
+#ifndef GPU_STANDALONE
   gpu_pbvh_exit();
-
-  if (!G.background) {
-    immDestroy();
-  }
+#endif
 
   gpu_batch_exit();
 
-  if (G.debug & G_DEBUG_GPU) {
-    gpu_debug_exit();
-  }
-
-  gpu_framebuffer_module_exit();
+  gpu_material_library_exit();
   gpu_codegen_exit();
-
-  gpu_extensions_exit();
-  gpu_platform_exit(); /* must come last */
 
   initialized = false;
 }
 
-bool GPU_is_initialized(void)
+bool GPU_is_init(void)
 {
   return initialized;
 }

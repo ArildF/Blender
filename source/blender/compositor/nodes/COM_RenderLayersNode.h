@@ -16,14 +16,14 @@
  * Copyright 2011, Blender Foundation.
  */
 
-#ifndef __COM_RENDERLAYERSNODE_H__
-#define __COM_RENDERLAYERSNODE_H__
+#pragma once
 
 #include "COM_Node.h"
-#include "DNA_node_types.h"
 #include "COM_RenderLayersProg.h"
+#include "DNA_node_types.h"
 
 struct Render;
+namespace blender::compositor {
 
 /**
  * \brief RenderLayersNode
@@ -32,7 +32,8 @@ struct Render;
 class RenderLayersNode : public Node {
  public:
   RenderLayersNode(bNode *editorNode);
-  void convertToOperations(NodeConverter &converter, const CompositorContext &context) const;
+  void convertToOperations(NodeConverter &converter,
+                           const CompositorContext &context) const override;
 
  private:
   void testSocketLink(NodeConverter &converter,
@@ -50,4 +51,4 @@ class RenderLayersNode : public Node {
   void missingRenderLink(NodeConverter &converter) const;
 };
 
-#endif /* __COM_RENDERLAYERSNODE_H__ */
+}  // namespace blender::compositor

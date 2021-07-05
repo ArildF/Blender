@@ -23,8 +23,8 @@
 /* Future-proof, See https://docs.python.org/3/c-api/arg.html#strings-and-buffers */
 #define PY_SSIZE_T_CLEAN
 
-#include <Python.h>
 #include "blf_py_api.h"
+#include <Python.h>
 
 #include "../../blenfont/BLF_api.h"
 
@@ -186,7 +186,7 @@ static PyObject *py_blf_draw(PyObject *UNUSED(self), PyObject *args)
     return NULL;
   }
 
-  BLF_draw(fontid, text, (unsigned int)text_length);
+  BLF_draw(fontid, text, (uint)text_length);
 
   Py_RETURN_NONE;
 }
@@ -373,7 +373,7 @@ static PyObject *py_blf_shadow(PyObject *UNUSED(self), PyObject *args)
     return NULL;
   }
 
-  if (level != 0 && level != 3 && level != 5) {
+  if (!ELEM(level, 0, 3, 5)) {
     PyErr_SetString(PyExc_TypeError, "blf.shadow expected arg to be in (0, 3, 5)");
     return NULL;
   }

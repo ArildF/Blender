@@ -20,10 +20,10 @@
  * \ingroup spaction
  */
 
+#include <float.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include <float.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -34,27 +34,27 @@
 
 #include "DNA_anim_types.h"
 #include "DNA_gpencil_types.h"
+#include "DNA_mask_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
-#include "DNA_mask_types.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
 
-#include "BKE_fcurve.h"
-#include "BKE_nla.h"
 #include "BKE_context.h"
+#include "BKE_fcurve.h"
 #include "BKE_gpencil.h"
+#include "BKE_nla.h"
 
-#include "UI_view2d.h"
 #include "UI_interface.h"
+#include "UI_view2d.h"
 
 #include "ED_anim_api.h"
 #include "ED_gpencil.h"
-#include "ED_mask.h"
 #include "ED_keyframes_draw.h"
 #include "ED_keyframes_edit.h"
 #include "ED_markers.h"
+#include "ED_mask.h"
 #include "ED_screen.h"
 #include "ED_select_utils.h"
 
@@ -71,7 +71,7 @@ static bAnimListElem *actkeys_find_list_element_at_position(bAnimContext *ac,
                                                             float region_x,
                                                             float region_y)
 {
-  View2D *v2d = &ac->ar->v2d;
+  View2D *v2d = &ac->region->v2d;
 
   float view_x, view_y;
   int channel_index;
@@ -132,17 +132,17 @@ static void actkeys_list_element_to_keylist(bAnimContext *ac,
     summary_to_keylist(ac, anim_keys, 0);
   }
   else if (ale->type == ANIMTYPE_GROUP) {
-    // TODO: why don't we just give groups key_data too?
+    /* TODO: why don't we just give groups key_data too? */
     bActionGroup *agrp = (bActionGroup *)ale->data;
     agroup_to_keylist(adt, agrp, anim_keys, 0);
   }
   else if (ale->type == ANIMTYPE_GPLAYER) {
-    // TODO: why don't we just give gplayers key_data too?
+    /* TODO: why don't we just give gplayers key_data too? */
     bGPDlayer *gpl = (bGPDlayer *)ale->data;
     gpl_to_keylist(ads, gpl, anim_keys);
   }
   else if (ale->type == ANIMTYPE_MASKLAYER) {
-    // TODO: why don't we just give masklayers key_data too?
+    /* TODO: why don't we just give masklayers key_data too? */
     MaskLayer *masklay = (MaskLayer *)ale->data;
     mask_to_keylist(ads, masklay, anim_keys);
   }
@@ -158,7 +158,7 @@ static void actkeys_find_key_in_list_element(bAnimContext *ac,
 {
   *r_found = false;
 
-  View2D *v2d = &ac->ar->v2d;
+  View2D *v2d = &ac->region->v2d;
 
   DLRBT_Tree anim_keys;
   BLI_dlrbTree_init(&anim_keys);
@@ -270,7 +270,7 @@ static void deselect_action_keys(bAnimContext *ac, short test, short sel)
   if (test) {
     for (ale = anim_data.first; ale; ale = ale->next) {
       if (ale->type == ANIMTYPE_GPLAYER) {
-        if (ED_gplayer_frame_select_check(ale->data)) {
+        if (ED_gpencil_layer_frame_select_check(ale->data)) {
           sel = SELECT_SUBTRACT;
           break;
         }
@@ -296,7 +296,7 @@ static void deselect_action_keys(bAnimContext *ac, short test, short sel)
   /* Now set the flags */
   for (ale = anim_data.first; ale; ale = ale->next) {
     if (ale->type == ANIMTYPE_GPLAYER) {
-      ED_gplayer_frame_select_set(ale->data, sel);
+      ED_gpencil_layer_frame_select_set(ale->data, sel);
       ale->update |= ANIM_UPDATE_DEPS;
     }
     else if (ale->type == ANIMTYPE_MASKLAYER) {
@@ -405,14 +405,14 @@ static void box_select_elem(
       bGPdata *gpd = ale->data;
       bGPDlayer *gpl;
       for (gpl = gpd->layers.first; gpl; gpl = gpl->next) {
-        ED_gplayer_frames_select_box(gpl, xmin, xmax, data->selectmode);
+        ED_gpencil_layer_frames_select_box(gpl, xmin, xmax, data->selectmode);
       }
       ale->update |= ANIM_UPDATE_DEPS;
       break;
     }
 #endif
     case ANIMTYPE_GPLAYER: {
-      ED_gplayer_frames_select_box(ale->data, xmin, xmax, sel_data->selectmode);
+      ED_gpencil_layer_frames_select_box(ale->data, xmin, xmax, sel_data->selectmode);
       ale->update |= ANIM_UPDATE_DEPS;
       break;
     }
@@ -437,7 +437,7 @@ static void box_select_elem(
         ListBase anim_data = {NULL, NULL};
         ANIM_animdata_filter(ac, &anim_data, ANIMFILTER_DATA_VISIBLE, ac->data, ac->datatype);
 
-        for (bAnimListElem *ale2 = anim_data.first; ale2; ale2 = ale2->next) {
+        LISTBASE_FOREACH (bAnimListElem *, ale2, &anim_data) {
           box_select_elem(sel_data, ale2, xmin, xmax, true);
         }
 
@@ -458,7 +458,7 @@ static void box_select_action(bAnimContext *ac, const rcti rect, short mode, sho
   int filter;
 
   BoxSelectData sel_data = {.ac = ac, .selectmode = selectmode};
-  View2D *v2d = &ac->ar->v2d;
+  View2D *v2d = &ac->region->v2d;
   rctf rectf;
 
   /* Convert mouse coordinates to frame ranges and channel
@@ -470,7 +470,7 @@ static void box_select_action(bAnimContext *ac, const rcti rect, short mode, sho
   filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE | ANIMFILTER_LIST_CHANNELS);
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
-  /* get beztriple editing/validation funcs  */
+  /* Get beztriple editing/validation funcs. */
   sel_data.select_cb = ANIM_editkeyframes_select(selectmode);
 
   if (ELEM(mode, ACTKEYS_BORDERSEL_FRAMERANGE, ACTKEYS_BORDERSEL_ALLKEYS)) {
@@ -641,13 +641,13 @@ static void region_select_elem(RegionSelectData *sel_data, bAnimListElem *ale, b
       bGPdata *gpd = ale->data;
       bGPDlayer *gpl;
       for (gpl = gpd->layers.first; gpl; gpl = gpl->next) {
-        ED_gplayer_frames_select_region(&rdata->ked, ale->data, rdata->mode, rdata->selectmode);
+        ED_gpencil_layer_frames_select_region(&rdata->ked, ale->data, rdata->mode, rdata->selectmode);
       }
       break;
     }
 #endif
     case ANIMTYPE_GPLAYER: {
-      ED_gplayer_frames_select_region(
+      ED_gpencil_layer_frames_select_region(
           &sel_data->ked, ale->data, sel_data->mode, sel_data->selectmode);
       ale->update |= ANIM_UPDATE_DEPS;
       break;
@@ -675,7 +675,7 @@ static void region_select_elem(RegionSelectData *sel_data, bAnimListElem *ale, b
         ListBase anim_data = {NULL, NULL};
         ANIM_animdata_filter(ac, &anim_data, ANIMFILTER_DATA_VISIBLE, ac->data, ac->datatype);
 
-        for (bAnimListElem *ale2 = anim_data.first; ale2; ale2 = ale2->next) {
+        LISTBASE_FOREACH (bAnimListElem *, ale2, &anim_data) {
           region_select_elem(sel_data, ale2, true);
         }
 
@@ -697,7 +697,7 @@ static void region_select_action_keys(
   int filter;
 
   RegionSelectData sel_data = {.ac = ac, .mode = mode, .selectmode = selectmode};
-  View2D *v2d = &ac->ar->v2d;
+  View2D *v2d = &ac->region->v2d;
   rctf rectf, scaled_rectf;
 
   /* Convert mouse coordinates to frame ranges and channel
@@ -708,7 +708,7 @@ static void region_select_action_keys(
   filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE | ANIMFILTER_LIST_CHANNELS);
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
-  /* get beztriple editing/validation funcs  */
+  /* Get beztriple editing/validation funcs. */
   sel_data.select_cb = ANIM_editkeyframes_select(selectmode);
   sel_data.ok_cb = ANIM_editkeyframes_ok(mode);
 
@@ -793,8 +793,8 @@ static int actkeys_lassoselect_exec(bContext *C, wmOperator *op)
   }
 
   data_lasso.rectf_view = &rect_fl;
-  data_lasso.mcords = WM_gesture_lasso_path_to_array(C, op, &data_lasso.mcords_tot);
-  if (data_lasso.mcords == NULL) {
+  data_lasso.mcoords = WM_gesture_lasso_path_to_array(C, op, &data_lasso.mcoords_len);
+  if (data_lasso.mcoords == NULL) {
     return OPERATOR_CANCELLED;
   }
 
@@ -805,13 +805,13 @@ static int actkeys_lassoselect_exec(bContext *C, wmOperator *op)
   }
 
   /* get settings from operator */
-  BLI_lasso_boundbox(&rect, data_lasso.mcords, data_lasso.mcords_tot);
+  BLI_lasso_boundbox(&rect, data_lasso.mcoords, data_lasso.mcoords_len);
   BLI_rctf_rcti_copy(&rect_fl, &rect);
 
   /* apply box_select action */
   region_select_action_keys(&ac, &rect_fl, BEZT_OK_CHANNEL_LASSO, selectmode, &data_lasso);
 
-  MEM_freeN((void *)data_lasso.mcords);
+  MEM_freeN((void *)data_lasso.mcoords);
 
   /* send notifier that keyframe selection has changed */
   WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME | NA_SELECTED, NULL);
@@ -933,8 +933,8 @@ static const EnumPropertyItem prop_column_select_types[] = {
 /* ------------------- */
 
 /* Selects all visible keyframes between the specified markers */
-/* TODO, this is almost an _exact_ duplicate of a function of the same name in graph_select.c
- * should de-duplicate - campbell */
+/* TODO(campbell): this is almost an _exact_ duplicate of a function of the same name in
+ * graph_select.c should de-duplicate. */
 static void markers_selectkeys_between(bAnimContext *ac)
 {
   ListBase anim_data = {NULL, NULL};
@@ -972,7 +972,7 @@ static void markers_selectkeys_between(bAnimContext *ac)
       ANIM_nla_mapping_apply_fcurve(adt, ale->key_data, 1, 1);
     }
     else if (ale->type == ANIMTYPE_GPLAYER) {
-      ED_gplayer_frames_select_box(ale->data, min, max, SELECT_ADD);
+      ED_gpencil_layer_frames_select_box(ale->data, min, max, SELECT_ADD);
       ale->update |= ANIM_UPDATE_DEPS;
     }
     else if (ale->type == ANIMTYPE_MASKLAYER) {
@@ -1008,7 +1008,7 @@ static void columnselect_action_keys(bAnimContext *ac, short mode)
         ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
         for (ale = anim_data.first; ale; ale = ale->next) {
-          ED_gplayer_make_cfra_list(ale->data, &ked.list, 1);
+          ED_gpencil_layer_make_cfra_list(ale->data, &ked.list, 1);
         }
       }
       else {
@@ -1325,8 +1325,8 @@ void ACTION_OT_select_less(wmOperatorType *ot)
 /* defines for left-right select tool */
 static const EnumPropertyItem prop_actkeys_leftright_select_types[] = {
     {ACTKEYS_LRSEL_TEST, "CHECK", 0, "Check if Select Left or Right", ""},
-    {ACTKEYS_LRSEL_LEFT, "LEFT", 0, "Before current frame", ""},
-    {ACTKEYS_LRSEL_RIGHT, "RIGHT", 0, "After current frame", ""},
+    {ACTKEYS_LRSEL_LEFT, "LEFT", 0, "Before Current Frame", ""},
+    {ACTKEYS_LRSEL_RIGHT, "RIGHT", 0, "After Current Frame", ""},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -1385,7 +1385,7 @@ static void actkeys_select_leftright(bAnimContext *ac, short leftright, short se
       ANIM_nla_mapping_apply_fcurve(adt, ale->key_data, 1, 1);
     }
     else if (ale->type == ANIMTYPE_GPLAYER) {
-      ED_gplayer_frames_select_box(ale->data, ked.f1, ked.f2, select_mode);
+      ED_gpencil_layer_frames_select_box(ale->data, ked.f1, ked.f2, select_mode);
       ale->update |= ANIM_UPDATE_DEPS;
     }
     else if (ale->type == ANIMTYPE_MASKLAYER) {
@@ -1470,8 +1470,8 @@ static int actkeys_select_leftright_invoke(bContext *C, wmOperator *op, const wm
   /* handle mode-based testing */
   if (leftright == ACTKEYS_LRSEL_TEST) {
     Scene *scene = ac.scene;
-    ARegion *ar = ac.ar;
-    View2D *v2d = &ar->v2d;
+    ARegion *region = ac.region;
+    View2D *v2d = &region->v2d;
     float x;
 
     /* determine which side of the current frame mouse is on */
@@ -1497,7 +1497,7 @@ void ACTION_OT_select_leftright(wmOperatorType *ot)
   ot->idname = "ACTION_OT_select_leftright";
   ot->description = "Select keyframes to the left or the right of the current frame";
 
-  /* api callbacks  */
+  /* api callbacks */
   ot->invoke = actkeys_select_leftright_invoke;
   ot->exec = actkeys_select_leftright_exec;
   ot->poll = ED_operator_action_active;
@@ -1730,7 +1730,7 @@ static int mouse_action_keys(bAnimContext *ac,
       /* highlight channel clicked on */
       if (ELEM(ac->datatype, ANIMCONT_ACTION, ANIMCONT_DOPESHEET, ANIMCONT_TIMELINE)) {
         /* deselect all other channels first */
-        ANIM_deselect_anim_channels(ac, ac->data, ac->datatype, 0, ACHANNEL_SETFLAG_CLEAR);
+        ANIM_anim_channels_select_set(ac, ACHANNEL_SETFLAG_CLEAR);
 
         /* Highlight Action-Group or F-Curve? */
         if (ale != NULL && ale->data) {
@@ -1750,7 +1750,7 @@ static int mouse_action_keys(bAnimContext *ac,
       }
       else if (ac->datatype == ANIMCONT_GPENCIL) {
         /* deselect all other channels first */
-        ANIM_deselect_anim_channels(ac, ac->data, ac->datatype, 0, ACHANNEL_SETFLAG_CLEAR);
+        ANIM_anim_channels_select_set(ac, ACHANNEL_SETFLAG_CLEAR);
 
         /* Highlight GPencil Layer */
         if (ale != NULL && ale->data != NULL && ale->type == ANIMTYPE_GPLAYER) {
@@ -1759,8 +1759,8 @@ static int mouse_action_keys(bAnimContext *ac,
 
           gpl->flag |= GP_LAYER_SELECT;
           /* Update other layer status. */
-          if (BKE_gpencil_layer_getactive(gpd) != gpl) {
-            BKE_gpencil_layer_setactive(gpd, gpl);
+          if (BKE_gpencil_layer_active_get(gpd) != gpl) {
+            BKE_gpencil_layer_active_set(gpd, gpl);
             BKE_gpencil_layer_autolock_set(gpd, false);
             WM_main_add_notifier(NC_GPENCIL | ND_DATA | NA_EDITED, NULL);
           }
@@ -1768,7 +1768,7 @@ static int mouse_action_keys(bAnimContext *ac,
       }
       else if (ac->datatype == ANIMCONT_MASK) {
         /* deselect all other channels first */
-        ANIM_deselect_anim_channels(ac, ac->data, ac->datatype, 0, ACHANNEL_SETFLAG_CLEAR);
+        ANIM_anim_channels_select_set(ac, ACHANNEL_SETFLAG_CLEAR);
 
         if (ale != NULL && ale->data != NULL && ale->type == ANIMTYPE_MASKLAYER) {
           MaskLayer *masklay = ale->data;
@@ -1825,7 +1825,7 @@ static int actkeys_clickselect_exec(bContext *C, wmOperator *op)
   }
 
   /* get useful pointers from animation context data */
-  /* ar = ac.ar; */ /* UNUSED */
+  /* region = ac.region; */ /* UNUSED */
 
   /* select mode is either replace (deselect all, then add) or add/extend */
   const short selectmode = RNA_boolean_get(op->ptr, "extend") ? SELECT_INVERT : SELECT_REPLACE;
@@ -1840,7 +1840,7 @@ static int actkeys_clickselect_exec(bContext *C, wmOperator *op)
   mval[0] = RNA_int_get(op->ptr, "mouse_x");
   mval[1] = RNA_int_get(op->ptr, "mouse_y");
 
-  /* select keyframe(s) based upon mouse position*/
+  /* Select keyframe(s) based upon mouse position. */
   ret_value = mouse_action_keys(
       &ac, mval, selectmode, deselect_all, column, channel, wait_to_deselect_others);
 
@@ -1872,12 +1872,13 @@ void ACTION_OT_clickselect(wmOperatorType *ot)
 
   /* properties */
   WM_operator_properties_generic_select(ot);
+  /* Key-map: Enable with `Shift`. */
   prop = RNA_def_boolean(
       ot->srna,
       "extend",
       0,
       "Extend Select",
-      "Toggle keyframe selection instead of leaving newly selected keyframes only");  // SHIFTKEY
+      "Toggle keyframe selection instead of leaving newly selected keyframes only");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
   prop = RNA_def_boolean(ot->srna,
@@ -1887,20 +1888,21 @@ void ACTION_OT_clickselect(wmOperatorType *ot)
                          "Deselect all when nothing under the cursor");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
+  /* Key-map: Enable with `Alt`. */
   prop = RNA_def_boolean(
       ot->srna,
       "column",
       0,
       "Column Select",
-      "Select all keyframes that occur on the same frame as the one under the mouse");  // ALTKEY
+      "Select all keyframes that occur on the same frame as the one under the mouse");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
-  prop = RNA_def_boolean(
-      ot->srna,
-      "channel",
-      0,
-      "Only Channel",
-      "Select all the keyframes in the channel under the mouse");  // CTRLKEY + ALTKEY
+  /* Key-map: Enable with `Ctrl-Alt`. */
+  prop = RNA_def_boolean(ot->srna,
+                         "channel",
+                         0,
+                         "Only Channel",
+                         "Select all the keyframes in the channel under the mouse");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
 

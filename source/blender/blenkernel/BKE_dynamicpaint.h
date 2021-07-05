@@ -14,17 +14,23 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BKE_DYNAMICPAINT_H__
-#define __BKE_DYNAMICPAINT_H__
+#pragma once
 
 /** \file
  * \ingroup bke
  */
 
+#include "BLI_utildefines.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct Depsgraph;
 struct DynamicPaintCanvasSettings;
 struct DynamicPaintModifierData;
 struct DynamicPaintRuntime;
+struct Object;
 struct Scene;
 
 /* Actual surface point */
@@ -66,7 +72,7 @@ struct Mesh *dynamicPaint_Modifier_do(struct DynamicPaintModifierData *pmd,
 void dynamicPaint_Modifier_free(struct DynamicPaintModifierData *pmd);
 void dynamicPaint_Modifier_free_runtime(struct DynamicPaintRuntime *runtime);
 void dynamicPaint_Modifier_copy(const struct DynamicPaintModifierData *pmd,
-                                struct DynamicPaintModifierData *tsmd,
+                                struct DynamicPaintModifierData *tpmd,
                                 int flag);
 
 bool dynamicPaint_createType(struct DynamicPaintModifierData *pmd, int type, struct Scene *scene);
@@ -114,4 +120,6 @@ void dynamicPaint_outputSurfaceImage(struct DynamicPaintSurface *surface,
 #define DPAINT_WAVE_OBSTACLE 1
 #define DPAINT_WAVE_REFLECT_ONLY 2
 
-#endif /* __BKE_DYNAMICPAINT_H__ */
+#ifdef __cplusplus
+}
+#endif

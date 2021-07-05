@@ -28,15 +28,15 @@
 #include "BLI_math.h"
 
 #include "BKE_context.h"
-#include "BKE_report.h"
 #include "BKE_editmesh.h"
-#include "BKE_mesh.h"
 #include "BKE_layer.h"
+#include "BKE_mesh.h"
+#include "BKE_report.h"
 
 #include "WM_types.h"
 
-#include "ED_object.h"
 #include "ED_mesh.h"
+#include "ED_object.h"
 #include "ED_scene.h"
 #include "ED_screen.h"
 #include "ED_transform.h"
@@ -87,10 +87,10 @@ static void edbm_flag_disable_all_multi(ViewLayer *view_layer, View3D *v3d, cons
 /* When accessed as a tool, get the active edge from the preselection gizmo. */
 static bool edbm_preselect_or_active(bContext *C, const View3D *v3d, Base **r_base, BMElem **r_ele)
 {
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
   const bool show_gizmo = !((v3d->gizmo_flag & (V3D_GIZMO_HIDE | V3D_GIZMO_HIDE_TOOL)));
 
-  wmGizmoMap *gzmap = show_gizmo ? ar->gizmo_map : NULL;
+  wmGizmoMap *gzmap = show_gizmo ? region->gizmo_map : NULL;
   wmGizmoGroup *gzgroup = gzmap ? WM_gizmomap_group_find(gzmap, "VIEW3D_GGT_mesh_preselect_elem") :
                                   NULL;
   if (gzgroup != NULL) {
@@ -154,15 +154,19 @@ static int edbm_polybuild_transform_at_cursor_invoke(bContext *C,
     BM_face_select_set(bm, (BMFace *)ele_act, true);
   }
 
-  EDBM_mesh_normals_update(em);
-  EDBM_update_generic(vc.obedit->data, true, true);
+  EDBM_update(vc.obedit->data,
+              &(const struct EDBMUpdate_Params){
+                  .calc_looptri = true,
+                  .calc_normals = true,
+                  .is_destructive = true,
+              });
   if (basact != NULL) {
     if (vc.view_layer->basact != basact) {
       ED_object_base_activate(C, basact);
     }
   }
   BM_select_history_store(bm, ele_act);
-  WM_event_add_mousemove(C);
+  WM_event_add_mousemove(vc.win);
   return OPERATOR_FINISHED;
 }
 
@@ -237,19 +241,21 @@ static int edbm_polybuild_delete_at_cursor_invoke(bContext *C,
   }
 
   if (changed) {
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(vc.obedit->data, true, true);
+    EDBM_update(vc.obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
     if (basact != NULL) {
       if (vc.view_layer->basact != basact) {
         ED_object_base_activate(C, basact);
       }
     }
-    WM_event_add_mousemove(C);
+    WM_event_add_mousemove(vc.win);
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void MESH_OT_polybuild_delete_at_cursor(wmOperatorType *ot)
@@ -296,7 +302,7 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
     /* Just add vert */
     copy_v3_v3(center, vc.scene->cursor.location);
     mul_v3_m4v3(center, vc.obedit->obmat, center);
-    ED_view3d_win_to_3d_int(vc.v3d, vc.ar, center, event->mval, center);
+    ED_view3d_win_to_3d_int(vc.v3d, vc.region, center, event->mval, center);
     mul_m4_v3(vc.obedit->imat, center);
 
     BMVert *v_new = BM_vert_create(bm, center, NULL, BM_CREATE_NOP);
@@ -311,7 +317,7 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
 
     mid_v3_v3v3(center, e_act->v1->co, e_act->v2->co);
     mul_m4_v3(vc.obedit->obmat, center);
-    ED_view3d_win_to_3d_int(vc.v3d, vc.ar, center, event->mval, center);
+    ED_view3d_win_to_3d_int(vc.v3d, vc.region, center, event->mval, center);
     mul_m4_v3(vc.obedit->imat, center);
     if (f_reference->len == 3 && RNA_boolean_get(op->ptr, "create_quads")) {
       const float fac = line_point_factor_v3(center, e_act->v1->co, e_act->v2->co);
@@ -366,7 +372,7 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
       BMFace *f_reference = e_pair[0]->l ? e_pair[0]->l->f : NULL;
 
       mul_v3_m4v3(center, vc.obedit->obmat, v_act->co);
-      ED_view3d_win_to_3d_int(vc.v3d, vc.ar, center, event->mval, center);
+      ED_view3d_win_to_3d_int(vc.v3d, vc.region, center, event->mval, center);
       mul_m4_v3(vc.obedit->imat, center);
 
       BMVert *v_quad[4];
@@ -388,7 +394,7 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
     else {
       /* Just add edge */
       mul_m4_v3(vc.obedit->obmat, center);
-      ED_view3d_win_to_3d_int(vc.v3d, vc.ar, v_act->co, event->mval, center);
+      ED_view3d_win_to_3d_int(vc.v3d, vc.region, v_act->co, event->mval, center);
       mul_m4_v3(vc.obedit->imat, center);
 
       BMVert *v_new = BM_vert_create(bm, center, NULL, BM_CREATE_NOP);
@@ -402,8 +408,12 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
   }
 
   if (changed) {
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(vc.obedit->data, true, true);
+    EDBM_update(vc.obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
 
     if (basact != NULL) {
       if (vc.view_layer->basact != basact) {
@@ -411,13 +421,11 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
       }
     }
 
-    WM_event_add_mousemove(C);
+    WM_event_add_mousemove(vc.win);
 
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void MESH_OT_polybuild_face_at_cursor(wmOperatorType *ot)
@@ -436,7 +444,7 @@ void MESH_OT_polybuild_face_at_cursor(wmOperatorType *ot)
   RNA_def_boolean(ot->srna,
                   "create_quads",
                   true,
-                  "Create quads",
+                  "Create Quads",
                   "Automatically split edges in triangles to maintain quad topology");
   /* to give to transform */
   Transform_Properties(ot, P_PROPORTIONAL | P_MIRROR_DUMMY);
@@ -470,11 +478,11 @@ static int edbm_polybuild_split_at_cursor_invoke(bContext *C,
   if (ele_act == NULL || ele_act->head.hflag == BM_FACE) {
     return OPERATOR_PASS_THROUGH;
   }
-  else if (ele_act->head.htype == BM_EDGE) {
+  if (ele_act->head.htype == BM_EDGE) {
     BMEdge *e_act = (BMEdge *)ele_act;
     mid_v3_v3v3(center, e_act->v1->co, e_act->v2->co);
     mul_m4_v3(vc.obedit->obmat, center);
-    ED_view3d_win_to_3d_int(vc.v3d, vc.ar, center, event->mval, center);
+    ED_view3d_win_to_3d_int(vc.v3d, vc.region, center, event->mval, center);
     mul_m4_v3(vc.obedit->imat, center);
 
     const float fac = line_point_factor_v3(center, e_act->v1->co, e_act->v2->co);
@@ -492,10 +500,14 @@ static int edbm_polybuild_split_at_cursor_invoke(bContext *C,
   }
 
   if (changed) {
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(vc.obedit->data, true, true);
+    EDBM_update(vc.obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
 
-    WM_event_add_mousemove(C);
+    WM_event_add_mousemove(vc.win);
 
     if (vc.view_layer->basact != basact) {
       ED_object_base_activate(C, basact);
@@ -503,9 +515,7 @@ static int edbm_polybuild_split_at_cursor_invoke(bContext *C,
 
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void MESH_OT_polybuild_split_at_cursor(wmOperatorType *ot)
@@ -529,7 +539,6 @@ void MESH_OT_polybuild_split_at_cursor(wmOperatorType *ot)
 
 /* -------------------------------------------------------------------- */
 /** \name Dissolve at Cursor
- *
  * \{ */
 
 static int edbm_polybuild_dissolve_at_cursor_invoke(bContext *C,
@@ -566,7 +575,7 @@ static int edbm_polybuild_dissolve_at_cursor_invoke(bContext *C,
     else {
       /* too involved to do inline */
 
-      /* Avoid using selection so failure wont leave modified state. */
+      /* Avoid using selection so failure won't leave modified state. */
       EDBM_flag_disable_all(em, BM_ELEM_TAG);
       BM_elem_flag_enable(v_act, BM_ELEM_TAG);
 
@@ -585,20 +594,22 @@ static int edbm_polybuild_dissolve_at_cursor_invoke(bContext *C,
   if (changed) {
     edbm_flag_disable_all_multi(vc.view_layer, vc.v3d, BM_ELEM_SELECT);
 
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(vc.obedit->data, true, true);
+    EDBM_update(vc.obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
 
     if (vc.view_layer->basact != basact) {
       ED_object_base_activate(C, basact);
     }
 
-    WM_event_add_mousemove(C);
+    WM_event_add_mousemove(vc.win);
 
     return OPERATOR_FINISHED;
   }
-  else {
-    return OPERATOR_CANCELLED;
-  }
+  return OPERATOR_CANCELLED;
 }
 
 void MESH_OT_polybuild_dissolve_at_cursor(wmOperatorType *ot)

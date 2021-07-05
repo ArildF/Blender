@@ -33,15 +33,21 @@ roles:
   # Default color space sequencer is working in
   default_sequencer: sRGB
 
-  # Color spaces for color picking and texture painting (not internally supported yet)
+  # Distribution of colors in color picker
   color_picking: sRGB
-  texture_paint: Raw
 
   # Non-color data
   data: Non-Color
 
-  # CIE XYZ color space
-  XYZ: XYZ
+  # For interop between configs, and to determine XYZ for rendering
+  aces_interchange: Linear ACES
+
+  # Specifed by OCIO, not used in Blender
+  color_timing: Filmic Log
+  compositing_log: Filmic Log
+  default: Linear
+  matte_paint: Linear
+  texture_paint: Linear
 
 displays:
   sRGB:
@@ -58,7 +64,7 @@ displays:
     - !<View> {name: Standard, colorspace: Raw}
 
 active_displays: [sRGB, XYZ, None]
-active_views: [Standard, Filmic, Filmic Log, Raw]
+active_views: [Standard, Filmic, Filmic Log, Raw, False Color]
 
 colorspaces:
   - !<ColorSpace>
@@ -91,7 +97,11 @@ colorspaces:
     isdata: false
     allocation: lg2
     allocationvars: [-8.5, 5]
-    to_reference: !<FileTransform> {src: rec709_to_aces.spimtx, interpolation: linear, direction: inverse}
+    from_reference: !<GroupTransform>
+      children:
+        - !<FileTransform> {src: srgb_to_xyz.spimtx, interpolation: linear}
+        - !<FileTransform> {src: xyz_D65_to_E.spimtx, interpolation: linear}
+        - !<FileTransform> {src: xyz_to_aces.spimtx, interpolation: linear}
 
   - !<ColorSpace>
     name: nuke_rec709
@@ -216,10 +226,11 @@ colorspaces:
     from_reference: !<GroupTransform>
         children:
             - !<ColorSpaceTransform> {src: Linear, dst: Filmic Log}
+            - !<MatrixTransform> {matrix: [0.2126729, 0.7151521, 0.0721750, 0, 0.2126729, 0.7151521, 0.0721750, 0, 0.2126729, 0.7151521, 0.0721750, 0, 0, 0, 0, 1]}
             - !<FileTransform> {src: filmic_false_color.spi3d, interpolation: best}
 looks:
   - !<Look>
-    name: Filmic - Very High Contrast
+    name: Very High Contrast
     process_space: Filmic Log
     transform: !<GroupTransform>
         children:
@@ -227,7 +238,7 @@ looks:
             - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
 
   - !<Look>
-    name: Filmic - High Contrast
+    name: High Contrast
     process_space: Filmic Log
     transform: !<GroupTransform>
         children:
@@ -235,7 +246,7 @@ looks:
             - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
 
   - !<Look>
-    name: Filmic - Medium High Contrast
+    name: Medium High Contrast
     process_space: Filmic Log
     transform: !<GroupTransform>
         children:
@@ -243,67 +254,13 @@ looks:
             - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
 
   - !<Look>
-    name: Filmic - Medium Contrast
+    name: Medium Contrast
     process_space: Filmic Log
     transform: !<GroupTransform>
         children:
 
   - !<Look>
-    name: Filmic - Medium Low Contrast
-    process_space: Filmic Log
-    transform: !<GroupTransform>
-        children:
-            - !<FileTransform> {src: filmic_to_0-60_1-04.spi1d, interpolation: linear}
-            - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
-
-  - !<Look>
-    name: Filmic - Low Contrast
-    process_space: Filmic Log
-    transform: !<GroupTransform>
-        children:
-            - !<FileTransform> {src: filmic_to_0-48_1-09.spi1d, interpolation: linear}
-            - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
-
-  - !<Look>
-    name: Filmic - Very Low Contrast
-    process_space: Filmic Log
-    transform: !<GroupTransform>
-        children:
-            - !<FileTransform> {src: filmic_to_0-35_1-30.spi1d, interpolation: linear}
-            - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
-
-  - !<Look>
-    name: Standard - Very High Contrast
-    process_space: Filmic Log
-    transform: !<GroupTransform>
-        children:
-            - !<FileTransform> {src: filmic_to_1.20_1-00.spi1d, interpolation: linear}
-            - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
-
-  - !<Look>
-    name: Standard - High Contrast
-    process_space: Filmic Log
-    transform: !<GroupTransform>
-        children:
-            - !<FileTransform> {src: filmic_to_0.99_1-0075.spi1d, interpolation: linear}
-            - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
-
-  - !<Look>
-    name: Standard - Medium High Contrast
-    process_space: Filmic Log
-    transform: !<GroupTransform>
-        children:
-            - !<FileTransform> {src: filmic_to_0-85_1-011.spi1d, interpolation: best}
-            - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
-
-  - !<Look>
-    name: Standard - Base Contrast
-    process_space: Filmic Log
-    transform: !<GroupTransform>
-        children:
-
-  - !<Look>
-    name: Standard - Medium Low Contrast
+    name: Medium Low Contrast
     process_space: Filmic Log
     transform: !<GroupTransform>
         children:
@@ -311,7 +268,7 @@ looks:
             - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
 
   - !<Look>
-    name: Standard - Low Contrast
+    name: Low Contrast
     process_space: Filmic Log
     transform: !<GroupTransform>
         children:
@@ -319,7 +276,7 @@ looks:
             - !<FileTransform> {src: filmic_to_0-70_1-03.spi1d, interpolation: linear, direction: inverse}
 
   - !<Look>
-    name: Standard - Very Low Contrast
+    name: Very Low Contrast
     process_space: Filmic Log
     transform: !<GroupTransform>
         children:

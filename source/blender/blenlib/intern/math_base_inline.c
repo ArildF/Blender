@@ -17,8 +17,7 @@
  * All rights reserved.
  *
  * The Original Code is: some of this file.
- *
- * */
+ */
 
 /** \file
  * \ingroup bli
@@ -28,15 +27,16 @@
 #define __MATH_BASE_INLINE_C__
 
 #include <float.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
-
-#ifdef __SSE2__
-#  include <emmintrin.h>
-#endif
 
 #include "BLI_math_base.h"
+#include "BLI_simd.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* copied from BLI_utildefines.h */
 #ifdef __GNUC__
@@ -180,7 +180,26 @@ MINLINE double interpd(double target, double origin, double fac)
   return (fac * target) + (1.0f - fac) * origin;
 }
 
-/* used for zoom values*/
+MINLINE float ratiof(float min, float max, float pos)
+{
+  float range = max - min;
+  return range == 0 ? 0 : ((pos - min) / range);
+}
+
+MINLINE double ratiod(double min, double max, double pos)
+{
+  double range = max - min;
+  return range == 0 ? 0 : ((pos - min) / range);
+}
+
+/* Map a normalized value, i.e. from interval [0, 1] to interval [a, b]. */
+MINLINE float scalenorm(float a, float b, float x)
+{
+  BLI_assert(x <= 1 && x >= 0);
+  return (x * (b - a)) + a;
+}
+
+/* Used for zoom values. */
 MINLINE float power_of_2(float val)
 {
   return (float)pow(2.0, ceil(log((double)val) / M_LN2));
@@ -356,6 +375,14 @@ MINLINE int divide_floor_i(int a, int b)
 }
 
 /**
+ * Integer division that returns the ceiling, instead of flooring like normal C division.
+ */
+MINLINE uint divide_ceil_u(uint a, uint b)
+{
+  return (a + b - 1) / b;
+}
+
+/**
  * modulo that handles negative numbers, works the same as Python's.
  */
 MINLINE int mod_i(int i, int n)
@@ -368,12 +395,86 @@ MINLINE float fractf(float a)
   return a - floorf(a);
 }
 
-/* Adapted from godotengine math_funcs.h. */
+/* Adapted from godot-engine math_funcs.h. */
 MINLINE float wrapf(float value, float max, float min)
 {
   float range = max - min;
   return (range != 0.0f) ? value - (range * floorf((value - min) / range)) : min;
 }
+
+MINLINE float pingpongf(float value, float scale)
+{
+  if (scale == 0.0f) {
+    return 0.0f;
+  }
+  return fabsf(fractf((value - scale) / (scale * 2.0f)) * scale * 2.0f - scale);
+}
+
+// Square.
+
+MINLINE int square_s(short a)
+{
+  return a * a;
+}
+
+MINLINE int square_i(int a)
+{
+  return a * a;
+}
+
+MINLINE unsigned int square_uint(unsigned int a)
+{
+  return a * a;
+}
+
+MINLINE int square_uchar(unsigned char a)
+{
+  return a * a;
+}
+
+MINLINE float square_f(float a)
+{
+  return a * a;
+}
+
+MINLINE double square_d(double a)
+{
+  return a * a;
+}
+
+// Cube.
+
+MINLINE int cube_s(short a)
+{
+  return a * a * a;
+}
+
+MINLINE int cube_i(int a)
+{
+  return a * a * a;
+}
+
+MINLINE unsigned int cube_uint(unsigned int a)
+{
+  return a * a * a;
+}
+
+MINLINE int cube_uchar(unsigned char a)
+{
+  return a * a * a;
+}
+
+MINLINE float cube_f(float a)
+{
+  return a * a * a;
+}
+
+MINLINE double cube_d(double a)
+{
+  return a * a * a;
+}
+
+// Min/max
 
 MINLINE float min_ff(float a, float b)
 {
@@ -409,6 +510,15 @@ MINLINE int min_ii(int a, int b)
   return (a < b) ? a : b;
 }
 MINLINE int max_ii(int a, int b)
+{
+  return (b < a) ? a : b;
+}
+
+MINLINE uint min_uu(uint a, uint b)
+{
+  return (a < b) ? a : b;
+}
+MINLINE uint max_uu(uint a, uint b)
 {
   return (b < a) ? a : b;
 }
@@ -454,6 +564,15 @@ MINLINE size_t min_zz(size_t a, size_t b)
   return (a < b) ? a : b;
 }
 MINLINE size_t max_zz(size_t a, size_t b)
+{
+  return (b < a) ? a : b;
+}
+
+MINLINE char min_cc(char a, char b)
+{
+  return (a < b) ? a : b;
+}
+MINLINE char max_cc(char a, char b)
 {
   return (b < a) ? a : b;
 }
@@ -524,7 +643,7 @@ MINLINE int compare_ff_relative(float a, float b, const float max_diff, const in
 
 MINLINE float signf(float f)
 {
-  return (f < 0.f) ? -1.f : 1.f;
+  return (f < 0.0f) ? -1.0f : 1.0f;
 }
 
 MINLINE float compatible_signf(float f)
@@ -591,14 +710,14 @@ MINLINE int integer_digits_i(const int i)
 
 /* Internal helpers for SSE2 implementation.
  *
- * NOTE: Are to be called ONLY from inside `#ifdef __SSE2__` !!!
+ * NOTE: Are to be called ONLY from inside `#ifdef BLI_HAVE_SSE2` !!!
  */
 
-#ifdef __SSE2__
+#ifdef BLI_HAVE_SSE2
 
 /* Calculate initial guess for arg^exp based on float representation
  * This method gives a constant bias, which can be easily compensated by
- * multiplicating with bias_coeff.
+ * multiplying with bias_coeff.
  * Gives better results for exponents near 1 (e. g. 4/5).
  * exp = exponent, encoded as uint32_t
  * e2coeff = 2^(127/exponent - 127) * bias_coeff^(1/exponent), encoded as
@@ -622,7 +741,7 @@ MALWAYS_INLINE __m128 _bli_math_improve_5throot_solution(const __m128 old_result
   __m128 approx2 = _mm_mul_ps(old_result, old_result);
   __m128 approx4 = _mm_mul_ps(approx2, approx2);
   __m128 t = _mm_div_ps(x, approx4);
-  __m128 summ = _mm_add_ps(_mm_mul_ps(_mm_set1_ps(4.0f), old_result), t); /* fma */
+  __m128 summ = _mm_add_ps(_mm_mul_ps(_mm_set1_ps(4.0f), old_result), t); /* FMA. */
   return _mm_mul_ps(summ, _mm_set1_ps(1.0f / 5.0f));
 }
 
@@ -641,7 +760,7 @@ MALWAYS_INLINE __m128 _bli_math_fastpow24(const __m128 arg)
   __m128 x = _bli_math_fastpow(0x3F4CCCCD, 0x4F55A7FB, arg);
   __m128 arg2 = _mm_mul_ps(arg, arg);
   __m128 arg4 = _mm_mul_ps(arg2, arg2);
-  /* error max = 0.018        avg = 0.0031    |avg| = 0.0031  */
+  /* error max = 0.018        avg = 0.0031    |avg| = 0.0031 */
   x = _bli_math_improve_5throot_solution(x, arg4);
   /* error max = 0.00021    avg = 1.6e-05    |avg| = 1.6e-05 */
   x = _bli_math_improve_5throot_solution(x, arg4);
@@ -675,7 +794,7 @@ MALWAYS_INLINE __m128 _bli_math_blend_sse(const __m128 mask, const __m128 a, con
   return _mm_or_ps(_mm_and_ps(mask, a), _mm_andnot_ps(mask, b));
 }
 
-#endif /* __SSE2__ */
+#endif /* BLI_HAVE_SSE2 */
 
 /* Low level conversion functions */
 MINLINE unsigned char unit_float_to_uchar_clamp(float val)
@@ -717,5 +836,9 @@ MINLINE unsigned char unit_ushort_to_uchar(unsigned short val)
     (v1)[3] = unit_float_to_uchar_clamp((v2[3])); \
   } \
   ((void)0)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __MATH_BASE_INLINE_C__ */

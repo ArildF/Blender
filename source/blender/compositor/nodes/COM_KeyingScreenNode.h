@@ -16,11 +16,12 @@
  * Copyright 2012, Blender Foundation.
  */
 
-#ifndef __COM_KEYINGSCREENNODE_H__
-#define __COM_KEYINGSCREENNODE_H__
+#pragma once
 
 #include "COM_Node.h"
 #include "DNA_node_types.h"
+
+namespace blender::compositor {
 
 /**
  * \brief KeyingScreenNode
@@ -29,7 +30,8 @@
 class KeyingScreenNode : public Node {
  public:
   KeyingScreenNode(bNode *editorNode);
-  void convertToOperations(NodeConverter &converter, const CompositorContext &context) const;
+  void convertToOperations(NodeConverter &converter,
+                           const CompositorContext &context) const override;
 };
 
-#endif /* __COM_KEYINGSCREENNODE_H__ */
+}  // namespace blender::compositor

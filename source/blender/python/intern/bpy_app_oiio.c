@@ -18,8 +18,8 @@
  * \ingroup pythonintern
  */
 
-#include <Python.h>
 #include "BLI_utildefines.h"
+#include <Python.h>
 
 #include "bpy_app_oiio.h"
 
@@ -77,8 +77,8 @@ static PyObject *make_oiio_info(void)
   SetStrItem("Unknown");
 #endif
 
-  if (PyErr_Occurred()) {
-    Py_CLEAR(oiio_info);
+  if (UNLIKELY(PyErr_Occurred())) {
+    Py_DECREF(oiio_info);
     return NULL;
   }
 
@@ -100,7 +100,7 @@ PyObject *BPY_app_oiio_struct(void)
   BlenderAppOIIOType.tp_init = NULL;
   BlenderAppOIIOType.tp_new = NULL;
   BlenderAppOIIOType.tp_hash = (hashfunc)
-      _Py_HashPointer; /* without this we can't do set(sys.modules) [#29635] */
+      _Py_HashPointer; /* without this we can't do set(sys.modules) T29635. */
 
   return ret;
 }

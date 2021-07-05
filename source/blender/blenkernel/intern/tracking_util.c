@@ -30,20 +30,21 @@
 
 #include "DNA_movieclip_types.h"
 
-#include "BLI_utildefines.h"
-#include "BLI_math.h"
-#include "BLI_listbase.h"
 #include "BLI_ghash.h"
+#include "BLI_listbase.h"
+#include "BLI_math.h"
 #include "BLI_string.h"
 #include "BLI_string_utils.h"
+#include "BLI_threads.h"
+#include "BLI_utildefines.h"
 
 #include "BLT_translation.h"
 
 #include "BKE_movieclip.h"
 #include "BKE_tracking.h"
 
-#include "IMB_imbuf_types.h"
 #include "IMB_imbuf.h"
+#include "IMB_imbuf_types.h"
 #include "IMB_moviecache.h"
 
 #include "tracking_private.h"
@@ -59,7 +60,9 @@
 #  define CACHE_PRINTF(...)
 #endif
 
-/*********************** Tracks map *************************/
+/* -------------------------------------------------------------------- */
+/** \name Tracks Map
+ * \{ */
 
 TracksMap *tracks_map_new(const char *object_name,
                           bool is_camera,
@@ -241,7 +244,11 @@ void tracks_map_free(TracksMap *map, void (*customdata_free)(void *customdata))
   MEM_freeN(map);
 }
 
-/*********************** Space transformation functions *************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Space Transformation Functions
+ * \{ */
 
 /* Three coordinate frames: Frame, Search, and Marker
  * Two units: Pixels, Unified
@@ -398,7 +405,11 @@ void tracking_set_marker_coords_from_tracking(int frame_width,
   marker->pos[1] += marker_unified[1];
 }
 
-/*********************** General purpose utility functions *************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name General Purpose Utility Functions
+ * \{ */
 
 /* Place a disabled marker before or after specified ref_marker.
  *
@@ -432,6 +443,89 @@ void tracking_marker_insert_disabled(MovieTrackingTrack *track,
   }
 }
 
+static void distortion_model_parameters_from_tracking(
+    const MovieTrackingCamera *camera, libmv_CameraIntrinsicsOptions *camera_intrinsics_options)
+{
+  switch (camera->distortion_model) {
+    case TRACKING_DISTORTION_MODEL_POLYNOMIAL:
+      camera_intrinsics_options->distortion_model = LIBMV_DISTORTION_MODEL_POLYNOMIAL;
+      camera_intrinsics_options->polynomial_k1 = camera->k1;
+      camera_intrinsics_options->polynomial_k2 = camera->k2;
+      camera_intrinsics_options->polynomial_k3 = camera->k3;
+      camera_intrinsics_options->polynomial_p1 = 0.0;
+      camera_intrinsics_options->polynomial_p2 = 0.0;
+      return;
+
+    case TRACKING_DISTORTION_MODEL_DIVISION:
+      camera_intrinsics_options->distortion_model = LIBMV_DISTORTION_MODEL_DIVISION;
+      camera_intrinsics_options->division_k1 = camera->division_k1;
+      camera_intrinsics_options->division_k2 = camera->division_k2;
+      return;
+
+    case TRACKING_DISTORTION_MODEL_NUKE:
+      camera_intrinsics_options->distortion_model = LIBMV_DISTORTION_MODEL_NUKE;
+      camera_intrinsics_options->nuke_k1 = camera->nuke_k1;
+      camera_intrinsics_options->nuke_k2 = camera->nuke_k2;
+      return;
+    case TRACKING_DISTORTION_MODEL_BROWN:
+      camera_intrinsics_options->distortion_model = LIBMV_DISTORTION_MODEL_BROWN;
+      camera_intrinsics_options->brown_k1 = camera->brown_k1;
+      camera_intrinsics_options->brown_k2 = camera->brown_k2;
+      camera_intrinsics_options->brown_k3 = camera->brown_k3;
+      camera_intrinsics_options->brown_k4 = camera->brown_k4;
+      camera_intrinsics_options->brown_p1 = camera->brown_p1;
+      camera_intrinsics_options->brown_p2 = camera->brown_p2;
+      return;
+  }
+
+  /* Unknown distortion model, which might be due to opening newer file in older Blender.
+   * Fallback to a known and supported model with 0 distortion. */
+  camera_intrinsics_options->distortion_model = LIBMV_DISTORTION_MODEL_POLYNOMIAL;
+  camera_intrinsics_options->polynomial_k1 = 0.0;
+  camera_intrinsics_options->polynomial_k2 = 0.0;
+  camera_intrinsics_options->polynomial_k3 = 0.0;
+  camera_intrinsics_options->polynomial_p1 = 0.0;
+  camera_intrinsics_options->polynomial_p2 = 0.0;
+}
+
+static void distortion_model_parameters_from_options(
+    const libmv_CameraIntrinsicsOptions *camera_intrinsics_options, MovieTrackingCamera *camera)
+{
+  switch (camera_intrinsics_options->distortion_model) {
+    case LIBMV_DISTORTION_MODEL_POLYNOMIAL:
+      camera->distortion_model = TRACKING_DISTORTION_MODEL_POLYNOMIAL;
+      camera->k1 = camera_intrinsics_options->polynomial_k1;
+      camera->k2 = camera_intrinsics_options->polynomial_k2;
+      camera->k3 = camera_intrinsics_options->polynomial_k3;
+      return;
+
+    case LIBMV_DISTORTION_MODEL_DIVISION:
+      camera->distortion_model = TRACKING_DISTORTION_MODEL_DIVISION;
+      camera->division_k1 = camera_intrinsics_options->division_k1;
+      camera->division_k2 = camera_intrinsics_options->division_k2;
+      return;
+
+    case LIBMV_DISTORTION_MODEL_NUKE:
+      camera->distortion_model = TRACKING_DISTORTION_MODEL_NUKE;
+      camera->nuke_k1 = camera_intrinsics_options->nuke_k1;
+      camera->nuke_k2 = camera_intrinsics_options->nuke_k2;
+      return;
+    case LIBMV_DISTORTION_MODEL_BROWN:
+      camera->distortion_model = TRACKING_DISTORTION_MODEL_BROWN;
+      camera->brown_k1 = camera_intrinsics_options->brown_k1;
+      camera->brown_k2 = camera_intrinsics_options->brown_k2;
+      camera->brown_k3 = camera_intrinsics_options->brown_k3;
+      camera->brown_k4 = camera_intrinsics_options->brown_k4;
+      camera->brown_p1 = camera_intrinsics_options->brown_p1;
+      camera->brown_p2 = camera_intrinsics_options->brown_p2;
+      return;
+  }
+
+  /* Libmv returned distortion model which is not known to Blender. This is a logical error in code
+   * and Blender side is to be updated to match Libmv. */
+  BLI_assert(!"Unknown distortion model");
+}
+
 /* Fill in Libmv C-API camera intrinsics options from tracking structure. */
 void tracking_cameraIntrinscisOptionsFromTracking(
     MovieTracking *tracking,
@@ -442,29 +536,14 @@ void tracking_cameraIntrinscisOptionsFromTracking(
   MovieTrackingCamera *camera = &tracking->camera;
   float aspy = 1.0f / tracking->camera.pixel_aspect;
 
+  camera_intrinsics_options->num_threads = BLI_system_thread_count();
+
   camera_intrinsics_options->focal_length = camera->focal;
 
   camera_intrinsics_options->principal_point_x = camera->principal[0];
   camera_intrinsics_options->principal_point_y = camera->principal[1] * aspy;
 
-  switch (camera->distortion_model) {
-    case TRACKING_DISTORTION_MODEL_POLYNOMIAL:
-      camera_intrinsics_options->distortion_model = LIBMV_DISTORTION_MODEL_POLYNOMIAL;
-      camera_intrinsics_options->polynomial_k1 = camera->k1;
-      camera_intrinsics_options->polynomial_k2 = camera->k2;
-      camera_intrinsics_options->polynomial_k3 = camera->k3;
-      camera_intrinsics_options->polynomial_p1 = 0.0;
-      camera_intrinsics_options->polynomial_p2 = 0.0;
-      break;
-    case TRACKING_DISTORTION_MODEL_DIVISION:
-      camera_intrinsics_options->distortion_model = LIBMV_DISTORTION_MODEL_DIVISION;
-      camera_intrinsics_options->division_k1 = camera->division_k1;
-      camera_intrinsics_options->division_k2 = camera->division_k2;
-      break;
-    default:
-      BLI_assert(!"Unknown distortion model");
-      break;
-  }
+  distortion_model_parameters_from_tracking(camera, camera_intrinsics_options);
 
   camera_intrinsics_options->image_width = calibration_width;
   camera_intrinsics_options->image_height = (int)(calibration_height * aspy);
@@ -481,22 +560,7 @@ void tracking_trackingCameraFromIntrinscisOptions(
   camera->principal[0] = camera_intrinsics_options->principal_point_x;
   camera->principal[1] = camera_intrinsics_options->principal_point_y / (double)aspy;
 
-  switch (camera_intrinsics_options->distortion_model) {
-    case LIBMV_DISTORTION_MODEL_POLYNOMIAL:
-      camera->distortion_model = TRACKING_DISTORTION_MODEL_POLYNOMIAL;
-      camera->k1 = camera_intrinsics_options->polynomial_k1;
-      camera->k2 = camera_intrinsics_options->polynomial_k2;
-      camera->k3 = camera_intrinsics_options->polynomial_k3;
-      break;
-    case LIBMV_DISTORTION_MODEL_DIVISION:
-      camera->distortion_model = TRACKING_DISTORTION_MODEL_DIVISION;
-      camera->division_k1 = camera_intrinsics_options->division_k1;
-      camera->division_k2 = camera_intrinsics_options->division_k2;
-      break;
-    default:
-      BLI_assert(!"Unknown distortion model");
-      break;
-  }
+  distortion_model_parameters_from_options(camera_intrinsics_options, camera);
 }
 
 /* Get previous keyframed marker. */
@@ -559,89 +623,11 @@ MovieTrackingMarker *tracking_get_keyframed_marker(MovieTrackingTrack *track,
   return marker_keyed;
 }
 
-/*********************** Frame accessr *************************/
+/** \} */
 
-typedef struct AccessCacheKey {
-  int clip_index;
-  int frame;
-  int downscale;
-  libmv_InputMode input_mode;
-  bool has_region;
-  float region_min[2], region_max[2];
-  int64_t transform_key;
-} AccessCacheKey;
-
-static unsigned int accesscache_hashhash(const void *key_v)
-{
-  const AccessCacheKey *key = (const AccessCacheKey *)key_v;
-  /* TODP(sergey): Need better hashing here for faster frame access. */
-  return key->clip_index << 16 | key->frame;
-}
-
-static bool accesscache_hashcmp(const void *a_v, const void *b_v)
-{
-  const AccessCacheKey *a = (const AccessCacheKey *)a_v;
-  const AccessCacheKey *b = (const AccessCacheKey *)b_v;
-  if (a->clip_index != b->clip_index || a->frame != b->frame || a->downscale != b->downscale ||
-      a->input_mode != b->input_mode || a->has_region != b->has_region ||
-      a->transform_key != b->transform_key) {
-    return true;
-  }
-  /* If there is region applied, compare it. */
-  if (a->has_region) {
-    if (!equals_v2v2(a->region_min, b->region_min) || !equals_v2v2(a->region_max, b->region_max)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-static void accesscache_construct_key(AccessCacheKey *key,
-                                      int clip_index,
-                                      int frame,
-                                      libmv_InputMode input_mode,
-                                      int downscale,
-                                      const libmv_Region *region,
-                                      int64_t transform_key)
-{
-  key->clip_index = clip_index;
-  key->frame = frame;
-  key->input_mode = input_mode;
-  key->downscale = downscale;
-  key->has_region = (region != NULL);
-  if (key->has_region) {
-    copy_v2_v2(key->region_min, region->min);
-    copy_v2_v2(key->region_max, region->max);
-  }
-  key->transform_key = transform_key;
-}
-
-static void accesscache_put(TrackingImageAccessor *accessor,
-                            int clip_index,
-                            int frame,
-                            libmv_InputMode input_mode,
-                            int downscale,
-                            const libmv_Region *region,
-                            int64_t transform_key,
-                            ImBuf *ibuf)
-{
-  AccessCacheKey key;
-  accesscache_construct_key(&key, clip_index, frame, input_mode, downscale, region, transform_key);
-  IMB_moviecache_put(accessor->cache, &key, ibuf);
-}
-
-static ImBuf *accesscache_get(TrackingImageAccessor *accessor,
-                              int clip_index,
-                              int frame,
-                              libmv_InputMode input_mode,
-                              int downscale,
-                              const libmv_Region *region,
-                              int64_t transform_key)
-{
-  AccessCacheKey key;
-  accesscache_construct_key(&key, clip_index, frame, input_mode, downscale, region, transform_key);
-  return IMB_moviecache_get(accessor->cache, &key);
-}
+/* -------------------------------------------------------------------- */
+/** \name Frame Accessor
+ * \{ */
 
 static ImBuf *accessor_get_preprocessed_ibuf(TrackingImageAccessor *accessor,
                                              int clip_index,
@@ -668,7 +654,7 @@ static ImBuf *make_grayscale_ibuf_copy(ImBuf *ibuf)
 {
   ImBuf *grayscale = IMB_allocImBuf(ibuf->x, ibuf->y, 32, 0);
 
-  BLI_assert(ibuf->channels == 3 || ibuf->channels == 4);
+  BLI_assert(ELEM(ibuf->channels, 3, 4));
 
   /* TODO(sergey): Bummer, currently IMB API only allows to create 4 channels
    * float buffer, so we do it manually here.
@@ -677,7 +663,7 @@ static ImBuf *make_grayscale_ibuf_copy(ImBuf *ibuf)
    */
   const size_t size = (size_t)grayscale->x * (size_t)grayscale->y * sizeof(float);
   grayscale->channels = 1;
-  if ((grayscale->rect_float = MEM_mapallocN(size, "tracking grayscale image")) != NULL) {
+  if ((grayscale->rect_float = MEM_callocN(size, "tracking grayscale image")) != NULL) {
     grayscale->mall |= IB_rectfloat;
     grayscale->flags |= IB_rectfloat;
 
@@ -705,7 +691,7 @@ static ImBuf *float_image_to_ibuf(libmv_FloatImage *float_image)
   ImBuf *ibuf = IMB_allocImBuf(float_image->width, float_image->height, 32, 0);
   size_t size = (size_t)ibuf->x * (size_t)ibuf->y * float_image->channels * sizeof(float);
   ibuf->channels = float_image->channels;
-  if ((ibuf->rect_float = MEM_mapallocN(size, "tracking grayscale image")) != NULL) {
+  if ((ibuf->rect_float = MEM_callocN(size, "tracking grayscale image")) != NULL) {
     ibuf->mall |= IB_rectfloat;
     ibuf->flags |= IB_rectfloat;
 
@@ -722,33 +708,14 @@ static ImBuf *accessor_get_ibuf(TrackingImageAccessor *accessor,
                                 const libmv_Region *region,
                                 const libmv_FrameTransform *transform)
 {
-  ImBuf *ibuf, *orig_ibuf, *final_ibuf;
-  int64_t transform_key = 0;
-  if (transform != NULL) {
-    transform_key = libmv_frameAccessorgetTransformKey(transform);
-  }
   /* First try to get fully processed image from the cache. */
-  BLI_spin_lock(&accessor->cache_lock);
-  ibuf = accesscache_get(
-      accessor, clip_index, frame, input_mode, downscale, region, transform_key);
-  BLI_spin_unlock(&accessor->cache_lock);
-  if (ibuf != NULL) {
-    CACHE_PRINTF("Used cached buffer for frame %d\n", frame);
-    /* This is a little heuristic here: if we re-used image once, this is
-     * a high probability of the image to be related to a keyframe matched
-     * reference image. Those images we don't want to be thrown away because
-     * if we toss them out we'll be re-calculating them at the next
-     * iteration.
-     */
-    ibuf->userflags |= IB_PERSISTENT;
-    return ibuf;
-  }
   CACHE_PRINTF("Calculate new buffer for frame %d\n", frame);
   /* And now we do postprocessing of the original frame. */
-  orig_ibuf = accessor_get_preprocessed_ibuf(accessor, clip_index, frame);
+  ImBuf *orig_ibuf = accessor_get_preprocessed_ibuf(accessor, clip_index, frame);
   if (orig_ibuf == NULL) {
     return NULL;
   }
+  ImBuf *final_ibuf;
   /* Cut a region if requested. */
   if (region != NULL) {
     int width = region->max[0] - region->min[0], height = region->max[1] - region->min[1];
@@ -826,7 +793,7 @@ static ImBuf *accessor_get_ibuf(TrackingImageAccessor *accessor,
   }
   /* Transform number of channels. */
   if (input_mode == LIBMV_IMAGE_MODE_RGBA) {
-    BLI_assert(orig_ibuf->channels == 3 || orig_ibuf->channels == 4);
+    BLI_assert(ELEM(orig_ibuf->channels, 3, 4));
     /* pass */
   }
   else /* if (input_mode == LIBMV_IMAGE_MODE_MONO) */ {
@@ -848,11 +815,6 @@ static ImBuf *accessor_get_ibuf(TrackingImageAccessor *accessor,
     final_ibuf = IMB_dupImBuf(orig_ibuf);
   }
   IMB_freeImBuf(orig_ibuf);
-  BLI_spin_lock(&accessor->cache_lock);
-  /* Put final buffer to cache. */
-  accesscache_put(
-      accessor, clip_index, frame, input_mode, downscale, region, transform_key, final_ibuf);
-  BLI_spin_unlock(&accessor->cache_lock);
   return final_ibuf;
 }
 
@@ -955,22 +917,20 @@ static void accessor_release_mask_callback(libmv_CacheKey cache_key)
 TrackingImageAccessor *tracking_image_accessor_new(MovieClip *clips[MAX_ACCESSOR_CLIP],
                                                    int num_clips,
                                                    MovieTrackingTrack **tracks,
-                                                   int num_tracks,
-                                                   int start_frame)
+                                                   int num_tracks)
 {
   TrackingImageAccessor *accessor = MEM_callocN(sizeof(TrackingImageAccessor),
                                                 "tracking image accessor");
 
   BLI_assert(num_clips <= MAX_ACCESSOR_CLIP);
 
-  accessor->cache = IMB_moviecache_create(
-      "frame access cache", sizeof(AccessCacheKey), accesscache_hashhash, accesscache_hashcmp);
-
   memcpy(accessor->clips, clips, num_clips * sizeof(MovieClip *));
   accessor->num_clips = num_clips;
-  accessor->tracks = tracks;
+
+  accessor->tracks = MEM_malloc_arrayN(
+      num_tracks, sizeof(MovieTrackingTrack *), "image accessor tracks");
+  memcpy(accessor->tracks, tracks, num_tracks * sizeof(MovieTrackingTrack *));
   accessor->num_tracks = num_tracks;
-  accessor->start_frame = start_frame;
 
   accessor->libmv_accessor = libmv_FrameAccessorNew((libmv_FrameAccessorUserData *)accessor,
                                                     accessor_get_image_callback,
@@ -985,8 +945,10 @@ TrackingImageAccessor *tracking_image_accessor_new(MovieClip *clips[MAX_ACCESSOR
 
 void tracking_image_accessor_destroy(TrackingImageAccessor *accessor)
 {
-  IMB_moviecache_free(accessor->cache);
   libmv_FrameAccessorDestroy(accessor->libmv_accessor);
   BLI_spin_end(&accessor->cache_lock);
+  MEM_freeN(accessor->tracks);
   MEM_freeN(accessor);
 }
+
+/** \} */

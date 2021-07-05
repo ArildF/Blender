@@ -17,22 +17,21 @@
  * All rights reserved.
  */
 
-#ifndef __BLI_STRING_H__
-#define __BLI_STRING_H__
+#pragma once
 
 /** \file
  * \ingroup bli
  */
 
-#include <stdarg.h>
 #include <inttypes.h>
+#include <stdarg.h>
+
+#include "BLI_compiler_attrs.h"
+#include "BLI_utildefines.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "BLI_compiler_attrs.h"
-#include "BLI_utildefines_variadic.h"
 
 char *BLI_strdupn(const char *str, const size_t len) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT
     ATTR_NONNULL();
@@ -69,12 +68,17 @@ char *BLI_str_replaceN(const char *__restrict str,
 
 void BLI_str_replace_char(char *string, char src, char dst) ATTR_NONNULL();
 
+bool BLI_str_replace_table_exact(char *string,
+                                 const size_t string_len,
+                                 const char *replace_table[][2],
+                                 int replace_table_len);
+
 size_t BLI_snprintf(char *__restrict dst, size_t maxncpy, const char *__restrict format, ...)
     ATTR_NONNULL(1, 3) ATTR_PRINTF_FORMAT(3, 4);
 size_t BLI_snprintf_rlen(char *__restrict dst, size_t maxncpy, const char *__restrict format, ...)
     ATTR_NONNULL(1, 3) ATTR_PRINTF_FORMAT(3, 4);
 
-size_t BLI_vsnprintf(char *__restrict dst,
+size_t BLI_vsnprintf(char *__restrict buffer,
                      size_t maxncpy,
                      const char *__restrict format,
                      va_list arg) ATTR_PRINTF_FORMAT(3, 0);
@@ -86,13 +90,17 @@ size_t BLI_vsnprintf_rlen(char *__restrict buffer,
 char *BLI_sprintfN(const char *__restrict format, ...) ATTR_WARN_UNUSED_RESULT
     ATTR_NONNULL(1) ATTR_MALLOC ATTR_PRINTF_FORMAT(1, 2);
 
-size_t BLI_strescape(char *__restrict dst, const char *__restrict src, const size_t maxncpy)
+size_t BLI_str_escape(char *__restrict dst, const char *__restrict src, const size_t dst_maxncpy)
     ATTR_NONNULL();
+size_t BLI_str_unescape(char *__restrict dst, const char *__restrict src, const size_t src_maxncpy)
+    ATTR_NONNULL();
+const char *BLI_str_escape_find_quote(const char *str) ATTR_NONNULL();
 
 size_t BLI_str_format_int_grouped(char dst[16], int num) ATTR_NONNULL();
 size_t BLI_str_format_uint64_grouped(char dst[16], uint64_t num) ATTR_NONNULL();
-void BLI_str_format_byte_unit(char dst[15], long long int size, const bool base_10) ATTR_NONNULL();
-
+void BLI_str_format_byte_unit(char dst[15], long long int bytes, const bool base_10)
+    ATTR_NONNULL();
+void BLI_str_format_attribute_domain_size(char dst[7], int number_to_format) ATTR_NONNULL();
 int BLI_strcaseeq(const char *a, const char *b) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 char *BLI_strcasestr(const char *s, const char *find) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 char *BLI_strncasestr(const char *s, const char *find, size_t len) ATTR_WARN_UNUSED_RESULT
@@ -118,6 +126,7 @@ int BLI_str_index_in_array_n(const char *__restrict str,
 int BLI_str_index_in_array(const char *__restrict str, const char **__restrict str_array)
     ATTR_NONNULL();
 
+bool BLI_str_startswith(const char *__restrict str, const char *__restrict start) ATTR_NONNULL();
 bool BLI_str_endswith(const char *__restrict str, const char *__restrict end) ATTR_NONNULL();
 bool BLI_strn_endswith(const char *__restrict str, const char *__restrict end, size_t length)
     ATTR_NONNULL();
@@ -133,12 +142,20 @@ size_t BLI_str_partition_ex(const char *str,
                             const char **suf,
                             const bool from_right) ATTR_NONNULL(1, 3, 4, 5);
 
+int BLI_string_max_possible_word_count(const int str_len);
+bool BLI_string_has_word_prefix(const char *haystack, const char *needle, size_t needle_len);
+bool BLI_string_all_words_matched(const char *name,
+                                  const char *str,
+                                  int (*words)[2],
+                                  const int words_len);
+
 int BLI_string_find_split_words(const char *str,
                                 const size_t len,
                                 const char delim,
                                 int r_words[][2],
                                 int words_max) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
 
+/* -------------------------------------------------------------------- */
 /** \name String Copy/Format Macros
  * Avoid repeating destination with `sizeof(..)`.
  * \note `ARRAY_SIZE` allows pointers on some platforms.
@@ -205,5 +222,3 @@ int BLI_string_find_split_words(const char *str,
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BLI_STRING_H__ */

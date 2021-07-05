@@ -15,7 +15,8 @@
  *
  * The Original Code is written by Rob Haarsma (phase)
  * All rights reserved.
- * This code parses the Freetype font outline data to chains of Blender's beziertriples.
+ *
+ * This code parses the Freetype font outline data to chains of Blender's bezier-triples.
  * Additional information can be found at the bottom of this file.
  *
  * Code that uses exotic character maps is present but commented out.
@@ -35,16 +36,16 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "BLI_ghash.h"
+#include "BLI_listbase.h"
+#include "BLI_math.h"
+#include "BLI_string.h"
 #include "BLI_utildefines.h"
 #include "BLI_vfontdata.h"
-#include "BLI_listbase.h"
-#include "BLI_ghash.h"
-#include "BLI_string.h"
-#include "BLI_math.h"
 
-#include "DNA_vfont_types.h"
-#include "DNA_packedFile_types.h"
 #include "DNA_curve_types.h"
+#include "DNA_packedFile_types.h"
+#include "DNA_vfont_types.h"
 
 /* local variables */
 static FT_Library library;
@@ -134,7 +135,6 @@ static VChar *freetypechar_to_vchar(FT_Face face, FT_ULong charcode, VFontData *
       nu->type = CU_BEZIER;
       nu->pntsu = onpoints[j];
       nu->resolu = 8;
-      nu->flag = CU_2D;
       nu->flagu = CU_NURB_CYCLIC;
       nu->bezt = bezt;
 
@@ -306,7 +306,7 @@ static VFontData *objfnt_to_ftvfontdata(PackedFile *pf)
   /* Extract the first 256 character from TTF */
   lcode = charcode = FT_Get_First_Char(face, &glyph_index);
 
-  /* No charmap found from the ttf so we need to figure it out */
+  /* No `charmap` found from the TTF so we need to figure it out. */
   if (glyph_index == 0) {
     FT_CharMap found = NULL;
     FT_CharMap charmap;

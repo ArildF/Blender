@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software  Foundation,
+ * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
@@ -18,8 +18,8 @@
  * \ingroup bli
  */
 
-#include <string.h>
 #include <stdlib.h> /* abort() */
+#include <string.h>
 
 #include "BLI_utildefines.h"
 #include "MEM_guardedalloc.h"
@@ -182,7 +182,7 @@ void BLI_stack_pop(BLI_Stack *stack, void *dst)
 }
 
 /**
- * A version of #BLI_stack_pop which which fills in an array.
+ * A version of #BLI_stack_pop which fills in an array.
  *
  * \param dst: The destination array,
  * must be at least (#BLI_Stack.elem_size * \a n) bytes long.
@@ -201,7 +201,7 @@ void BLI_stack_pop_n(BLI_Stack *stack, void *dst, unsigned int n)
 }
 
 /**
- * A version of #BLI_stack_pop_n which which fills in an array (in the reverse order).
+ * A version of #BLI_stack_pop_n which fills in an array (in the reverse order).
  *
  * \note The first item in the array will be first item added to the stack.
  */

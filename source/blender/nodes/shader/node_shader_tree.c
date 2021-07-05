@@ -24,40 +24,40 @@
 #include <string.h>
 
 #include "DNA_light_types.h"
+#include "DNA_linestyle_types.h"
 #include "DNA_material_types.h"
 #include "DNA_node_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_space_types.h"
-#include "DNA_world_types.h"
-#include "DNA_linestyle_types.h"
 #include "DNA_workspace_types.h"
+#include "DNA_world_types.h"
 
+#include "BLI_alloca.h"
 #include "BLI_linklist.h"
 #include "BLI_listbase.h"
 #include "BLI_threads.h"
 #include "BLI_utildefines.h"
-#include "BLI_alloca.h"
 
 #include "BLT_translation.h"
 
 #include "BKE_context.h"
+#include "BKE_lib_id.h"
 #include "BKE_linestyle.h"
 #include "BKE_node.h"
 #include "BKE_scene.h"
-#include "BKE_library.h"
 
 #include "RNA_access.h"
 
 #include "GPU_material.h"
 
-#include "RE_shader_ext.h"
+#include "RE_texture.h"
 
 #include "NOD_common.h"
 
 #include "node_common.h"
 #include "node_exec.h"
-#include "node_util.h"
 #include "node_shader_util.h"
+#include "node_util.h"
 
 typedef struct nTreeTags {
   float ssr_id, sss_id;
@@ -184,6 +184,12 @@ static bool shader_validate_link(bNodeTree *UNUSED(ntree), bNodeLink *link)
   return true;
 }
 
+static bool shader_node_tree_socket_type_valid(eNodeSocketDatatype socket_type,
+                                               bNodeTreeType *UNUSED(ntreetype))
+{
+  return ELEM(socket_type, SOCK_FLOAT, SOCK_VECTOR, SOCK_RGBA, SOCK_SHADER);
+}
+
 bNodeTreeType *ntreeType_Shader;
 
 void register_node_tree_type_sh(void)
@@ -205,8 +211,9 @@ void register_node_tree_type_sh(void)
   tt->poll = shader_tree_poll;
   tt->get_from_context = shader_get_from_context;
   tt->validate_link = shader_validate_link;
+  tt->valid_socket_type = shader_node_tree_socket_type_valid;
 
-  tt->ext.srna = &RNA_ShaderNodeTree;
+  tt->rna_ext.srna = &RNA_ShaderNodeTree;
 
   ntreeTypeAdd(tt);
 }
@@ -229,7 +236,7 @@ bNode *ntreeShaderOutputNode(bNodeTree *ntree, int target)
    * multiple, we prefer exact target match and active nodes. */
   bNode *output_node = NULL;
 
-  for (bNode *node = ntree->nodes.first; node; node = node->next) {
+  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
     if (!ELEM(node->type, SH_NODE_OUTPUT_MATERIAL, SH_NODE_OUTPUT_WORLD, SH_NODE_OUTPUT_LIGHT)) {
       continue;
     }
@@ -283,6 +290,60 @@ static bNodeSocket *ntree_shader_node_find_output(bNode *node, const char *ident
   return ntree_shader_node_find_socket(&node->outputs, identifier);
 }
 
+/* Return true on success. */
+static bool ntree_shader_expand_socket_default(bNodeTree *localtree,
+                                               bNode *node,
+                                               bNodeSocket *socket)
+{
+  bNode *value_node;
+  bNodeSocket *value_socket;
+  bNodeSocketValueVector *src_vector;
+  bNodeSocketValueRGBA *src_rgba, *dst_rgba;
+  bNodeSocketValueFloat *src_float, *dst_float;
+  bNodeSocketValueInt *src_int;
+
+  switch (socket->type) {
+    case SOCK_VECTOR:
+      value_node = nodeAddStaticNode(NULL, localtree, SH_NODE_RGB);
+      value_socket = ntree_shader_node_find_output(value_node, "Color");
+      BLI_assert(value_socket != NULL);
+      src_vector = socket->default_value;
+      dst_rgba = value_socket->default_value;
+      copy_v3_v3(dst_rgba->value, src_vector->value);
+      dst_rgba->value[3] = 1.0f; /* should never be read */
+      break;
+    case SOCK_RGBA:
+      value_node = nodeAddStaticNode(NULL, localtree, SH_NODE_RGB);
+      value_socket = ntree_shader_node_find_output(value_node, "Color");
+      BLI_assert(value_socket != NULL);
+      src_rgba = socket->default_value;
+      dst_rgba = value_socket->default_value;
+      copy_v4_v4(dst_rgba->value, src_rgba->value);
+      break;
+    case SOCK_INT:
+      /* HACK: Support as float. */
+      value_node = nodeAddStaticNode(NULL, localtree, SH_NODE_VALUE);
+      value_socket = ntree_shader_node_find_output(value_node, "Value");
+      BLI_assert(value_socket != NULL);
+      src_int = socket->default_value;
+      dst_float = value_socket->default_value;
+      dst_float->value = (float)(src_int->value);
+      break;
+    case SOCK_FLOAT:
+      value_node = nodeAddStaticNode(NULL, localtree, SH_NODE_VALUE);
+      value_socket = ntree_shader_node_find_output(value_node, "Value");
+      BLI_assert(value_socket != NULL);
+      src_float = socket->default_value;
+      dst_float = value_socket->default_value;
+      dst_float->value = src_float->value;
+      break;
+    default:
+      return false;
+  }
+  nodeAddLink(localtree, value_node, value_socket, node, socket);
+  return true;
+}
+
 static void ntree_shader_unlink_hidden_value_sockets(bNode *group_node, bNodeSocket *isock)
 {
   bNodeTree *group_ntree = (bNodeTree *)group_node->id;
@@ -290,15 +351,23 @@ static void ntree_shader_unlink_hidden_value_sockets(bNode *group_node, bNodeSoc
   bool removed_link = false;
 
   for (node = group_ntree->nodes.first; node; node = node->next) {
-    for (bNodeSocket *sock = node->inputs.first; sock; sock = sock->next) {
-      if ((sock->flag & SOCK_HIDE_VALUE) == 0) {
+    const bool is_group = ELEM(node->type, NODE_GROUP, NODE_CUSTOM_GROUP) && (node->id != NULL);
+
+    LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
+      if (!is_group && (sock->flag & SOCK_HIDE_VALUE) == 0) {
         continue;
       }
       /* If socket is linked to a group input node and sockets id match. */
       if (sock && sock->link && sock->link->fromnode->type == NODE_GROUP_INPUT) {
         if (STREQ(isock->identifier, sock->link->fromsock->identifier)) {
-          nodeRemLink(group_ntree, sock->link);
-          removed_link = true;
+          if (is_group) {
+            /* Recursively unlink sockets within the nested group. */
+            ntree_shader_unlink_hidden_value_sockets(node, sock);
+          }
+          else {
+            nodeRemLink(group_ntree, sock->link);
+            removed_link = true;
+          }
         }
       }
     }
@@ -313,84 +382,53 @@ static void ntree_shader_unlink_hidden_value_sockets(bNode *group_node, bNodeSoc
  * To fix this, link value/rgba nodes into the sockets and copy the group sockets values. */
 static void ntree_shader_groups_expand_inputs(bNodeTree *localtree)
 {
-  bNode *value_node, *group_node;
-  bNodeSocket *value_socket;
-  bNodeSocketValueVector *src_vector;
-  bNodeSocketValueRGBA *src_rgba, *dst_rgba;
-  bNodeSocketValueFloat *src_float, *dst_float;
-  bNodeSocketValueInt *src_int;
   bool link_added = false;
 
-  for (group_node = localtree->nodes.first; group_node; group_node = group_node->next) {
+  LISTBASE_FOREACH (bNode *, node, &localtree->nodes) {
+    const bool is_group = ELEM(node->type, NODE_GROUP, NODE_CUSTOM_GROUP) && (node->id != NULL);
+    const bool is_group_output = node->type == NODE_GROUP_OUTPUT && (node->flag & NODE_DO_OUTPUT);
 
-    if (!(ELEM(group_node->type, NODE_GROUP, NODE_CUSTOM_GROUP)) || group_node->id == NULL) {
-      continue;
+    if (is_group) {
+      /* Do it recursively. */
+      ntree_shader_groups_expand_inputs((bNodeTree *)node->id);
     }
 
-    /* Do it recursively. */
-    ntree_shader_groups_expand_inputs((bNodeTree *)group_node->id);
-
-    bNodeSocket *group_socket = group_node->inputs.first;
-    for (; group_socket; group_socket = group_socket->next) {
-
-      if (group_socket->link != NULL) {
-        bNodeLink *link = group_socket->link;
-        /* Fix the case where the socket is actually converting the data. (see T71374)
-         * We only do the case of lossy conversion to float.*/
-        if ((group_socket->type == SOCK_FLOAT) && (link->fromsock->type != link->tosock->type)) {
-          bNode *node = nodeAddStaticNode(NULL, localtree, SH_NODE_RGBTOBW);
-          nodeAddLink(localtree, link->fromnode, link->fromsock, node, node->inputs.first);
-          nodeAddLink(localtree, node, node->outputs.first, group_node, group_socket);
-        }
-        continue;
-      }
-
-      /* Detect the case where an input is plugged into a hidden value socket.
-       * In this case we should just remove the link to trigger the socket default override. */
-      ntree_shader_unlink_hidden_value_sockets(group_node, group_socket);
-
-      switch (group_socket->type) {
-        case SOCK_VECTOR:
-          value_node = nodeAddStaticNode(NULL, localtree, SH_NODE_RGB);
-          value_socket = ntree_shader_node_find_output(value_node, "Color");
-          BLI_assert(value_socket != NULL);
-          src_vector = group_socket->default_value;
-          dst_rgba = value_socket->default_value;
-          copy_v3_v3(dst_rgba->value, src_vector->value);
-          dst_rgba->value[3] = 1.0f; /* should never be read */
-          break;
-        case SOCK_RGBA:
-          value_node = nodeAddStaticNode(NULL, localtree, SH_NODE_RGB);
-          value_socket = ntree_shader_node_find_output(value_node, "Color");
-          BLI_assert(value_socket != NULL);
-          src_rgba = group_socket->default_value;
-          dst_rgba = value_socket->default_value;
-          copy_v4_v4(dst_rgba->value, src_rgba->value);
-          break;
-        case SOCK_INT:
-          /* HACK: Support as float. */
-          value_node = nodeAddStaticNode(NULL, localtree, SH_NODE_VALUE);
-          value_socket = ntree_shader_node_find_output(value_node, "Value");
-          BLI_assert(value_socket != NULL);
-          src_int = group_socket->default_value;
-          dst_float = value_socket->default_value;
-          dst_float->value = (float)(src_int->value);
-          break;
-        case SOCK_FLOAT:
-          value_node = nodeAddStaticNode(NULL, localtree, SH_NODE_VALUE);
-          value_socket = ntree_shader_node_find_output(value_node, "Value");
-          BLI_assert(value_socket != NULL);
-          src_float = group_socket->default_value;
-          dst_float = value_socket->default_value;
-          dst_float->value = src_float->value;
-          break;
-        default:
+    if (is_group || is_group_output) {
+      LISTBASE_FOREACH (bNodeSocket *, socket, &node->inputs) {
+        if (socket->link != NULL && !(socket->link->flag & NODE_LINK_MUTED)) {
+          bNodeLink *link = socket->link;
+          /* Fix the case where the socket is actually converting the data. (see T71374)
+           * We only do the case of lossy conversion to float. */
+          if ((socket->type == SOCK_FLOAT) && (link->fromsock->type != link->tosock->type)) {
+            if (link->fromsock->type == SOCK_RGBA) {
+              bNode *tmp = nodeAddStaticNode(NULL, localtree, SH_NODE_RGBTOBW);
+              nodeAddLink(localtree, link->fromnode, link->fromsock, tmp, tmp->inputs.first);
+              nodeAddLink(localtree, tmp, tmp->outputs.first, node, socket);
+            }
+            else if (link->fromsock->type == SOCK_VECTOR) {
+              bNode *tmp = nodeAddStaticNode(NULL, localtree, SH_NODE_VECTOR_MATH);
+              tmp->custom1 = NODE_VECTOR_MATH_DOT_PRODUCT;
+              bNodeSocket *dot_input1 = tmp->inputs.first;
+              bNodeSocket *dot_input2 = dot_input1->next;
+              bNodeSocketValueVector *input2_socket_value = dot_input2->default_value;
+              copy_v3_fl(input2_socket_value->value, 1.0f / 3.0f);
+              nodeAddLink(localtree, link->fromnode, link->fromsock, tmp, dot_input1);
+              nodeAddLink(localtree, tmp, tmp->outputs.last, node, socket);
+            }
+          }
           continue;
+        }
+
+        if (is_group) {
+          /* Detect the case where an input is plugged into a hidden value socket.
+           * In this case we should just remove the link to trigger the socket default override. */
+          ntree_shader_unlink_hidden_value_sockets(node, socket);
+        }
+
+        if (ntree_shader_expand_socket_default(localtree, node, socket)) {
+          link_added = true;
+        }
       }
-
-      nodeAddLink(localtree, value_node, value_socket, group_node, group_socket);
-
-      link_added = true;
     }
   }
 
@@ -504,7 +542,7 @@ static void ntree_shader_groups_flatten(bNodeTree *localtree)
 
 /* Check whether shader has a displacement.
  *
- * Will also return a node and it's socket which is connected to a displacement
+ * Will also return a node and its socket which is connected to a displacement
  * output. Additionally, link which is attached to the displacement output is
  * also returned.
  */
@@ -526,12 +564,14 @@ static bool ntree_shader_has_displacement(bNodeTree *ntree,
     /* Non-cycles node is used as an output. */
     return false;
   }
-  if (displacement->link != NULL) {
+
+  if ((displacement->link != NULL) && !(displacement->link->flag & NODE_LINK_MUTED)) {
     *r_node = displacement->link->fromnode;
     *r_socket = displacement->link->fromsock;
     *r_link = displacement->link;
+    return true;
   }
-  return displacement->link != NULL;
+  return false;
 }
 
 static void ntree_shader_relink_node_normal(bNodeTree *ntree,
@@ -542,7 +582,7 @@ static void ntree_shader_relink_node_normal(bNodeTree *ntree,
   /* TODO(sergey): Can we do something smarter here than just a name-based
    * matching?
    */
-  for (bNodeSocket *sock = node->inputs.first; sock; sock = sock->next) {
+  LISTBASE_FOREACH (bNodeSocket *, sock, &node->inputs) {
     if (STREQ(sock->identifier, "Normal") && sock->link == NULL) {
       /* It's a normal input and nothing is connected to it. */
       nodeAddLink(ntree, node_from, socket_from, node, sock);
@@ -750,7 +790,7 @@ static void ntree_shader_relink_displacement(bNodeTree *ntree, bNode *output_nod
    */
   nodeAddLink(ntree, displacement_node, displacement_socket, bump_node, bump_input_socket);
 
-  /* Tag as part of the new displacmeent tree. */
+  /* Tag as part of the new displacement tree. */
   dot_node->tmp_flag = -2;
   geo_node->tmp_flag = -2;
   bump_node->tmp_flag = -2;
@@ -872,6 +912,16 @@ void ntreeGPUMaterialNodes(bNodeTree *localtree,
   /* Duplicate bump height branches for manual derivatives.
    */
   nodeChainIterBackwards(localtree, output, ntree_shader_bump_branches, localtree, 0);
+  LISTBASE_FOREACH (bNode *, node, &localtree->nodes) {
+    if (node->type == SH_NODE_OUTPUT_AOV) {
+      nodeChainIterBackwards(localtree, node, ntree_shader_bump_branches, localtree, 0);
+      nTreeTags tags = {
+          .ssr_id = 1.0,
+          .sss_id = 1.0,
+      };
+      ntree_shader_tag_nodes(localtree, node, &tags);
+    }
+  }
 
   /* TODO(fclem): consider moving this to the gpu shader tree evaluation. */
   nTreeTags tags = {
@@ -882,6 +932,11 @@ void ntreeGPUMaterialNodes(bNodeTree *localtree,
 
   exec = ntreeShaderBeginExecTree(localtree);
   ntreeExecGPUNodes(exec, mat, output);
+  LISTBASE_FOREACH (bNode *, node, &localtree->nodes) {
+    if (node->type == SH_NODE_OUTPUT_AOV) {
+      ntreeExecGPUNodes(exec, mat, node);
+    }
+  }
   ntreeShaderEndExecTree(exec);
 
   /* EEVEE: Find which material domain was used (volume, surface ...). */
@@ -981,31 +1036,4 @@ void ntreeShaderEndExecTree(bNodeTreeExec *exec)
     /* XXX clear nodetree backpointer to exec data, same problem as noted in ntreeBeginExecTree */
     ntree->execdata = NULL;
   }
-}
-
-/* TODO: left over from Blender Internal, could reuse for new texture nodes. */
-bool ntreeShaderExecTree(bNodeTree *ntree, int thread)
-{
-  ShaderCallData scd;
-  bNodeThreadStack *nts = NULL;
-  bNodeTreeExec *exec = ntree->execdata;
-  int compat;
-
-  /* ensure execdata is only initialized once */
-  if (!exec) {
-    BLI_thread_lock(LOCK_NODES);
-    if (!ntree->execdata) {
-      ntree->execdata = ntreeShaderBeginExecTree(ntree);
-    }
-    BLI_thread_unlock(LOCK_NODES);
-
-    exec = ntree->execdata;
-  }
-
-  nts = ntreeGetThreadStack(exec, thread);
-  compat = ntreeExecThreadNodes(exec, nts, &scd, thread);
-  ntreeReleaseThreadStack(nts);
-
-  /* if compat is zero, it has been using non-compatible nodes */
-  return compat;
 }

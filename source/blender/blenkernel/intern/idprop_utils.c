@@ -21,12 +21,15 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "BLI_utildefines.h"
-#include "BLI_string.h"
 #include "BLI_dynstr.h"
+#include "BLI_listbase.h"
+#include "BLI_string.h"
+#include "BLI_utildefines.h"
+
+#include "DNA_ID.h"
 
 #include "BKE_idprop.h"
-#include "BKE_idcode.h"
+#include "BKE_idtype.h"
 
 #include "MEM_guardedalloc.h"
 
@@ -93,7 +96,7 @@ static void idp_str_append_escape(struct ReprState *state,
 
 static void idp_repr_fn_recursive(struct ReprState *state, const IDProperty *prop)
 {
-  /* Note: 'strlen' will be calculated at compile time for literals. */
+  /* NOTE: 'strlen' will be calculated at compile time for literals. */
 #define STR_APPEND_STR(str) state->str_append_fn(state->user_data, str, (uint)strlen(str))
 
 #define STR_APPEND_STR_QUOTE(str) idp_str_append_escape(state, str, (uint)strlen(str), true)
@@ -166,7 +169,7 @@ static void idp_repr_fn_recursive(struct ReprState *state, const IDProperty *pro
     }
     case IDP_GROUP: {
       STR_APPEND_STR("{");
-      for (const IDProperty *subprop = prop->data.group.first; subprop; subprop = subprop->next) {
+      LISTBASE_FOREACH (const IDProperty *, subprop, &prop->data.group) {
         if (subprop != prop->data.group.first) {
           STR_APPEND_STR(", ");
         }
@@ -181,7 +184,7 @@ static void idp_repr_fn_recursive(struct ReprState *state, const IDProperty *pro
       const ID *id = prop->data.pointer;
       if (id != NULL) {
         STR_APPEND_STR("bpy.data.");
-        STR_APPEND_STR(BKE_idcode_to_name_plural(GS(id->name)));
+        STR_APPEND_STR(BKE_idtype_idcode_to_name_plural(GS(id->name)));
         STR_APPEND_STR("[");
         STR_APPEND_STR_QUOTE(id->name + 2);
         STR_APPEND_STR("]");

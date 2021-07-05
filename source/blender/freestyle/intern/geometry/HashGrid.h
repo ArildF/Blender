@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __HASHGRID_H__
-#define __HASHGRID_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -38,7 +37,7 @@
 
 namespace Freestyle {
 
-/*! Defines a hash table used for searching the Cells */
+/** Defines a hash table used for searching the Cells */
 struct GridHasher {
 #define _MUL 950706376UL
 #define _MOD 2147483647UL
@@ -52,7 +51,7 @@ struct GridHasher {
 #undef _MOD
 };
 
-/*! Class to define a regular grid used for ray casting computations */
+/** Class to define a regular grid used for ray casting computations */
 class HashGrid : public Grid {
  public:
   typedef map<Vec3u, Cell *> GridHashTable;
@@ -66,12 +65,12 @@ class HashGrid : public Grid {
     clear();
   }
 
-  /*! clears the grid
+  /** clears the grid
    *  Deletes all the cells, clears the hashtable, resets size, size of cell, number of cells.
    */
   virtual void clear();
 
-  /*! Sets the different parameters of the grid
+  /** Sets the different parameters of the grid
    *    orig
    *      The grid origin
    *    size
@@ -81,7 +80,7 @@ class HashGrid : public Grid {
    */
   virtual void configure(const Vec3r &orig, const Vec3r &size, unsigned nb);
 
-  /*! returns the cell whose coordinates are passed as argument */
+  /** returns the cell whose coordinates are passed as argument */
   virtual Cell *getCell(const Vec3u &p)
   {
     Cell *found_cell = NULL;
@@ -93,7 +92,7 @@ class HashGrid : public Grid {
     return found_cell;
   }
 
-  /*! Fills the case p with the cell iCell */
+  /** Fills the case p with the cell iCell */
   virtual void fillCell(const Vec3u &p, Cell &cell)
   {
     _cells[p] = &cell;
@@ -104,5 +103,3 @@ class HashGrid : public Grid {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __HASHGRID_H__

@@ -27,11 +27,12 @@
 
 #include <iostream>
 #include <math.h>
+#include <string>
 
 #if defined(WIN32) || defined(__APPLE__)
 #  ifdef WIN32
-#    include <windows.h>
 #    include <atlbase.h>
+#    include <windows.h>
 
 #    include <GL/gl.h>
 #  else  // WIN32 \
@@ -42,19 +43,18 @@
 #  include <GL/gl.h>
 #endif  // defined(WIN32) || defined(__APPLE__)
 
-#include "STR_String.h"
 #include "GHOST_Rect.h"
 
-#include "GHOST_ISystem.h"
 #include "GHOST_IEvent.h"
 #include "GHOST_IEventConsumer.h"
+#include "GHOST_ISystem.h"
 
 #define LEFT_EYE 0
 #define RIGHT_EYE 1
 
 static bool nVidiaWindows;  // very dirty but hey, it's for testing only
 
-static void gearsTimerProc(GHOST_ITimerTask *task, GHOST_TUns64 time);
+static void gearsTimerProc(GHOST_ITimerTask *task, uint64_t time);
 
 static class Application *fApp;
 static GLfloat view_rotx = 20.0, view_roty = 30.0, view_rotz = 0.0;
@@ -71,7 +71,7 @@ void StereoProjection(float left,
                       float dist,
                       float eye);
 
-static void testTimerProc(GHOST_ITimerTask * /*task*/, GHOST_TUns64 time)
+static void testTimerProc(GHOST_ITimerTask * /*task*/, uint64_t time)
 {
   std::cout << "timer1, time=" << (int)time << "\n";
 }
@@ -427,8 +427,7 @@ Application::Application(GHOST_ISystem *system)
   fApp = this;
 
   // Create the main window
-  STR_String title1("gears - main window");
-  m_mainWindow = system->createWindow(title1,
+  m_mainWindow = system->createWindow("gears - main window",
                                       10,
                                       64,
                                       320,
@@ -443,8 +442,7 @@ Application::Application(GHOST_ISystem *system)
   }
 
   // Create a secondary window
-  STR_String title2("gears - secondary window");
-  m_secondaryWindow = system->createWindow(title2,
+  m_secondaryWindow = system->createWindow("gears - secondary window",
                                            340,
                                            64,
                                            320,
@@ -598,8 +596,7 @@ bool Application::processEvent(GHOST_IEvent *event)
 
         case GHOST_kKeyW:
           if (m_mainWindow) {
-            STR_String title;
-            m_mainWindow->getTitle(title);
+            std::string title = m_mainWindow->getTitle();
             title += "-";
             m_mainWindow->setTitle(title);
           }
@@ -734,7 +731,7 @@ int main(int /*argc*/, char ** /*argv*/)
   return 0;
 }
 
-static void gearsTimerProc(GHOST_ITimerTask *task, GHOST_TUns64 /*time*/)
+static void gearsTimerProc(GHOST_ITimerTask *task, uint64_t /*time*/)
 {
   fAngle += 2.0;
   view_roty += 1.0;

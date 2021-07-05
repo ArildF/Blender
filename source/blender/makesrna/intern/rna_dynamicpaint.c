@@ -18,11 +18,11 @@
  * \ingroup RNA
  */
 
-#include <stdlib.h>
 #include <limits.h>
+#include <stdlib.h>
 
-#include "BKE_modifier.h"
 #include "BKE_dynamicpaint.h"
+#include "BKE_modifier.h"
 
 #include "DNA_dynamicpaint_types.h"
 #include "DNA_modifier_types.h"
@@ -57,7 +57,7 @@ static char *rna_DynamicPaintCanvasSettings_path(PointerRNA *ptr)
   ModifierData *md = (ModifierData *)settings->pmd;
   char name_esc[sizeof(md->name) * 2];
 
-  BLI_strescape(name_esc, md->name, sizeof(name_esc));
+  BLI_str_escape(name_esc, md->name, sizeof(name_esc));
   return BLI_sprintfN("modifiers[\"%s\"].canvas_settings", name_esc);
 }
 
@@ -67,7 +67,7 @@ static char *rna_DynamicPaintBrushSettings_path(PointerRNA *ptr)
   ModifierData *md = (ModifierData *)settings->pmd;
   char name_esc[sizeof(md->name) * 2];
 
-  BLI_strescape(name_esc, md->name, sizeof(name_esc));
+  BLI_str_escape(name_esc, md->name, sizeof(name_esc));
   return BLI_sprintfN("modifiers[\"%s\"].brush_settings", name_esc);
 }
 
@@ -78,8 +78,8 @@ static char *rna_DynamicPaintSurface_path(PointerRNA *ptr)
   char name_esc[sizeof(md->name) * 2];
   char name_esc_surface[sizeof(surface->name) * 2];
 
-  BLI_strescape(name_esc, md->name, sizeof(name_esc));
-  BLI_strescape(name_esc_surface, surface->name, sizeof(name_esc_surface));
+  BLI_str_escape(name_esc, md->name, sizeof(name_esc));
+  BLI_str_escape(name_esc_surface, surface->name, sizeof(name_esc_surface));
   return BLI_sprintfN(
       "modifiers[\"%s\"].canvas_settings.canvas_surfaces[\"%s\"]", name_esc, name_esc_surface);
 }
@@ -226,7 +226,7 @@ static bool rna_DynamicPaint_is_cache_user_get(PointerRNA *ptr)
   return (surface->format != MOD_DPAINT_SURFACE_F_IMAGESEQ) ? 1 : 0;
 }
 
-/* does output layer exist*/
+/* Does output layer exist. */
 static bool rna_DynamicPaint_is_output_exists(DynamicPaintSurface *surface, Object *ob, int index)
 {
   return dynamicPaint_outputLayerExists(surface, ob, index);
@@ -625,7 +625,7 @@ static void rna_def_canvas_surface(BlenderRNA *brna)
   RNA_def_property_boolean_sdna(prop, NULL, "flags", MOD_DPAINT_OUT1);
   RNA_def_property_ui_text(prop, "Use Output", "Save this output layer");
 
-  /* output for secondary sufrace data */
+  /* Output for secondary surface data. */
   prop = RNA_def_property(srna, "output_name_b", PROP_STRING, PROP_NONE);
   RNA_def_property_string_sdna(prop, NULL, "output_name2");
   RNA_def_property_ui_text(prop, "Output Name", "Name used to save output from this surface");

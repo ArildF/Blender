@@ -21,8 +21,8 @@
 
 #include "BLI_blenlib.h"
 
-#include "DNA_text_types.h"
 #include "DNA_space_types.h"
+#include "DNA_text_types.h"
 
 #include "BKE_text.h"
 
@@ -224,7 +224,7 @@ static uint txtfmt_py_numeral_string_count_hexadecimal(const char *string)
 /* Zeros. */
 static bool txtfmt_py_numeral_char_is_zero(const char c)
 {
-  return (c == '0') || (c == '_');
+  return (ELEM(c, '0', '_'));
 }
 static uint txtfmt_py_numeral_string_count_zeros(const char *string)
 {
@@ -290,8 +290,8 @@ static int txtfmt_py_literal_numeral(const char *string, char prev_fmt)
       return 1 + txtfmt_py_find_numeral_inner(string + 1);
     }
     /* Previous was a number; if immediately followed by '.' it's a floating point decimal number.
-     * Note: keep the decimal point, it's needed to allow leading zeros. */
-    if ((prev_fmt == FMT_TYPE_NUMERAL) && (first == '.')) {
+     * NOTE: keep the decimal point, it's needed to allow leading zeros. */
+    if (first == '.') {
       return txtfmt_py_find_numeral_inner(string);
     }
     /* "Imaginary" part of a complex number ends with 'j' */
@@ -376,7 +376,7 @@ static void txtfmt_py_format_line(SpaceText *st, TextLine *line, const bool do_n
       continue;
     }
     /* Handle continuations */
-    else if (cont) {
+    if (cont) {
       /* Triple strings ("""...""" or '''...''') */
       if (cont & FMT_CONT_TRIPLE) {
         find = (cont & FMT_CONT_QUOTEDOUBLE) ? '"' : '\'';
@@ -408,7 +408,7 @@ static void txtfmt_py_format_line(SpaceText *st, TextLine *line, const bool do_n
         /* fill the remaining line */
         text_format_fill(&str, &fmt, FMT_TYPE_COMMENT, len - (int)(fmt - line->format));
       }
-      else if (*str == '"' || *str == '\'') {
+      else if (ELEM(*str, '"', '\'')) {
         /* Strings */
         find = *str;
         cont = (*str == '"') ? FMT_CONT_QUOTEDOUBLE : FMT_CONT_QUOTESINGLE;

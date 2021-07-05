@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_WS_FILL_GRID_H__
-#define __FREESTYLE_WS_FILL_GRID_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -44,7 +43,7 @@ class WSFillGrid {
 
   void fillGrid();
 
-  /*! Accessors */
+  /** Accessors */
   WingedEdge *getWingedEdge()
   {
     return _winged_edge;
@@ -55,7 +54,7 @@ class WSFillGrid {
     return _grid;
   }
 
-  /*! Modifiers */
+  /** Modifiers */
   void setWingedEdge(WingedEdge *winged_edge)
   {
     if (winged_edge) {
@@ -81,5 +80,3 @@ class WSFillGrid {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_WS_FILL_GRID_H__

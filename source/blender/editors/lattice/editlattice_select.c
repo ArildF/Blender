@@ -25,11 +25,11 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "BLI_bitmap.h"
 #include "BLI_listbase.h"
 #include "BLI_math.h"
-#include "BLI_utildefines.h"
 #include "BLI_rand.h"
-#include "BLI_bitmap.h"
+#include "BLI_utildefines.h"
 
 #include "DNA_curve_types.h"
 #include "DNA_lattice_types.h"
@@ -43,13 +43,13 @@
 
 #include "BKE_context.h"
 #include "BKE_lattice.h"
-#include "BKE_report.h"
 #include "BKE_layer.h"
+#include "BKE_report.h"
 
+#include "ED_lattice.h"
 #include "ED_object.h"
 #include "ED_screen.h"
 #include "ED_select_utils.h"
-#include "ED_lattice.h"
 #include "ED_view3d.h"
 
 #include "WM_api.h"
@@ -108,9 +108,9 @@ bool ED_lattice_deselect_all_multi(struct bContext *C)
 
 static int lattice_select_random_exec(bContext *C, wmOperator *op)
 {
-  const float randfac = RNA_float_get(op->ptr, "percent") / 100.0f;
-  const int seed = WM_operator_properties_select_random_seed_increment_get(op);
   const bool select = (RNA_enum_get(op->ptr, "action") == SEL_SELECT);
+  const float randfac = RNA_float_get(op->ptr, "ratio");
+  const int seed = WM_operator_properties_select_random_seed_increment_get(op);
 
   ViewLayer *view_layer = CTX_data_view_layer(C);
   uint objects_len = 0;
@@ -119,28 +119,35 @@ static int lattice_select_random_exec(bContext *C, wmOperator *op)
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *obedit = objects[ob_index];
     Lattice *lt = ((Lattice *)obedit->data)->editlatt->latt;
+    int seed_iter = seed;
 
-    RNG *rng = BLI_rng_new_srandom(seed);
+    /* This gives a consistent result regardless of object order. */
+    if (ob_index) {
+      seed_iter += BLI_ghashutil_strhash_p(obedit->id.name);
+    }
 
-    int tot;
-    BPoint *bp;
+    int a = lt->pntsu * lt->pntsv * lt->pntsw;
+    int elem_map_len = 0;
+    BPoint **elem_map = MEM_mallocN(sizeof(*elem_map) * a, __func__);
+    BPoint *bp = lt->def;
 
-    tot = lt->pntsu * lt->pntsv * lt->pntsw;
-    bp = lt->def;
-    while (tot--) {
+    while (a--) {
       if (!bp->hide) {
-        if (BLI_rng_get_float(rng) < randfac) {
-          bpoint_select_set(bp, select);
-        }
+        elem_map[elem_map_len++] = bp;
       }
       bp++;
     }
 
+    BLI_array_randomize(elem_map, sizeof(*elem_map), elem_map_len, seed_iter);
+    const int count_select = elem_map_len * randfac;
+    for (int i = 0; i < count_select; i++) {
+      bpoint_select_set(elem_map[i], select);
+    }
+    MEM_freeN(elem_map);
+
     if (select == false) {
       lt->actbp = LT_ACTBP_NONE;
     }
-
-    BLI_rng_free(rng);
 
     DEG_id_tag_update(obedit->data, ID_RECALC_SELECT);
     WM_event_add_notifier(C, NC_GEOM | ND_SELECT, obedit->data);
@@ -177,9 +184,6 @@ void LATTICE_OT_select_random(wmOperatorType *ot)
 static void ed_lattice_select_mirrored(Lattice *lt, const int axis, const bool extend)
 {
   const int tot = lt->pntsu * lt->pntsv * lt->pntsw;
-  int i;
-  BPoint *bp;
-  BLI_bitmap *selpoints;
 
   bool flip_uvw[3] = {false};
   flip_uvw[axis] = true;
@@ -190,13 +194,13 @@ static void ed_lattice_select_mirrored(Lattice *lt, const int axis, const bool e
   }
 
   /* store "original" selection */
-  selpoints = BLI_BITMAP_NEW(tot, __func__);
+  BLI_bitmap *selpoints = BLI_BITMAP_NEW(tot, __func__);
   BKE_lattice_bitmap_from_flag(lt, selpoints, SELECT, false, false);
 
   /* actual (de)selection */
-  for (i = 0; i < tot; i++) {
+  for (int i = 0; i < tot; i++) {
     const int i_flip = BKE_lattice_index_flip(lt, i, flip_uvw[0], flip_uvw[1], flip_uvw[2]);
-    bp = &lt->def[i];
+    BPoint *bp = &lt->def[i];
     if (!bp->hide) {
       if (BLI_BITMAP_TEST(selpoints, i_flip)) {
         bp->f1 |= SELECT;
@@ -232,7 +236,7 @@ static int lattice_select_mirror_exec(bContext *C, wmOperator *op)
       }
     }
 
-    /* TODO, only notify changes */
+    /* TODO: only notify changes. */
     DEG_id_tag_update(obedit->data, ID_RECALC_SELECT);
     WM_event_add_notifier(C, NC_GEOM | ND_SELECT, obedit->data);
   }
@@ -268,18 +272,17 @@ void LATTICE_OT_select_mirror(wmOperatorType *ot)
  * \{ */
 
 static bool lattice_test_bitmap_uvw(
-    Lattice *lt, BLI_bitmap *selpoints, int u, int v, int w, const bool selected)
+    Lattice *lt, const BLI_bitmap *selpoints, int u, int v, int w, const bool selected)
 {
   if ((u < 0 || u >= lt->pntsu) || (v < 0 || v >= lt->pntsv) || (w < 0 || w >= lt->pntsw)) {
     return false;
   }
-  else {
-    int i = BKE_lattice_index_from_uvw(lt, u, v, w);
-    if (lt->def[i].hide == 0) {
-      return (BLI_BITMAP_TEST(selpoints, i) != 0) == selected;
-    }
-    return false;
+
+  int i = BKE_lattice_index_from_uvw(lt, u, v, w);
+  if (lt->def[i].hide == 0) {
+    return (BLI_BITMAP_TEST(selpoints, i) != 0) == selected;
   }
+  return false;
 }
 
 static int lattice_select_more_less(bContext *C, const bool select)

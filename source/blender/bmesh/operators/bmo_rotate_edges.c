@@ -22,8 +22,8 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_heap.h"
+#include "BLI_math.h"
 
 #include "bmesh.h"
 
@@ -33,7 +33,7 @@
 #define FACE_MARK 1
 
 /**
- * Rotate edges where every edge has it's own faces (we can rotate in any order).
+ * Rotate edges where every edge has its own faces (we can rotate in any order).
  */
 static void bm_rotate_edges_simple(BMesh *bm,
                                    BMOperator *op,
@@ -191,7 +191,7 @@ static void bm_rotate_edges_shared(
 
           edges_len_rotate += 1;
 
-          /* Note: we could validate all edges which have not been rotated
+          /* NOTE: we could validate all edges which have not been rotated
            * (not just previously degenerate edges).
            * However there is no real need -
            * they can be left until they're popped off the queue. */

@@ -81,7 +81,7 @@
  * ScrArea's store a list of space data (SpaceLinks), each of unique type.
  * The first one is the displayed in the UI, others are added as needed.
  *
- * +----------------------------+  <-- sa->spacedata.first;
+ * +----------------------------+  <-- area->spacedata.first;
  * |                            |
  * |                            |---+  <-- other inactive SpaceLink's stored.
  * |                            |   |
@@ -99,19 +99,14 @@
  *
  * A common way to get the space from the ScrArea:
  * \code{.c}
- * if (sa->spacetype == SPACE_VIEW3D) {
- *     View3D *v3d = sa->spacedata.first;
+ * if (area->spacetype == SPACE_VIEW3D) {
+ *     View3D *v3d = area->spacedata.first;
  *     ...
  * }
  * \endcode
  */
 
-#ifndef __WM_TYPES_H__
-#define __WM_TYPES_H__
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#pragma once
 
 struct ID;
 struct ImBuf;
@@ -120,30 +115,38 @@ struct wmEvent;
 struct wmOperator;
 struct wmWindowManager;
 
-#include "RNA_types.h"
+#include "BLI_compiler_attrs.h"
 #include "DNA_listBase.h"
 #include "DNA_vec_types.h"
-#include "BLI_compiler_attrs.h"
+#include "RNA_types.h"
 
 /* exported types for WM */
+#include "gizmo/WM_gizmo_types.h"
 #include "wm_cursors.h"
 #include "wm_event_types.h"
-#include "gizmo/WM_gizmo_types.h"
 
 /* Include external gizmo API's */
 #include "gizmo/WM_gizmo_api.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef void (*wmGenericUserDataFreeFn)(void *data);
+
 typedef struct wmGenericUserData {
   void *data;
   /** When NULL, use #MEM_freeN. */
-  void (*free_fn)(void *data);
+  wmGenericUserDataFreeFn free_fn;
   bool use_free;
 } wmGenericUserData;
 
+typedef void (*wmGenericCallbackFn)(struct bContext *C, void *user_data);
+
 typedef struct wmGenericCallback {
-  void (*exec)(struct bContext *C, void *user_data);
+  wmGenericCallbackFn exec;
   void *user_data;
-  void (*free_user_data)(void *user_data);
+  wmGenericUserDataFreeFn free_user_data;
 } wmGenericCallback;
 
 /* ************** wmOperatorType ************************ */
@@ -229,7 +232,7 @@ typedef enum eOperatorPropTags {
 #define KM_ALT2 64
 #define KM_OSKEY2 128
 
-/* KM_MOD_ flags for wmKeyMapItem and wmEvent.alt/shift/oskey/ctrl  */
+/* KM_MOD_ flags for `wmKeyMapItem` and `wmEvent.alt/shift/oskey/ctrl`. */
 /* note that KM_ANY and KM_NOTHING are used with these defines too */
 #define KM_MOD_FIRST 1
 #define KM_MOD_SECOND 2
@@ -256,8 +259,7 @@ typedef enum eOperatorPropTags {
 typedef struct wmNotifier {
   struct wmNotifier *next, *prev;
 
-  struct wmWindowManager *wm;
-  struct wmWindow *window;
+  const struct wmWindow *window;
 
   unsigned int category, data, subtype, action;
 
@@ -289,6 +291,9 @@ typedef struct wmNotifier {
 #define NC_TEXT (12 << 24)
 #define NC_WORLD (13 << 24)
 #define NC_ANIMATION (14 << 24)
+/* When passing a space as reference data with this (e.g. `WM_event_add_notifier(..., space)`),
+ * the notifier will only be sent to this space. That avoids unnecessary updates for unrelated
+ * spaces. */
 #define NC_SPACE (15 << 24)
 #define NC_GEOM (16 << 24)
 #define NC_NODE (17 << 24)
@@ -300,6 +305,8 @@ typedef struct wmNotifier {
 #define NC_LINESTYLE (23 << 24)
 #define NC_CAMERA (24 << 24)
 #define NC_LIGHTPROBE (25 << 24)
+/* Changes to asset data in the current .blend. */
+#define NC_ASSET (26 << 24)
 
 /* data type, 256 entries is enough, it can overlap */
 #define NOTE_DATA 0x00FF0000
@@ -311,13 +318,15 @@ typedef struct wmNotifier {
 #define ND_HISTORY (4 << 16)
 #define ND_JOB (5 << 16)
 #define ND_UNDO (6 << 16)
+#define ND_XR_DATA_CHANGED (7 << 16)
+#define ND_LIB_OVERRIDE_CHANGED (8 << 16)
 
 /* NC_SCREEN */
 #define ND_LAYOUTBROWSE (1 << 16)
 #define ND_LAYOUTDELETE (2 << 16)
 #define ND_ANIMPLAY (4 << 16)
 #define ND_GPENCIL (5 << 16)
-#define ND_EDITOR_CHANGED (6 << 16) /*sent to new editors after switching to them*/
+#define ND_EDITOR_CHANGED (6 << 16) /* Sent to new editors after switching to them. */
 #define ND_LAYOUTSET (7 << 16)
 #define ND_SKETCH (8 << 16)
 #define ND_WORKSPACE_SET (9 << 16)
@@ -330,7 +339,10 @@ typedef struct wmNotifier {
 #define ND_RENDER_OPTIONS (4 << 16)
 #define ND_NODES (5 << 16)
 #define ND_SEQUENCER (6 << 16)
+/* NOTE: If an object was added, removed, merged/joined, ..., it is not enough to notify with
+ * this. This affects the layer so also send a layer change notifier (e.g. ND_LAYER_CONTENT)! */
 #define ND_OB_ACTIVE (7 << 16)
+/* See comment on ND_OB_ACTIVE. */
 #define ND_OB_SELECT (8 << 16)
 #define ND_OB_VISIBLE (9 << 16)
 #define ND_OB_RENDER (10 << 16)
@@ -361,6 +373,9 @@ typedef struct wmNotifier {
 #define ND_LOD (30 << 16)
 #define ND_DRAW_RENDER_VIEWPORT \
   (31 << 16) /* for camera & sequencer viewport update, also /w NC_SCENE */
+#define ND_SHADERFX (32 << 16)
+/* For updating motion paths in 3dview. */
+#define ND_DRAW_ANIMVIZ (33 << 16)
 
 /* NC_MATERIAL Material */
 #define ND_SHADING (30 << 16)
@@ -371,7 +386,6 @@ typedef struct wmNotifier {
 /* NC_LAMP Light */
 #define ND_LIGHTING (40 << 16)
 #define ND_LIGHTING_DRAW (41 << 16)
-#define ND_SKY (42 << 16)
 
 /* NC_WORLD World */
 #define ND_WORLD_DRAW (45 << 16)
@@ -387,12 +401,13 @@ typedef struct wmNotifier {
 #define ND_NLA (73 << 16)
 #define ND_NLA_ACTCHANGE (74 << 16)
 #define ND_FCURVES_ORDER (75 << 16)
+#define ND_NLA_ORDER (76 << 16)
 
 /* NC_GPENCIL */
 #define ND_GPENCIL_EDITMODE (85 << 16)
 
 /* NC_GEOM Geometry */
-/* Mesh, Curve, MetaBall, Armature, .. */
+/* Mesh, Curve, MetaBall, Armature, etc. */
 #define ND_SELECT (90 << 16)
 #define ND_DATA (91 << 16)
 #define ND_VERTEX_GROUP (92 << 16)
@@ -406,20 +421,23 @@ typedef struct wmNotifier {
 #define ND_SPACE_IMAGE (4 << 16)
 #define ND_SPACE_FILE_PARAMS (5 << 16)
 #define ND_SPACE_FILE_LIST (6 << 16)
-#define ND_SPACE_NODE (7 << 16)
-#define ND_SPACE_OUTLINER (8 << 16)
-#define ND_SPACE_VIEW3D (9 << 16)
-#define ND_SPACE_PROPERTIES (10 << 16)
-#define ND_SPACE_TEXT (11 << 16)
-#define ND_SPACE_TIME (12 << 16)
-#define ND_SPACE_GRAPH (13 << 16)
-#define ND_SPACE_DOPESHEET (14 << 16)
-#define ND_SPACE_NLA (15 << 16)
-#define ND_SPACE_SEQUENCER (16 << 16)
-#define ND_SPACE_NODE_VIEW (17 << 16)
-#define ND_SPACE_CHANGED (18 << 16) /*sent to a new editor type after it's replaced an old one*/
-#define ND_SPACE_CLIP (19 << 16)
-#define ND_SPACE_FILE_PREVIEW (20 << 16)
+#define ND_SPACE_ASSET_PARAMS (7 << 16)
+#define ND_SPACE_NODE (8 << 16)
+#define ND_SPACE_OUTLINER (9 << 16)
+#define ND_SPACE_VIEW3D (10 << 16)
+#define ND_SPACE_PROPERTIES (11 << 16)
+#define ND_SPACE_TEXT (12 << 16)
+#define ND_SPACE_TIME (13 << 16)
+#define ND_SPACE_GRAPH (14 << 16)
+#define ND_SPACE_DOPESHEET (15 << 16)
+#define ND_SPACE_NLA (16 << 16)
+#define ND_SPACE_SEQUENCER (17 << 16)
+#define ND_SPACE_NODE_VIEW (18 << 16)
+/* Sent to a new editor type after it's replaced an old one. */
+#define ND_SPACE_CHANGED (19 << 16)
+#define ND_SPACE_CLIP (20 << 16)
+#define ND_SPACE_FILE_PREVIEW (21 << 16)
+#define ND_SPACE_SPREADSHEET (22 << 16)
 
 /* subtype, 256 entries too */
 #define NOTE_SUBTYPE 0x0000FF00
@@ -439,6 +457,10 @@ typedef struct wmNotifier {
 
 /* subtype 3d view editing */
 #define NS_VIEW3D_GPU (16 << 8)
+#define NS_VIEW3D_SHADING (17 << 8)
+
+/* subtype layer editing */
+#define NS_LAYER_COLLECTION (24 << 8)
 
 /* action classification */
 #define NOTE_ACTION (0x000000FF)
@@ -448,7 +470,9 @@ typedef struct wmNotifier {
 #define NA_REMOVED 4
 #define NA_RENAME 5
 #define NA_SELECTED 6
-#define NA_PAINTING 7
+#define NA_ACTIVATED 7
+#define NA_PAINTING 8
+#define NA_JOB_FINISHED 9
 
 /* ************** Gesture Manager data ************** */
 
@@ -478,6 +502,8 @@ typedef struct wmGesture {
   /** optional, maximum amount of points stored. */
   int points_alloc;
   int modal_state;
+  /** optional, draw the active side of the straightline gesture. */
+  bool draw_active_side;
 
   /**
    * For modal operators which may be running idle, waiting for an event to activate the gesture.
@@ -489,6 +515,14 @@ typedef struct wmGesture {
   uint is_active_prev : 1;
   /** Use for gestures that support both immediate or delayed activation. */
   uint wait_for_input : 1;
+  /** Use for gestures that can be moved, like box selection */
+  uint move : 1;
+  /** For gestures that support snapping, stores if snapping is enabled using the modal keymap
+   * toggle. */
+  uint use_snap : 1;
+  /** For gestures that support flip, stores if flip is enabled using the modal keymap
+   * toggle. */
+  uint use_flip : 1;
 
   /**
    * customdata
@@ -521,17 +555,36 @@ typedef struct wmTabletData {
 /**
  * Each event should have full modifier state.
  * event comes from event manager and from keymap.
+ *
+ *
+ * Previous State
+ * ==============
+ *
+ * Events hold information about the previous event,
+ * this is used for detecting click and double-click events (the timer is needed for double-click).
+ * See #wm_event_add_ghostevent for implementation details.
+ *
+ * Notes:
+ *
+ * - The previous values are only set for mouse button and keyboard events.
+ *   See: #ISMOUSE_BUTTON & #ISKEYBOARD macros.
+ *
+ * - Previous x/y are exceptions: #wmEvent.prevx & #wmEvent.prevy
+ *   these are set on mouse motion, see #MOUSEMOVE & track-pad events.
+ *
+ * - Modal key-map handling sets `prevval` & `prevtype` to `val` & `type`,
+ *   this allows modal keys-maps to check the original values (needed in some cases).
  */
 typedef struct wmEvent {
   struct wmEvent *next, *prev;
 
-  /** Event code itself (short, is also in keymap). */
+  /** Event code itself (short, is also in key-map). */
   short type;
-  /** Press, release, scrollvalue. */
+  /** Press, release, scroll-value. */
   short val;
   /** Mouse pointer position, screen coord. */
   int x, y;
-  /** Region mouse position, name convention pre 2.5 :). */
+  /** Region relative mouse position (name convention before Blender 2.5). */
   int mval[2];
   /**
    * From, ghost if utf8 is enabled for the platform,
@@ -541,44 +594,54 @@ typedef struct wmEvent {
   char utf8_buf[6];
   /** From ghost, fallback if utf8 isn't set. */
   char ascii;
-  char pad;
 
-  /** Previous state, used for double click and the 'click'. */
+  /**
+   * Generated by auto-repeat, note that this must only ever be set for keyboard events
+   * where `ISKEYBOARD(event->type) == true`.
+   *
+   * See #KMI_REPEAT_IGNORE for details on how key-map handling uses this.
+   */
+  char is_repeat;
+
+  /** The previous value of `type`. */
   short prevtype;
+  /** The previous value of `val`. */
   short prevval;
-  int prevx, prevy;
+  /** The time when the key is pressed, see #PIL_check_seconds_timer. */
   double prevclicktime;
+  /** The location when the key is pressed (used to enforce drag thresholds). */
   int prevclickx, prevclicky;
+  /**
+   * The previous value of #wmEvent.x #wmEvent.y,
+   * Unlike other previous state variables, this is set on any mouse motion.
+   * Use `prevclickx` & `prevclicky` for the value at time of pressing.
+   */
+  int prevx, prevy;
 
   /** Modifier states. */
   /** 'oskey' is apple or windows-key, value denotes order of pressed. */
   short shift, ctrl, alt, oskey;
-  /** rawkey modifier. */
+  /** Raw-key modifier (allow using any key as a modifier). */
   short keymodifier;
-
-  /** Set in case a #KM_PRESS went by unhandled. */
-  char check_click;
-  char check_drag;
 
   /** Tablet info, available for mouse move and button events. */
   wmTabletData tablet;
 
-  /* custom data */
+  /* Custom data. */
   /** Custom data type, stylus, 6dof, see wm_event_types.h */
   short custom;
   short customdatafree;
   int pad2;
-  /** Ascii, unicode, mouse coords, angles, vectors, dragdrop info. */
+  /** Ascii, unicode, mouse-coords, angles, vectors, NDOF data, drag-drop info. */
   void *customdata;
 
+  /**
+   * True if the operating system inverted the delta x/y values and resulting
+   * `prevx`, `prevy` values, for natural scroll direction.
+   * For absolute scroll direction, the delta must be negated again.
+   */
+  char is_direction_inverted;
 } wmEvent;
-
-/**
- * Values below are considered a click, above are considered a drag.
- */
-int WM_event_cursor_click_drag_threshold_from_event_(const wmEvent *event);
-
-bool WM_event_cursor_click_drag_threshold_met(const wmEvent *event);
 
 /**
  * Values below are ignored when detecting if the user intentionally moved the cursor.
@@ -621,6 +684,25 @@ typedef struct wmNDOFMotionData {
   wmProgress progress;
 } wmNDOFMotionData;
 #endif /* WITH_INPUT_NDOF */
+
+#ifdef WITH_XR_OPENXR
+/* Similar to GHOST_XrPose. */
+typedef struct wmXrPose {
+  float position[3];
+  /* Blender convention (w, x, y, z) */
+  float orientation_quat[4];
+} wmXrPose;
+
+typedef struct wmXrActionState {
+  union {
+    bool state_boolean;
+    float state_float;
+    float state_vector2f[2];
+    wmXrPose state_pose;
+  };
+  int type; /* eXrActionType */
+} wmXrActionState;
+#endif
 
 /** Timer flags. */
 typedef enum {
@@ -765,7 +847,7 @@ typedef struct wmOperatorType {
   bool (*pyop_poll)(struct bContext *, struct wmOperatorType *ot) ATTR_WARN_UNUSED_RESULT;
 
   /** RNA integration */
-  ExtensionRNA ext;
+  ExtensionRNA rna_ext;
 
   /** Flag last for padding */
   short flag;
@@ -813,24 +895,34 @@ typedef void (*wmPaintCursorDraw)(struct bContext *C, int, int, void *customdata
 /* *************** Drag and drop *************** */
 
 #define WM_DRAG_ID 0
-#define WM_DRAG_RNA 1
-#define WM_DRAG_PATH 2
-#define WM_DRAG_NAME 3
-#define WM_DRAG_VALUE 4
-#define WM_DRAG_COLOR 5
+#define WM_DRAG_ASSET 1
+#define WM_DRAG_RNA 2
+#define WM_DRAG_PATH 3
+#define WM_DRAG_NAME 4
+#define WM_DRAG_VALUE 5
+#define WM_DRAG_COLOR 6
+#define WM_DRAG_DATASTACK 7
 
 typedef enum wmDragFlags {
   WM_DRAG_NOP = 0,
   WM_DRAG_FREE_DATA = 1,
 } wmDragFlags;
 
-/* note: structs need not exported? */
+/* NOTE: structs need not exported? */
 
 typedef struct wmDragID {
   struct wmDragID *next, *prev;
   struct ID *id;
   struct ID *from_parent;
 } wmDragID;
+
+typedef struct wmDragAsset {
+  char name[64]; /* MAX_NAME */
+  /* Always freed. */
+  const char *path;
+  int id_type;
+  int import_type; /* eFileAssetImportType */
+} wmDragAsset;
 
 typedef struct wmDrag {
   struct wmDrag *next, *prev;
@@ -869,6 +961,12 @@ typedef struct wmDropBox {
   void (*copy)(struct wmDrag *, struct wmDropBox *);
 
   /**
+   * If the operator is cancelled (returns `OPERATOR_CANCELLED`), this can be used for cleanup of
+   * `copy()` resources.
+   */
+  void (*cancel)(struct Main *, struct wmDrag *, struct wmDropBox *);
+
+  /**
    * If poll succeeds, operator is called.
    * Not saved in file, so can be pointer.
    */
@@ -899,7 +997,7 @@ typedef struct wmTooltipState {
   struct ARegion *region;
   /** Create the tooltip region (assign to 'region'). */
   struct ARegion *(*init)(struct bContext *C,
-                          struct ARegion *ar,
+                          struct ARegion *region,
                           int *pass,
                           double *pass_delay,
                           bool *r_exit_on_event);
@@ -932,5 +1030,3 @@ extern struct CLG_LogRef *WM_LOG_MSGBUS_SUB;
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __WM_TYPES_H__ */

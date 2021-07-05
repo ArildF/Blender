@@ -24,16 +24,19 @@
 #include "MEM_guardedalloc.h"
 
 #include "DNA_listBase.h"
-#include "DNA_object_types.h"
 #include "DNA_mesh_types.h"
+#include "DNA_object_types.h"
 
+#include "BLI_bitmap.h"
 #include "BLI_math.h"
 
+#include "BKE_DerivedMesh.h"
 #include "BKE_editmesh.h"
-#include "BKE_cdderivedmesh.h"
-#include "BKE_library.h"
+#include "BKE_editmesh_cache.h"
+#include "BKE_lib_id.h"
 #include "BKE_mesh.h"
 #include "BKE_mesh_iterators.h"
+#include "BKE_mesh_wrapper.h"
 #include "BKE_object.h"
 
 BMEditMesh *BKE_editmesh_create(BMesh *bm, const bool do_tessellate)
@@ -66,6 +69,10 @@ BMEditMesh *BKE_editmesh_copy(BMEditMesh *em)
    * tessellation only when/if that copy ends up getting used. */
   em_copy->looptris = NULL;
 
+  /* Copy various settings. */
+  em_copy->selectmode = em->selectmode;
+  em_copy->mat_nr = em->mat_nr;
+
   return em_copy;
 }
 
@@ -89,7 +96,8 @@ BMEditMesh *BKE_editmesh_from_object(Object *ob)
   return ((Mesh *)ob->data)->edit_mesh;
 }
 
-static void editmesh_tessface_calc_intern(BMEditMesh *em)
+static void editmesh_tessface_calc_intern(BMEditMesh *em,
+                                          const struct BMeshCalcTessellation_Params *params)
 {
   /* allocating space before calculating the tessellation */
 
@@ -120,14 +128,16 @@ static void editmesh_tessface_calc_intern(BMEditMesh *em)
   }
 
   em->looptris = looptris;
+  em->tottri = looptris_tot;
 
   /* after allocating the em->looptris, we're ready to tessellate */
-  BM_mesh_calc_tessellation(em->bm, em->looptris, &em->tottri);
+  BM_mesh_calc_tessellation_ex(em->bm, em->looptris, params);
 }
 
-void BKE_editmesh_looptri_calc(BMEditMesh *em)
+void BKE_editmesh_looptri_calc_ex(BMEditMesh *em,
+                                  const struct BMeshCalcTessellation_Params *params)
 {
-  editmesh_tessface_calc_intern(em);
+  editmesh_tessface_calc_intern(em, params);
 
   /* commented because editbmesh_build_data() ensures we get tessfaces */
 #if 0
@@ -139,6 +149,64 @@ void BKE_editmesh_looptri_calc(BMEditMesh *em)
     BKE_mesh_runtime_looptri_ensure(em->mesh_eval_cage);
   }
 #endif
+}
+
+void BKE_editmesh_looptri_calc(BMEditMesh *em)
+{
+  BKE_editmesh_looptri_calc_ex(em,
+                               &(const struct BMeshCalcTessellation_Params){
+                                   .face_normals = false,
+                               });
+}
+
+/**
+ * Performing the face normal calculation at the same time as tessellation
+ * gives a reasonable performance boost (approx ~20% faster).
+ */
+void BKE_editmesh_looptri_and_normals_calc(BMEditMesh *em)
+{
+  BKE_editmesh_looptri_calc_ex(em,
+                               &(const struct BMeshCalcTessellation_Params){
+                                   .face_normals = true,
+                               });
+  BM_mesh_normals_update_ex(em->bm,
+                            &(const struct BMeshNormalsUpdate_Params){
+                                .face_normals = false,
+                            });
+}
+
+void BKE_editmesh_looptri_calc_with_partial_ex(BMEditMesh *em,
+                                               struct BMPartialUpdate *bmpinfo,
+                                               const struct BMeshCalcTessellation_Params *params)
+{
+  BLI_assert(em->tottri == poly_to_tri_count(em->bm->totface, em->bm->totloop));
+  BLI_assert(em->looptris != NULL);
+
+  BM_mesh_calc_tessellation_with_partial_ex(em->bm, em->looptris, bmpinfo, params);
+}
+
+void BKE_editmesh_looptri_calc_with_partial(BMEditMesh *em, struct BMPartialUpdate *bmpinfo)
+{
+  BKE_editmesh_looptri_calc_with_partial_ex(em,
+                                            bmpinfo,
+                                            &(const struct BMeshCalcTessellation_Params){
+                                                .face_normals = false,
+                                            });
+}
+
+void BKE_editmesh_looptri_and_normals_calc_with_partial(BMEditMesh *em,
+                                                        struct BMPartialUpdate *bmpinfo)
+{
+  BKE_editmesh_looptri_calc_with_partial_ex(em,
+                                            bmpinfo,
+                                            &(const struct BMeshCalcTessellation_Params){
+                                                .face_normals = true,
+                                            });
+  BM_mesh_normals_update_with_partial_ex(em->bm,
+                                         bmpinfo,
+                                         &(const struct BMeshNormalsUpdate_Params){
+                                             .face_normals = false,
+                                         });
 }
 
 void BKE_editmesh_free_derivedmesh(BMEditMesh *em)
@@ -154,7 +222,7 @@ void BKE_editmesh_free_derivedmesh(BMEditMesh *em)
   MEM_SAFE_FREE(em->bb_cage);
 }
 
-/*does not free the BMEditMesh struct itself*/
+/* Does not free the #BMEditMesh struct itself. */
 void BKE_editmesh_free(BMEditMesh *em)
 {
   BKE_editmesh_free_derivedmesh(em);
@@ -221,6 +289,34 @@ float (*BKE_editmesh_vert_coords_alloc(struct Depsgraph *depsgraph,
   return cos_cage;
 }
 
+const float (*BKE_editmesh_vert_coords_when_deformed(struct Depsgraph *depsgraph,
+                                                     BMEditMesh *em,
+                                                     struct Scene *scene,
+                                                     Object *ob,
+                                                     int *r_vert_len,
+                                                     bool *r_is_alloc))[3]
+{
+  const float(*coords)[3] = NULL;
+  *r_is_alloc = false;
+
+  Mesh *me = ob->data;
+
+  if ((me->runtime.edit_data != NULL) && (me->runtime.edit_data->vertexCos != NULL)) {
+    /* Deformed, and we have deformed coords already. */
+    coords = me->runtime.edit_data->vertexCos;
+  }
+  else if ((em->mesh_eval_final != NULL) &&
+           (em->mesh_eval_final->runtime.wrapper_type == ME_WRAPPER_TYPE_BMESH)) {
+    /* If this is an edit-mesh type, leave NULL as we can use the vertex coords. . */
+  }
+  else {
+    /* Constructive modifiers have been used, we need to allocate coordinates. */
+    *r_is_alloc = true;
+    coords = BKE_editmesh_vert_coords_alloc(depsgraph, em, scene, ob, r_vert_len);
+  }
+  return coords;
+}
+
 float (*BKE_editmesh_vert_coords_alloc_orco(BMEditMesh *em, int *r_vert_len))[3]
 {
   return BM_mesh_vert_coords_alloc(em->bm, r_vert_len);
@@ -230,12 +326,13 @@ void BKE_editmesh_lnorspace_update(BMEditMesh *em, Mesh *me)
 {
   BMesh *bm = em->bm;
 
-  /* We need to create clnors data if none exist yet, otherwise there is no way to edit them.
-   * Similar code to MESH_OT_customdata_custom_splitnormals_add operator,
-   * we want to keep same shading in case we were using autosmooth so far.
-   * Note: there is a problem here, which is that if someone starts a normal editing operation on
-   * previously autosmooth-ed mesh, and cancel that operation, generated clnors data remain,
-   * with related sharp edges (and hence autosmooth is 'lost').
+  /* We need to create custom-loop-normals (CLNORS) data if none exist yet,
+   * otherwise there is no way to edit them.
+   * Similar code to #MESH_OT_customdata_custom_splitnormals_add operator,
+   * we want to keep same shading in case we were using auto-smooth so far.
+   * NOTE: there is a problem here, which is that if someone starts a normal editing operation on
+   * previously auto-smooth-ed mesh, and cancel that operation, generated CLNORS data remain,
+   * with related sharp edges (and hence auto-smooth is 'lost').
    * Not sure how critical this is, and how to fix that issue? */
   if (!CustomData_has_layer(&bm->ldata, CD_CUSTOMLOOPNORMAL)) {
     if (me->flag & ME_AUTOSMOOTH) {
@@ -261,7 +358,7 @@ BoundBox *BKE_editmesh_cage_boundbox_get(BMEditMesh *em)
     float min[3], max[3];
     INIT_MINMAX(min, max);
     if (em->mesh_eval_cage) {
-      BKE_mesh_minmax(em->mesh_eval_cage, min, max);
+      BKE_mesh_wrapper_minmax(em->mesh_eval_cage, min, max);
     }
 
     em->bb_cage = MEM_callocN(sizeof(BoundBox), "BMEditMesh.bb_cage");

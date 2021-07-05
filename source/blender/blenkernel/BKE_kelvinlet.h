@@ -16,14 +16,17 @@
  * The Original Code is Copyright (C) Blender Foundation.
  * All rights reserved.
  */
-#ifndef __BKE_KELVINLET_H__
-#define __BKE_KELVINLET_H__
+#pragma once
 
 /** \file
  * \ingroup bke
  */
 
 #include "BLI_math.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Regularized Kelvinlets: Sculpting Brushes based on Fundamental Solutions of Elasticity
  * Pixar Technical Memo #17-03 */
@@ -48,30 +51,32 @@ void BKE_kelvinlet_init_params(
 /* Regularized Kelvinlets */
 /* All these functions output the displacement that should be applied to each element. */
 /* The initial coordinates of that element should not be modified during the transformation */
-void BKE_kelvinlet_grab(float r_elem_disp[3],
+void BKE_kelvinlet_grab(float radius_elem_disp[3],
                         const KelvinletParams *params,
                         const float elem_orig_co[3],
                         const float brush_location[3],
                         const float brush_delta[3]);
-void BKE_kelvinlet_grab_biscale(float r_elem_disp[3],
+void BKE_kelvinlet_grab_biscale(float radius_elem_disp[3],
                                 const KelvinletParams *params,
                                 const float elem_orig_co[3],
                                 const float brush_location[3],
                                 const float brush_delta[3]);
-void BKE_kelvinlet_grab_triscale(float r_elem_disp[3],
+void BKE_kelvinlet_grab_triscale(float radius_elem_disp[3],
                                  const KelvinletParams *params,
                                  const float elem_orig_co[3],
                                  const float brush_location[3],
                                  const float brush_delta[3]);
-void BKE_kelvinlet_scale(float r_elem_disp[3],
+void BKE_kelvinlet_scale(float radius_elem_disp[3],
                          const KelvinletParams *params,
                          const float elem_orig_co[3],
                          const float brush_location[3],
                          const float surface_normal[3]);
-void BKE_kelvinlet_twist(float r_elem_disp[3],
+void BKE_kelvinlet_twist(float radius_elem_disp[3],
                          const KelvinletParams *params,
                          const float elem_orig_co[3],
                          const float brush_location[3],
                          const float surface_normal[3]);
 
+#ifdef __cplusplus
+}
 #endif

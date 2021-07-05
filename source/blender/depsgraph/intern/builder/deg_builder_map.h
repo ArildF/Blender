@@ -27,7 +27,8 @@
 
 struct ID;
 
-namespace DEG {
+namespace blender {
+namespace deg {
 
 class BuilderMap {
  public:
@@ -39,15 +40,12 @@ class BuilderMap {
 
     TAG_SCENE_COMPOSITOR = (1 << 4),
     TAG_SCENE_SEQUENCER = (1 << 5),
-    TAG_SCENE_AUDIO = (1 << 5),
+    TAG_SCENE_AUDIO = (1 << 6),
 
     /* All ID components has been built. */
     TAG_COMPLETE = (TAG_ANIMATION | TAG_PARAMETERS | TAG_TRANSFORM | TAG_GEOMETRY |
                     TAG_SCENE_COMPOSITOR | TAG_SCENE_SEQUENCER | TAG_SCENE_AUDIO),
   };
-
-  BuilderMap();
-  ~BuilderMap();
 
   /* Check whether given ID is already handled by builder (or if it's being handled). */
   bool checkIsBuilt(ID *id, int tag = TAG_COMPLETE) const;
@@ -75,8 +73,8 @@ class BuilderMap {
  protected:
   int getIDTag(ID *id) const;
 
-  typedef map<ID *, int> IDTagMap;
-  IDTagMap id_tags_;
+  Map<ID *, int> id_tags_;
 };
 
-}  // namespace DEG
+}  // namespace deg
+}  // namespace blender

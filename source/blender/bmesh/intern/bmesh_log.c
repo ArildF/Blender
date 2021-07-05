@@ -31,11 +31,11 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_ghash.h"
 #include "BLI_listbase.h"
 #include "BLI_math.h"
 #include "BLI_mempool.h"
+#include "BLI_utildefines.h"
 
 #include "BKE_customdata.h"
 
@@ -183,9 +183,7 @@ static float vert_mask_get(BMVert *v, const int cd_vert_mask_offset)
   if (cd_vert_mask_offset != -1) {
     return BM_ELEM_CD_GET_FLOAT(v, cd_vert_mask_offset);
   }
-  else {
-    return 0.0f;
-  }
+  return 0.0f;
 }
 
 /* Set a vertex's paint-mask value
@@ -399,7 +397,7 @@ static BMLogEntry *bm_log_entry_create(void)
 
 /* Free the data in a log entry
  *
- * Note: does not free the log entry itself */
+ * NOTE: does not free the log entry itself. */
 static void bm_log_entry_free(BMLogEntry *entry)
 {
   BLI_ghash_free(entry->deleted_verts, NULL, NULL);
@@ -788,7 +786,7 @@ void BM_log_redo(BMesh *bm, BMLog *log)
     /* Currently at the beginning of the undo stack, move to first entry */
     entry = log->entries.first;
   }
-  else if (entry && entry->next) {
+  else if (entry->next) {
     /* Move to next undo entry */
     entry = entry->next;
   }
@@ -817,7 +815,7 @@ void BM_log_redo(BMesh *bm, BMLog *log)
 /* Log a vertex before it is modified
  *
  * Before modifying vertex coordinates, masks, or hflags, call this
- * function to log it's current values. This is better than logging
+ * function to log its current values. This is better than logging
  * after the coordinates have been modified, because only those
  * vertices that are modified need to have their original values
  * stored.

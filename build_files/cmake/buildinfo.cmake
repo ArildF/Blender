@@ -79,7 +79,7 @@ if(EXISTS ${SOURCE_DIR}/.git)
                     ERROR_QUIET)
     if(NOT _git_below_check STREQUAL "")
       # If there're commits between HEAD and upstream this means
-      # that we're reset-ed to older revision. Use it's hash then.
+      # that we're reset-ed to older revision. Use its hash then.
       execute_process(COMMAND git rev-parse --short=12 HEAD
                       WORKING_DIRECTORY ${SOURCE_DIR}
                       OUTPUT_VARIABLE MY_WC_HASH
@@ -128,7 +128,7 @@ if(EXISTS ${SOURCE_DIR}/.git)
                   OUTPUT_STRIP_TRAILING_WHITESPACE)
 
   if(NOT _git_changed_files STREQUAL "")
-    set(MY_WC_BRANCH "${MY_WC_BRANCH} (modified)")
+    string(APPEND MY_WC_BRANCH " (modified)")
   else()
     # Unpushed commits are also considered local modifications
     execute_process(COMMAND git log @{u}..
@@ -137,7 +137,7 @@ if(EXISTS ${SOURCE_DIR}/.git)
                     OUTPUT_STRIP_TRAILING_WHITESPACE
                     ERROR_QUIET)
     if(NOT _git_unpushed_log STREQUAL "")
-      set(MY_WC_BRANCH "${MY_WC_BRANCH} (modified)")
+      string(APPEND MY_WC_BRANCH " (modified)")
     endif()
     unset(_git_unpushed_log)
   endif()
@@ -161,6 +161,7 @@ file(WRITE buildinfo.h.txt
   "#define BUILD_BRANCH \"${MY_WC_BRANCH}\"\n"
   "#define BUILD_DATE \"${BUILD_DATE}\"\n"
   "#define BUILD_TIME \"${BUILD_TIME}\"\n"
+  "#include \"buildinfo_static.h\"\n"
 )
 
 # cleanup

@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FREESTYLE_SILHOUETTE_GEOM_ENGINE_H__
-#define __FREESTYLE_SILHOUETTE_GEOM_ENGINE_H__
+#pragma once
 
 /** \file
  * \ingroup freestyle
@@ -69,7 +68,7 @@ class SilhouetteGeomEngine {
   static SilhouetteGeomEngine *_pInstance;
 
  public:
-  /*! retrieves an instance on the singleton */
+  /** retrieves an instance on the singleton */
   static SilhouetteGeomEngine *getInstance()
   {
     if (_pInstance == NULL) {
@@ -78,13 +77,13 @@ class SilhouetteGeomEngine {
     return _pInstance;
   }
 
-  /*! Sets the current viewpoint */
+  /** Sets the current viewpoint */
   static inline void setViewpoint(const Vec3r &ivp)
   {
     _Viewpoint = ivp;
   }
 
-  /*! Sets the current transformation
+  /** Sets the current transformation
    *    iModelViewMatrix
    *      The 4x4 model view matrix, in column major order (openGL like).
    *    iProjection matrix
@@ -99,13 +98,13 @@ class SilhouetteGeomEngine {
                            const int iViewport[4],
                            real iFocal);
 
-  /*! Sets the current znear and zfar */
+  /** Sets the current znear and zfar */
   static void setFrustum(real iZNear, real iZFar);
 
   /* accessors */
   static void retrieveViewport(int viewport[4]);
 
-  /*! Projects the silhouette in camera coordinates
+  /** Projects the silhouette in camera coordinates
    *  This method modifies the ioEdges passed as argument.
    *    ioVertices
    *      The vertices to project. It is modified during the operation.
@@ -113,7 +112,7 @@ class SilhouetteGeomEngine {
   static void ProjectSilhouette(std::vector<SVertex *> &ioVertices);
   static void ProjectSilhouette(SVertex *ioVertex);
 
-  /*! transforms the parameter t defining a 2D intersection for edge fe in order to obtain
+  /** transforms the parameter t defining a 2D intersection for edge fe in order to obtain
    *  the parameter giving the corresponding 3D intersection.
    *  Returns the 3D parameter
    *    fe
@@ -123,10 +122,10 @@ class SilhouetteGeomEngine {
    */
   static real ImageToWorldParameter(FEdge *fe, real t);
 
-  /*! From world to image */
+  /** From world to image */
   static Vec3r WorldToImage(const Vec3r &M);
 
-  /*! From camera to image */
+  /** From camera to image */
   static Vec3r CameraToImage(const Vec3r &M);
 
 #ifdef WITH_CXX_GUARDEDALLOC
@@ -135,5 +134,3 @@ class SilhouetteGeomEngine {
 };
 
 } /* namespace Freestyle */
-
-#endif  // __FREESTYLE_SILHOUETTE_GEOM_ENGINE_H__

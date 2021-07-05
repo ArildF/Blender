@@ -27,18 +27,19 @@
 #include "DNA_curve_types.h"
 #include "DNA_lattice_types.h"
 #include "DNA_meta_types.h"
-#include "DNA_scene_types.h"
 #include "DNA_object_types.h"
+#include "DNA_scene_types.h"
 
 #include "BLI_blenlib.h"
-#include "BLI_utildefines.h"
 #include "BLI_math.h"
+#include "BLI_utildefines.h"
 
-#include "BKE_curve.h"
-#include "BKE_lattice.h"
-#include "BKE_editmesh.h"
 #include "BKE_DerivedMesh.h"
+#include "BKE_armature.h"
 #include "BKE_context.h"
+#include "BKE_curve.h"
+#include "BKE_editmesh.h"
+#include "BKE_lattice.h"
 #include "BKE_mesh_iterators.h"
 
 #include "DEG_depsgraph.h"
@@ -53,7 +54,7 @@ void ED_transverts_update_obedit(TransVertStore *tvs, Object *obedit)
   const int mode = tvs->mode;
   BLI_assert(ED_transverts_check_obedit(obedit) == true);
 
-  DEG_id_tag_update(obedit->data, 0);
+  DEG_id_tag_update(obedit->data, ID_RECALC_GEOMETRY);
 
   if (obedit->type == OB_MESH) {
     BMEditMesh *em = BKE_editmesh_from_object(obedit);
@@ -110,8 +111,10 @@ void ED_transverts_update_obedit(TransVertStore *tvs, Object *obedit)
         }
       }
 
-      BKE_nurb_test_2d(nu);
-      BKE_nurb_handles_test(nu, true); /* test for bezier too */
+      if (CU_IS_2D(cu)) {
+        BKE_nurb_project_2d(nu);
+      }
+      BKE_nurb_handles_test(nu, true, false); /* test for bezier too */
       nu = nu->next;
     }
   }
@@ -179,8 +182,8 @@ static void set_mapped_co(void *vuserdata,
   if (BM_elem_index_get(eve) != TM_INDEX_SKIP) {
     tv = &tv[BM_elem_index_get(eve)];
 
-    /* be clever, get the closest vertex to the original,
-     * behaves most logically when the mirror modifier is used for eg [#33051]*/
+    /* Be clever, get the closest vertex to the original,
+     * behaves most logically when the mirror modifier is used for eg T33051. */
     if ((tv->flag & TX_VERT_USE_MAPLOC) == 0) {
       /* first time */
       copy_v3_v3(tv->maploc, co);
@@ -494,8 +497,8 @@ void ED_transverts_create_from_obedit(TransVertStore *tvs, Object *obedit, const
   }
 
   if (!tvs->transverts_tot && tvs->transverts) {
-    /* prevent memory leak. happens for curves/latticies due to */
-    /* difficult condition of adding points to trans data */
+    /* Prevent memory leak. happens for curves/lattices due to
+     * difficult condition of adding points to trans data. */
     MEM_freeN(tvs->transverts);
     tvs->transverts = NULL;
   }

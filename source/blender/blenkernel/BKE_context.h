@@ -17,14 +17,14 @@
  * All rights reserved.
  */
 
-#ifndef __BKE_CONTEXT_H__
-#define __BKE_CONTEXT_H__
+#pragma once
 
 /** \file
  * \ingroup bke
  */
 
 #include "DNA_listBase.h"
+#include "DNA_object_enums.h"
 #include "RNA_types.h"
 
 #ifdef __cplusplus
@@ -66,8 +66,6 @@ struct bScreen;
 struct wmWindow;
 struct wmWindowManager;
 
-#include "DNA_object_enums.h"
-
 /* Structs */
 
 struct bContext;
@@ -76,9 +74,26 @@ typedef struct bContext bContext;
 struct bContextDataResult;
 typedef struct bContextDataResult bContextDataResult;
 
-typedef int (*bContextDataCallback)(const bContext *C,
-                                    const char *member,
-                                    bContextDataResult *result);
+/* Result of context lookups.
+ * The specific values are important, and used implicitly in ctx_data_get(). Some functions also
+ * still accept/return `int` instead, to ensure that the compiler uses the correct storage size
+ * when mixing C/C++ code. */
+typedef enum eContextResult {
+  /* The context member was found, and its data is available. */
+  CTX_RESULT_OK = 1,
+
+  /* The context member was not found. */
+  CTX_RESULT_MEMBER_NOT_FOUND = 0,
+
+  /* The context member was found, but its data is not available.
+   * For example, "active_bone" is a valid context member, but has not data in Object mode. */
+  CTX_RESULT_NO_DATA = -1,
+} eContextResult;
+
+/* Function mapping a context member name to its value. */
+typedef int /*eContextResult*/ (*bContextDataCallback)(const bContext *C,
+                                                       const char *member,
+                                                       bContextDataResult *result);
 
 typedef struct bContextStoreEntry {
   struct bContextStoreEntry *next, *prev;
@@ -115,8 +130,9 @@ typedef enum eContextObjectMode {
   CTX_MODE_EDIT_GPENCIL,
   CTX_MODE_SCULPT_GPENCIL,
   CTX_MODE_WEIGHT_GPENCIL,
+  CTX_MODE_VERTEX_GPENCIL,
 } eContextObjectMode;
-#define CTX_MODE_NUM (CTX_MODE_WEIGHT_GPENCIL + 1)
+#define CTX_MODE_NUM (CTX_MODE_VERTEX_GPENCIL + 1)
 
 /* Context */
 
@@ -127,8 +143,9 @@ bContext *CTX_copy(const bContext *C);
 
 /* Stored Context */
 
-bContextStore *CTX_store_add(ListBase *contexts, const char *name, PointerRNA *ptr);
+bContextStore *CTX_store_add(ListBase *contexts, const char *name, const PointerRNA *ptr);
 bContextStore *CTX_store_add_all(ListBase *contexts, bContextStore *context);
+bContextStore *CTX_store_get(bContext *C);
 void CTX_store_set(bContext *C, bContextStore *store);
 bContextStore *CTX_store_copy(bContextStore *store);
 void CTX_store_free(bContextStore *store);
@@ -139,7 +156,14 @@ bool CTX_py_init_get(bContext *C);
 void CTX_py_init_set(bContext *C, bool value);
 
 void *CTX_py_dict_get(const bContext *C);
-void CTX_py_dict_set(bContext *C, void *value);
+void *CTX_py_dict_get_orig(const bContext *C);
+
+struct bContext_PyState {
+  void *py_context;
+  void *py_context_orig;
+};
+void CTX_py_state_push(bContext *C, struct bContext_PyState *pystate, void *value);
+void CTX_py_state_pop(bContext *C, struct bContext_PyState *pystate);
 
 /* Window Manager Context */
 
@@ -173,16 +197,34 @@ struct SpaceInfo *CTX_wm_space_info(const bContext *C);
 struct SpaceUserPref *CTX_wm_space_userpref(const bContext *C);
 struct SpaceClip *CTX_wm_space_clip(const bContext *C);
 struct SpaceTopBar *CTX_wm_space_topbar(const bContext *C);
+struct SpaceSpreadsheet *CTX_wm_space_spreadsheet(const bContext *C);
 
 void CTX_wm_manager_set(bContext *C, struct wmWindowManager *wm);
 void CTX_wm_window_set(bContext *C, struct wmWindow *win);
 void CTX_wm_screen_set(bContext *C, struct bScreen *screen); /* to be removed */
-void CTX_wm_area_set(bContext *C, struct ScrArea *sa);
+void CTX_wm_area_set(bContext *C, struct ScrArea *area);
 void CTX_wm_region_set(bContext *C, struct ARegion *region);
 void CTX_wm_menu_set(bContext *C, struct ARegion *menu);
 void CTX_wm_gizmo_group_set(bContext *C, struct wmGizmoGroup *gzgroup);
-const char *CTX_wm_operator_poll_msg_get(struct bContext *C);
+
+/**
+ * Values to create the message that describes the reason poll failed.
+ *
+ * \note This must be called in the same context as the poll function that created it.
+ */
+struct bContextPollMsgDyn_Params {
+  /** The result is allocated . */
+  char *(*get_fn)(bContext *C, void *user_data);
+  /** Optionally free the user-data. */
+  void (*free_fn)(bContext *C, void *user_data);
+  void *user_data;
+};
+
+const char *CTX_wm_operator_poll_msg_get(struct bContext *C, bool *r_free);
 void CTX_wm_operator_poll_msg_set(struct bContext *C, const char *msg);
+void CTX_wm_operator_poll_msg_set_dynamic(bContext *C,
+                                          const struct bContextPollMsgDyn_Params *params);
+void CTX_wm_operator_poll_msg_clear(struct bContext *C);
 
 /* Data Context
  *
@@ -207,7 +249,7 @@ ListBase CTX_data_dir_get_ex(const bContext *C,
                              const bool use_rna,
                              const bool use_all);
 ListBase CTX_data_dir_get(const bContext *C);
-int CTX_data_get(
+int /*eContextResult*/ CTX_data_get(
     const bContext *C, const char *member, PointerRNA *r_ptr, ListBase *r_lb, short *r_type);
 
 void CTX_data_id_pointer_set(bContextDataResult *result, struct ID *id);
@@ -216,7 +258,7 @@ void CTX_data_pointer_set(bContextDataResult *result, struct ID *id, StructRNA *
 void CTX_data_id_list_add(bContextDataResult *result, struct ID *id);
 void CTX_data_list_add(bContextDataResult *result, struct ID *id, StructRNA *type, void *data);
 
-void CTX_data_dir_set(bContextDataResult *result, const char **member);
+void CTX_data_dir_set(bContextDataResult *result, const char **dir);
 
 void CTX_data_type_set(struct bContextDataResult *result, short type);
 short CTX_data_type_get(struct bContextDataResult *result);
@@ -263,7 +305,10 @@ enum eContextObjectMode CTX_data_mode_enum_ex(const struct Object *obedit,
 enum eContextObjectMode CTX_data_mode_enum(const bContext *C);
 
 void CTX_data_main_set(bContext *C, struct Main *bmain);
-void CTX_data_scene_set(bContext *C, struct Scene *bmain);
+void CTX_data_scene_set(bContext *C, struct Scene *scene);
+
+/* Only Outliner currently! */
+int CTX_data_selected_ids(const bContext *C, ListBase *list);
 
 int CTX_data_selected_editable_objects(const bContext *C, ListBase *list);
 int CTX_data_selected_editable_bases(const bContext *C, ListBase *list);
@@ -312,6 +357,8 @@ int CTX_data_visible_gpencil_layers(const bContext *C, ListBase *list);
 int CTX_data_editable_gpencil_layers(const bContext *C, ListBase *list);
 int CTX_data_editable_gpencil_strokes(const bContext *C, ListBase *list);
 
+bool CTX_wm_interface_locked(const bContext *C);
+
 /* Gets pointer to the dependency graph.
  * If it doesn't exist yet, it will be allocated.
  *
@@ -343,6 +390,4 @@ struct Depsgraph *CTX_data_depsgraph_on_load(const bContext *C);
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

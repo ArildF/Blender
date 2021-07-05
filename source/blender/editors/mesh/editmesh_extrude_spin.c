@@ -24,24 +24,21 @@
 #include "DNA_object_types.h"
 
 #include "BLI_math.h"
+#include "BLI_string.h"
 
 #include "BKE_context.h"
-#include "BKE_report.h"
 #include "BKE_editmesh.h"
 #include "BKE_layer.h"
+#include "BKE_report.h"
 
-#include "RNA_define.h"
 #include "RNA_access.h"
-#include "RNA_enum_types.h"
+#include "RNA_define.h"
 
-#include "WM_api.h"
 #include "WM_types.h"
 
 #include "ED_mesh.h"
 #include "ED_screen.h"
 #include "ED_view3d.h"
-
-#include "UI_resources.h"
 
 #include "MEM_guardedalloc.h"
 
@@ -57,7 +54,7 @@ static int edbm_spin_exec(bContext *C, wmOperator *op)
 {
   ViewLayer *view_layer = CTX_data_view_layer(C);
   float cent[3], axis[3];
-  float d[3] = {0.0f, 0.0f, 0.0f};
+  const float d[3] = {0.0f, 0.0f, 0.0f};
 
   RNA_float_get_array(op->ptr, "center", cent);
   RNA_float_get_array(op->ptr, "axis", axis);
@@ -111,7 +108,12 @@ static int edbm_spin_exec(bContext *C, wmOperator *op)
       continue;
     }
 
-    EDBM_update_generic(obedit->data, true, true);
+    EDBM_update(obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = false,
+                    .is_destructive = true,
+                });
   }
 
   MEM_freeN(objects);
@@ -172,7 +174,7 @@ static bool edbm_spin_poll_property(const bContext *UNUSED(C),
   const bool dupli = RNA_boolean_get(op->ptr, "dupli");
 
   if (dupli) {
-    if (STREQ(prop_id, "use_auto_merge") || STREQ(prop_id, "use_normal_flip")) {
+    if (STR_ELEM(prop_id, "use_auto_merge", "use_normal_flip")) {
       return false;
     }
   }

@@ -303,7 +303,9 @@ class InfoPropertyRNA:
                 for dim in self.array_dimensions[::-1]:
                     if dim != 0:
                         self.default = tuple(zip(*((iter(self.default),) * dim)))
-                        self.default_str = tuple("(%s)" % ", ".join(s for s in b) for b in zip(*((iter(self.default_str),) * dim)))
+                        self.default_str = tuple(
+                            "(%s)" % ", ".join(s for s in b) for b in zip(*((iter(self.default_str),) * dim))
+                        )
                 self.default_str = self.default_str[0]
         elif self.type == "enum" and self.is_enum_flag:
             self.default = getattr(rna_prop, "default_flag", set())
@@ -349,7 +351,9 @@ class InfoPropertyRNA:
             type_str += self.type
             if self.array_length:
                 if self.array_dimensions[1] != 0:
-                    type_str += " multi-dimensional array of %s items" % (" * ".join(str(d) for d in self.array_dimensions if d != 0))
+                    type_str += " multi-dimensional array of %s items" % (
+                        " * ".join(str(d) for d in self.array_dimensions if d != 0)
+                    )
                 else:
                     type_str += " array of %d items" % (self.array_length)
 
@@ -618,8 +622,8 @@ def BuildRNAInfo():
                         yield (rna_sub_type_name, rna_sub_struct)
             i += 1
 
-    for (rna_type_name, rna_struct) in _bpy_types_iterator():
-        # if not rna_type_name.startswith('__'):
+    for (_rna_type_name, rna_struct) in _bpy_types_iterator():
+        # if not _rna_type_name.startswith('__'):
 
         identifier = rna_struct.identifier
 

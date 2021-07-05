@@ -22,8 +22,8 @@
  */
 
 #include <ctype.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -72,7 +72,7 @@ size_t BLI_split_name_num(char *left, int *nr, const char *name, const char deli
         }
         return a;
       }
-      else if (isdigit(name[a]) == 0) {
+      if (isdigit(name[a]) == 0) {
         /* non-numeric suffix - give up */
         break;
       }
@@ -194,7 +194,7 @@ void BLI_string_flip_side_name(char *r_name,
 
   BLI_strncpy(prefix, r_name, name_len);
 
-  /* first case; separator . - _ with extensions r R l L  */
+  /* first case; separator . - _ with extensions r R l L. */
   if ((len > 1) && is_char_sep(r_name[len - 2])) {
     is_set = true;
     switch (r_name[len - 1]) {
@@ -333,27 +333,22 @@ bool BLI_uniquename_cb(UniquenameCheckCallback unique_check,
   return false;
 }
 
-/* little helper macro for BLI_uniquename */
-#ifndef GIVE_STRADDR
-#  define GIVE_STRADDR(data, offset) (((char *)data) + offset)
-#endif
-
 /**
  * Generic function to set a unique name. It is only designed to be used in situations
  * where the name is part of the struct.
  *
  * For places where this is used, see constraint.c for example...
  *
- * \param name_offs: should be calculated using offsetof(structname, membername)
- * macro from stddef.h
+ * \param name_offset: should be calculated using `offsetof(structname, membername)`
+ * macro from `stddef.h`
  */
-static bool uniquename_find_dupe(ListBase *list, void *vlink, const char *name, int name_offs)
+static bool uniquename_find_dupe(ListBase *list, void *vlink, const char *name, int name_offset)
 {
   Link *link;
 
   for (link = list->first; link; link = link->next) {
     if (link != vlink) {
-      if (STREQ(GIVE_STRADDR(link, name_offs), name)) {
+      if (STREQ(POINTER_OFFSET((const char *)link, name_offset), name)) {
         return true;
       }
     }
@@ -367,9 +362,9 @@ static bool uniquename_unique_check(void *arg, const char *name)
   struct {
     ListBase *lb;
     void *vlink;
-    int name_offs;
+    int name_offset;
   } *data = arg;
-  return uniquename_find_dupe(data->lb, data->vlink, name, data->name_offs);
+  return uniquename_find_dupe(data->lb, data->vlink, name, data->name_offset);
 }
 
 /**
@@ -380,20 +375,20 @@ static bool uniquename_unique_check(void *arg, const char *name)
  * \param vlink: The block to check the name for
  * \param defname: To initialize block name if latter is empty
  * \param delim: Delimits numeric suffix in name
- * \param name_offs: Offset of name within block structure
+ * \param name_offset: Offset of name within block structure
  * \param name_len: Maximum length of name area
  */
 bool BLI_uniquename(
-    ListBase *list, void *vlink, const char *defname, char delim, int name_offs, size_t name_len)
+    ListBase *list, void *vlink, const char *defname, char delim, int name_offset, size_t name_len)
 {
   struct {
     ListBase *lb;
     void *vlink;
-    int name_offs;
+    int name_offset;
   } data;
   data.lb = list;
   data.vlink = vlink;
-  data.name_offs = name_offs;
+  data.name_offset = name_offset;
 
   BLI_assert(name_len > 1);
 
@@ -402,19 +397,64 @@ bool BLI_uniquename(
     return false;
   }
 
-  return BLI_uniquename_cb(
-      uniquename_unique_check, &data, defname, delim, GIVE_STRADDR(vlink, name_offs), name_len);
+  return BLI_uniquename_cb(uniquename_unique_check,
+                           &data,
+                           defname,
+                           delim,
+                           POINTER_OFFSET(vlink, name_offset),
+                           name_len);
 }
 
 /* ------------------------------------------------------------------------- */
 /** \name Join Strings
  *
  * For non array versions of these functions, use the macros:
+ * - #BLI_string_join
  * - #BLI_string_joinN
  * - #BLI_string_join_by_sep_charN
  * - #BLI_string_join_by_sep_char_with_tableN
  *
  * \{ */
+
+char *BLI_string_join_array(char *result,
+                            size_t result_len,
+                            const char *strings[],
+                            uint strings_len)
+{
+  char *c = result;
+  char *c_end = &result[result_len - 1];
+  for (uint i = 0; i < strings_len; i++) {
+    const char *p = strings[i];
+    while (*p && (c < c_end)) {
+      *c++ = *p++;
+    }
+  }
+  *c = '\0';
+  return c;
+}
+
+/**
+ * A version of #BLI_string_join that takes a separator which can be any character including '\0'.
+ */
+char *BLI_string_join_array_by_sep_char(
+    char *result, size_t result_len, char sep, const char *strings[], uint strings_len)
+{
+  char *c = result;
+  char *c_end = &result[result_len - 1];
+  for (uint i = 0; i < strings_len; i++) {
+    if (i != 0) {
+      if (c < c_end) {
+        *c++ = sep;
+      }
+    }
+    const char *p = strings[i];
+    while (*p && (c < c_end)) {
+      *c++ = *p++;
+    }
+  }
+  *c = '\0';
+  return c;
+}
 
 /**
  * Join an array of strings into a newly allocated, null terminated string.

@@ -25,8 +25,8 @@
 #include "DNA_listBase.h"
 
 #include "BLI_math.h"
-#include "BLI_sort_utils.h"
 #include "BLI_scanfill.h"
+#include "BLI_sort_utils.h"
 
 #include "bmesh.h"
 #include "bmesh_tools.h"
@@ -252,9 +252,6 @@ void bmo_triangle_fill_exec(BMesh *bm, BMOperator *op)
           if (f_new) {
             BMO_face_flag_enable(bm, f_new, ELE_NEW);
             BM_edge_kill(bm, e);
-          }
-          else {
-            BMO_error_clear(bm);
           }
         }
         else if (e->l == NULL) {

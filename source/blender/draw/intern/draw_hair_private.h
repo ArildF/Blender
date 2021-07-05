@@ -21,13 +21,21 @@
  * \ingroup draw
  */
 
-#ifndef __DRAW_HAIR_PRIVATE_H__
-#define __DRAW_HAIR_PRIVATE_H__
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define MAX_LAYER_NAME_CT 4 /* u0123456789, u, au, a0123456789 */
-#define MAX_LAYER_NAME_LEN GPU_MAX_SAFE_ATTRIB_NAME + 2
+#define MAX_LAYER_NAME_LEN (GPU_MAX_SAFE_ATTR_NAME + 2)
 #define MAX_THICKRES 2    /* see eHairType */
 #define MAX_HAIR_SUBDIV 4 /* see hair_subdiv rna */
+
+typedef enum ParticleRefineShader {
+  PART_REFINE_CATMULL_ROM = 0,
+  PART_REFINE_MAX_SHADER,
+} ParticleRefineShader;
 
 struct ModifierData;
 struct Object;
@@ -79,6 +87,8 @@ typedef struct ParticleHairCache {
   int point_len;
 } ParticleHairCache;
 
+void particle_batch_cache_clear_hair(struct ParticleHairCache *hair_cache);
+
 bool particles_ensure_procedural_data(struct Object *object,
                                       struct ParticleSystem *psys,
                                       struct ModifierData *md,
@@ -86,4 +96,11 @@ bool particles_ensure_procedural_data(struct Object *object,
                                       int subdiv,
                                       int thickness_res);
 
-#endif /* __DRAW_HAIR_PRIVATE_H__ */
+bool hair_ensure_procedural_data(struct Object *object,
+                                 struct ParticleHairCache **r_hair_cache,
+                                 int subdiv,
+                                 int thickness_res);
+
+#ifdef __cplusplus
+}
+#endif

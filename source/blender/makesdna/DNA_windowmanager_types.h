@@ -21,15 +21,17 @@
  * \ingroup DNA
  */
 
-#ifndef __DNA_WINDOWMANAGER_TYPES_H__
-#define __DNA_WINDOWMANAGER_TYPES_H__
+#pragma once
 
 #include "DNA_listBase.h"
-#include "DNA_screen_types.h"
-#include "DNA_vec_types.h"
-#include "DNA_userdef_types.h"
+#include "DNA_screen_types.h" /* for #ScrAreaMap */
+#include "DNA_xr_types.h"     /* for #XrSessionSettings */
 
 #include "DNA_ID.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* defined here: */
 struct wmWindow;
@@ -119,6 +121,16 @@ typedef struct ReportTimerInfo {
   float widthfac;
 } ReportTimerInfo;
 
+//#ifdef WITH_XR_OPENXR
+typedef struct wmXrData {
+  /** Runtime information for managing Blender specific behaviors. */
+  struct wmXrRuntimeData *runtime;
+  /** Permanent session settings (draw mode, feature toggles, etc). Stored in files and accessible
+   * even before the session runs. */
+  XrSessionSettings session_settings;
+} wmXrData;
+//#endif
+
 /* reports need to be before wmWindowManager */
 
 /* windowmanager is saved, tag WMAN */
@@ -142,8 +154,8 @@ typedef struct wmWindowManager {
   /** Operator registry. */
   ListBase operators;
 
-  /** Refresh/redraw wmNotifier structs. */
-  ListBase queue;
+  /** Refresh/redraw #wmNotifier structs. */
+  ListBase notifier_queue;
 
   /** Information and error reports. */
   struct ReportList reports;
@@ -180,12 +192,15 @@ typedef struct wmWindowManager {
 
   struct wmMsgBus *message_bus;
 
+  //#ifdef WITH_XR_OPENXR
+  wmXrData xr;
+  //#endif
 } wmWindowManager;
 
 /* wmWindowManager.initialized */
 enum {
-  WM_WINDOW_IS_INITIALIZED = (1 << 0),
-  WM_KEYCONFIG_IS_INITIALIZED = (1 << 1),
+  WM_WINDOW_IS_INIT = (1 << 0),
+  WM_KEYCONFIG_IS_INIT = (1 << 1),
 };
 
 /* wmWindowManager.outliner_sync_select_dirty */
@@ -200,10 +215,10 @@ enum {
   (WM_OUTLINER_SYNC_SELECT_FROM_OBJECT | WM_OUTLINER_SYNC_SELECT_FROM_EDIT_BONE | \
    WM_OUTLINER_SYNC_SELECT_FROM_POSE_BONE | WM_OUTLINER_SYNC_SELECT_FROM_SEQUENCE)
 
-#define WM_KEYCONFIG_STR_DEFAULT "blender"
+#define WM_KEYCONFIG_STR_DEFAULT "Blender"
 
-/* IME is win32 only! */
-#if !defined(WIN32) && !defined(DNA_DEPRECATED)
+/* IME is win32 and apple only! */
+#if !(defined(WIN32) || defined(__APPLE__)) && !defined(DNA_DEPRECATED)
 #  ifdef __GNUC__
 #    define ime_data ime_data __attribute__((deprecated))
 #  endif
@@ -236,14 +251,14 @@ typedef struct wmWindow {
 
   struct bScreen *screen DNA_DEPRECATED;
 
+  /** Winid also in screens, is for retrieving this window after read. */
+  int winid;
   /** Window coords. */
   short posx, posy, sizex, sizey;
   /** Borderless, full. */
-  short windowstate;
-  /** Multiscreen... no idea how to store yet. */
-  short monitor;
+  char windowstate;
   /** Set to 1 if an active window, for quick rejects. */
-  short active;
+  char active;
   /** Current mouse cursor type. */
   short cursor;
   /** Previous cursor when setting modal one. */
@@ -252,20 +267,33 @@ typedef struct wmWindow {
   short modalcursor;
   /** Cursor grab mode. */
   short grabcursor;
-  /** Internal: tag this for extra mousemove event,
+  /** Internal: tag this for extra mouse-move event,
    * makes cursors/buttons active on UI switching. */
-  short addmousemove;
+  char addmousemove;
+  char tag_cursor_refresh;
 
-  /** Winid also in screens, is for retrieving this window after read. */
-  int winid;
+  /* Track the state of the event queue,
+   * these store the state that needs to be kept between handling events in the queue. */
+  /** Enable when #KM_PRESS events are not handled (keyboard/mouse-buttons only). */
+  char event_queue_check_click;
+  /** Enable when #KM_PRESS events are not handled (keyboard/mouse-buttons only). */
+  char event_queue_check_drag;
+  /**
+   * Enable when the drag was handled,
+   * to avoid mouse-motion continually triggering drag events which are not handled
+   * but add overhead to gizmo handling (for example), see T87511.
+   */
+  char event_queue_check_drag_handled;
+
+  char _pad0[1];
 
   /** Internal, lock pie creation from this event until released. */
-  short lock_pie_event;
+  short pie_event_type_lock;
   /**
    * Exception to the above rule for nested pies, store last pie event for operators
    * that spawn a new pie right after destruction of last pie.
    */
-  short last_pie_event;
+  short pie_event_type_last;
 
   /** Storage for event system. */
   struct wmEvent *eventstate;
@@ -273,12 +301,12 @@ typedef struct wmWindow {
   /** Internal for wm_operators.c. */
   struct wmGesture *tweak;
 
-  /* Input Method Editor data - complex character input (esp. for asian character input)
-   * Currently WIN32, runtime-only data */
+  /* Input Method Editor data - complex character input (especially for Asian character input)
+   * Currently WIN32 and APPLE, runtime-only data. */
   struct wmIMEData *ime_data;
 
-  /** All events (ghost level events were handled). */
-  ListBase queue;
+  /** All events #wmEvent (ghost level events were handled). */
+  ListBase event_queue;
   /** Window+screen handlers, handled last. */
   ListBase handlers;
   /** Priority handlers, handled first. */
@@ -338,9 +366,9 @@ typedef struct wmKeyMapItem {
   short type;
   /** KM_ANY, KM_PRESS, KM_NOTHING etc. */
   short val;
-  /** Oskey is apple or windowskey, value denotes order of pressed. */
+  /** `oskey` also known as apple, windows-key or super, value denotes order of pressed. */
   short shift, ctrl, alt, oskey;
-  /** Rawkey modifier. */
+  /** Raw-key modifier. */
   short keymodifier;
 
   /* flag: inactive, expanded */
@@ -352,7 +380,12 @@ typedef struct wmKeyMapItem {
   /** Unique identifier. Positive for kmi that override builtins, negative otherwise. */
   short id;
   char _pad[2];
-  /** Rna pointer to access properties. */
+  /**
+   * RNA pointer to access properties.
+   *
+   * \note The `ptr.owner_id` value must be NULL, as a signal not to use the context
+   * when running property callbacks such as ENUM item functions.
+   */
   struct PointerRNA *ptr;
 } wmKeyMapItem;
 
@@ -370,6 +403,20 @@ enum {
   KMI_EXPANDED = (1 << 1),
   KMI_USER_MODIFIED = (1 << 2),
   KMI_UPDATE = (1 << 3),
+  /**
+   * When set, ignore events with #wmEvent.is_repeat enabled.
+   *
+   * \note this flag isn't cleared when editing/loading the key-map items,
+   * so it may be set in cases which don't make sense (modifier-keys or mouse-motion for example).
+   *
+   * Knowing if an event may repeat is something set at the operating-systems event handling level
+   * so rely on #wmEvent.is_repeat being false non keyboard events instead of checking if this
+   * flag makes sense.
+   *
+   * Only used when: `ISKEYBOARD(kmi->type) || (kmi->type == KM_TEXTINPUT)`
+   * as mouse, 3d-mouse, timer... etc never repeat.
+   */
+  KMI_REPEAT_IGNORE = (1 << 4),
 };
 
 /** #wmKeyMapItem.maptype */
@@ -443,7 +490,7 @@ typedef struct wmKeyConfig {
 
   /** Unique name. */
   char idname[64];
-  /** Idname of configuration this is derives from, "" if none. */
+  /** ID-name of configuration this is derives from, "" if none. */
   char basename[64];
 
   ListBase keymaps;
@@ -506,7 +553,7 @@ enum {
   /* in case operator got executed outside WM code... like via fileselect */
   OPERATOR_HANDLED = (1 << 4),
   /* used for operators that act indirectly (eg. popup menu)
-   * note: this isn't great design (using operators to trigger UI) avoid where possible. */
+   * NOTE: this isn't great design (using operators to trigger UI) avoid where possible. */
   OPERATOR_INTERFACE = (1 << 5),
 };
 #define OPERATOR_FLAGS_ALL \
@@ -543,4 +590,6 @@ enum {
   OP_IS_MODAL_CURSOR_REGION = (1 << 3),
 };
 
-#endif /* __DNA_WINDOWMANAGER_TYPES_H__ */
+#ifdef __cplusplus
+}
+#endif

@@ -19,8 +19,8 @@
 #include "blender/CCL_api.h"
 
 #include "blender/blender_device.h"
-#include "blender/blender_sync.h"
 #include "blender/blender_session.h"
+#include "blender/blender_sync.h"
 #include "blender/blender_util.h"
 
 #include "render/denoising.h"
@@ -31,15 +31,18 @@
 #include "util/util_logging.h"
 #include "util/util_md5.h"
 #include "util/util_opengl.h"
+#include "util/util_openimagedenoise.h"
 #include "util/util_path.h"
 #include "util/util_string.h"
+#include "util/util_task.h"
+#include "util/util_tbb.h"
 #include "util/util_types.h"
 
 #ifdef WITH_OSL
 #  include "render/osl.h"
 
-#  include <OSL/oslquery.h>
 #  include <OSL/oslconfig.h>
+#  include <OSL/oslquery.h>
 #endif
 
 #ifdef WITH_OPENCL
@@ -58,6 +61,12 @@ void *pylong_as_voidptr_typesafe(PyObject *object)
   if (object == Py_None)
     return NULL;
   return PyLong_AsVoidPtr(object);
+}
+
+PyObject *pyunicode_from_string(const char *str)
+{
+  /* Ignore errors if device API returns invalid UTF-8 strings. */
+  return PyUnicode_DecodeUTF8(str, strlen(str), "ignore");
 }
 
 /* Synchronize debug flags from a given Blender scene.
@@ -84,6 +93,7 @@ bool debug_flags_sync_from_scene(BL::Scene b_scene)
   flags.cuda.split_kernel = get_boolean(cscene, "debug_use_cuda_split_kernel");
   /* Synchronize OptiX flags. */
   flags.optix.cuda_streams = get_int(cscene, "debug_optix_cuda_streams");
+  flags.optix.curves_api = get_boolean(cscene, "debug_optix_curves_api");
   /* Synchronize OpenCL device type. */
   switch (get_enum(cscene, "debug_opencl_device_type")) {
     case 0:
@@ -138,7 +148,7 @@ void python_thread_state_restore(void **python_thread_state)
 
 static const char *PyC_UnicodeAsByte(PyObject *py_str, PyObject **coerce)
 {
-  const char *result = _PyUnicode_AsString(py_str);
+  const char *result = PyUnicode_AsUTF8(py_str);
   if (result) {
     /* 99% of the time this is enough but we better support non unicode
      * chars since blender doesn't limit this.
@@ -279,6 +289,7 @@ static PyObject *render_func(PyObject * /*self*/, PyObject *args)
   RNA_pointer_create(NULL, &RNA_Depsgraph, (ID *)PyLong_AsVoidPtr(pydepsgraph), &depsgraphptr);
   BL::Depsgraph b_depsgraph(depsgraphptr);
 
+  /* Allow Blender to execute other Python scripts. */
   python_thread_state_save(&session->python_thread_state);
 
   session->render(b_depsgraph);
@@ -292,22 +303,18 @@ static PyObject *render_func(PyObject * /*self*/, PyObject *args)
 static PyObject *bake_func(PyObject * /*self*/, PyObject *args)
 {
   PyObject *pysession, *pydepsgraph, *pyobject;
-  PyObject *pypixel_array, *pyresult;
   const char *pass_type;
-  int num_pixels, depth, object_id, pass_filter;
+  int pass_filter, width, height;
 
   if (!PyArg_ParseTuple(args,
-                        "OOOsiiOiiO",
+                        "OOOsiii",
                         &pysession,
                         &pydepsgraph,
                         &pyobject,
                         &pass_type,
                         &pass_filter,
-                        &object_id,
-                        &pypixel_array,
-                        &num_pixels,
-                        &depth,
-                        &pyresult))
+                        &width,
+                        &height))
     return NULL;
 
   BlenderSession *session = (BlenderSession *)PyLong_AsVoidPtr(pysession);
@@ -320,23 +327,9 @@ static PyObject *bake_func(PyObject * /*self*/, PyObject *args)
   RNA_id_pointer_create((ID *)PyLong_AsVoidPtr(pyobject), &objectptr);
   BL::Object b_object(objectptr);
 
-  void *b_result = PyLong_AsVoidPtr(pyresult);
-
-  PointerRNA bakepixelptr;
-  RNA_pointer_create(NULL, &RNA_BakePixel, PyLong_AsVoidPtr(pypixel_array), &bakepixelptr);
-  BL::BakePixel b_bake_pixel(bakepixelptr);
-
   python_thread_state_save(&session->python_thread_state);
 
-  session->bake(b_depsgraph,
-                b_object,
-                pass_type,
-                pass_filter,
-                object_id,
-                b_bake_pixel,
-                (size_t)num_pixels,
-                depth,
-                (float *)b_result);
+  session->bake(b_depsgraph, b_object, pass_type, pass_filter, width, height);
 
   python_thread_state_restore(&session->python_thread_state);
 
@@ -419,6 +412,12 @@ static PyObject *available_devices_func(PyObject * /*self*/, PyObject *args)
   }
 
   DeviceType type = Device::type_from_string(type_name);
+  /* "NONE" is defined by the add-on, see: `CyclesPreferences.get_device_types`. */
+  if ((type == DEVICE_NONE) && (strcmp(type_name, "NONE") != 0)) {
+    PyErr_Format(PyExc_ValueError, "Device \"%s\" not known.", type_name);
+    return NULL;
+  }
+
   uint mask = (type == DEVICE_NONE) ? DEVICE_MASK_ALL : DEVICE_MASK(type);
   mask |= DEVICE_MASK_CPU;
 
@@ -428,10 +427,11 @@ static PyObject *available_devices_func(PyObject * /*self*/, PyObject *args)
   for (size_t i = 0; i < devices.size(); i++) {
     DeviceInfo &device = devices[i];
     string type_name = Device::string_from_type(device.type);
-    PyObject *device_tuple = PyTuple_New(3);
-    PyTuple_SET_ITEM(device_tuple, 0, PyUnicode_FromString(device.description.c_str()));
-    PyTuple_SET_ITEM(device_tuple, 1, PyUnicode_FromString(type_name.c_str()));
-    PyTuple_SET_ITEM(device_tuple, 2, PyUnicode_FromString(device.id.c_str()));
+    PyObject *device_tuple = PyTuple_New(4);
+    PyTuple_SET_ITEM(device_tuple, 0, pyunicode_from_string(device.description.c_str()));
+    PyTuple_SET_ITEM(device_tuple, 1, pyunicode_from_string(type_name.c_str()));
+    PyTuple_SET_ITEM(device_tuple, 2, pyunicode_from_string(device.id.c_str()));
+    PyTuple_SET_ITEM(device_tuple, 3, PyBool_FromLong(device.has_peer_memory));
     PyTuple_SET_ITEM(ret, i, device_tuple);
   }
 
@@ -599,22 +599,19 @@ static PyObject *osl_update_node_func(PyObject * /*self*/, PyObject *args)
   bool removed;
 
   do {
-    BL::Node::inputs_iterator b_input;
-    BL::Node::outputs_iterator b_output;
-
     removed = false;
 
-    for (b_node.inputs.begin(b_input); b_input != b_node.inputs.end(); ++b_input) {
-      if (used_sockets.find(b_input->ptr.data) == used_sockets.end()) {
-        b_node.inputs.remove(b_data, *b_input);
+    for (BL::NodeSocket &b_input : b_node.inputs) {
+      if (used_sockets.find(b_input.ptr.data) == used_sockets.end()) {
+        b_node.inputs.remove(b_data, b_input);
         removed = true;
         break;
       }
     }
 
-    for (b_node.outputs.begin(b_output); b_output != b_node.outputs.end(); ++b_output) {
-      if (used_sockets.find(b_output->ptr.data) == used_sockets.end()) {
-        b_node.outputs.remove(b_data, *b_output);
+    for (BL::NodeSocket &b_output : b_node.outputs) {
+      if (used_sockets.find(b_output.ptr.data) == used_sockets.end()) {
+        b_node.outputs.remove(b_data, b_output);
         removed = true;
         break;
       }
@@ -642,7 +639,7 @@ static PyObject *osl_compile_func(PyObject * /*self*/, PyObject *args)
 static PyObject *system_info_func(PyObject * /*self*/, PyObject * /*value*/)
 {
   string system_info = Device::device_capabilities();
-  return PyUnicode_FromString(system_info.c_str());
+  return pyunicode_from_string(system_info.c_str());
 }
 
 #ifdef WITH_OPENCL
@@ -976,6 +973,44 @@ static PyObject *get_device_types_func(PyObject * /*self*/, PyObject * /*args*/)
   return list;
 }
 
+static PyObject *set_device_override_func(PyObject * /*self*/, PyObject *arg)
+{
+  PyObject *override_string = PyObject_Str(arg);
+  string override = PyUnicode_AsUTF8(override_string);
+  Py_DECREF(override_string);
+
+  bool include_cpu = false;
+  const string cpu_suffix = "+CPU";
+  if (string_endswith(override, cpu_suffix)) {
+    include_cpu = true;
+    override = override.substr(0, override.length() - cpu_suffix.length());
+  }
+
+  if (override == "CPU") {
+    BlenderSession::device_override = DEVICE_MASK_CPU;
+  }
+  else if (override == "OPENCL") {
+    BlenderSession::device_override = DEVICE_MASK_OPENCL;
+  }
+  else if (override == "CUDA") {
+    BlenderSession::device_override = DEVICE_MASK_CUDA;
+  }
+  else if (override == "OPTIX") {
+    BlenderSession::device_override = DEVICE_MASK_OPTIX;
+  }
+  else {
+    printf("\nError: %s is not a valid Cycles device.\n", override.c_str());
+    Py_RETURN_FALSE;
+  }
+
+  if (include_cpu) {
+    BlenderSession::device_override = (DeviceTypeMask)(BlenderSession::device_override |
+                                                       DEVICE_MASK_CPU);
+  }
+
+  Py_RETURN_TRUE;
+}
+
 static PyMethodDef methods[] = {
     {"init", init_func, METH_VARARGS, ""},
     {"exit", exit_func, METH_VARARGS, ""},
@@ -1015,6 +1050,7 @@ static PyMethodDef methods[] = {
 
     /* Compute Device selection */
     {"get_device_types", get_device_types_func, METH_VARARGS, ""},
+    {"set_device_override", set_device_override_func, METH_O, ""},
 
     {NULL, NULL, 0, NULL},
 };
@@ -1085,6 +1121,15 @@ void *CCL_python_module_init()
   PyModule_AddObject(mod, "with_embree", Py_False);
   Py_INCREF(Py_False);
 #endif /* WITH_EMBREE */
+
+  if (ccl::openimagedenoise_supported()) {
+    PyModule_AddObject(mod, "with_openimagedenoise", Py_True);
+    Py_INCREF(Py_True);
+  }
+  else {
+    PyModule_AddObject(mod, "with_openimagedenoise", Py_False);
+    Py_INCREF(Py_False);
+  }
 
   return (void *)mod;
 }

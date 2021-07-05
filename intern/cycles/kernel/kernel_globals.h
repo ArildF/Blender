@@ -22,8 +22,8 @@
 #include "kernel/kernel_profiling.h"
 
 #ifdef __KERNEL_CPU__
-#  include "util/util_vector.h"
 #  include "util/util_map.h"
+#  include "util/util_vector.h"
 #endif
 
 #ifdef __KERNEL_OPENCL__
@@ -64,7 +64,7 @@ typedef struct KernelGlobals {
   OSLThreadData *osl_tdata;
 #  endif
 
-  /* **** Run-time data ****  */
+  /* **** Run-time data **** */
 
   /* Heap-allocated storage for transparent shadows intersections. */
   Intersection *transparent_shadow_intersections;

@@ -22,12 +22,12 @@
  */
 
 #include <assert.h>
-#include <stdio.h>
-#include <math.h>
-#include <string.h>
 #include <float.h>
-#include <stdlib.h>
 #include <limits.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "mikktspace.h"
 
@@ -138,7 +138,7 @@ MIKK_INLINE tbool VNotZero(const SVec3 v)
 
 // Shift operations in C are only defined for shift values which are
 // not negative and smaller than sizeof(value) * CHAR_BIT.
-// The mask, used with bitwise-and (&), prevents undefined behaviour
+// The mask, used with bitwise-and (&), prevents undefined behavior
 // when the shift count is 0 or >= the width of unsigned int.
 MIKK_INLINE unsigned int rotl(unsigned int value, unsigned int count)
 {
@@ -425,14 +425,15 @@ tbool genTangSpace(const SMikkTSpaceContext *pContext, const float fAngularThres
   index = 0;
   for (f = 0; f < iNrFaces; f++) {
     const int verts = pContext->m_pInterface->m_getNumVerticesOfFace(pContext, f);
-    if (verts != 3 && verts != 4)
+    if (verts != 3 && verts != 4) {
       continue;
+    }
 
     // I've decided to let degenerate triangles and group-with-anythings
     // vary between left/right hand coordinate systems at the vertices.
     // All healthy triangles on the other hand are built to always be either or.
-
-    /*// force the coordinate system orientation to be uniform for every face.
+#if 0
+    // force the coordinate system orientation to be uniform for every face.
     // (this is already the case for good triangles but not for
     // degenerate ones and those with bGroupWithAnything==true)
     bool bOrient = psTspace[index].bOrient;
@@ -447,7 +448,8 @@ tbool genTangSpace(const SMikkTSpaceContext *pContext, const float fAngularThres
         else ++i;
       }
       if (!bNotFound) bOrient = psTspace[index+i].bOrient;
-    }*/
+    }
+#endif
 
     // set data
     for (i = 0; i < verts; i++) {
@@ -1076,7 +1078,7 @@ static tbool AssignRecur(const int piTriListIn[],
     return TFALSE;
   if ((pMyTriInfo->iFlag & GROUP_WITH_ANY) != 0) {
     // first to group with a group-with-anything triangle
-    // determines it's orientation.
+    // determines its orientation.
     // This is the only existing order dependency in the code!!
     if (pMyTriInfo->AssignedGroup[0] == NULL && pMyTriInfo->AssignedGroup[1] == NULL &&
         pMyTriInfo->AssignedGroup[2] == NULL) {
@@ -1454,12 +1456,12 @@ static void BuildNeighborsFast(STriInfo pTriInfos[],
       pEdges[f * 3 + i].f = f;                      // record face number
     }
 
-  // sort over all edges by i0, this is the pricy one.
+  // sort over all edges by i0, this is the pricey one.
   QuickSortEdges(pEdges, 0, iNrTrianglesIn * 3 - 1, 0, uSeed);  // sort channel 0 which is i0
 
   // sub sort over i1, should be fast.
   // could replace this with a 64 bit int sort over (i0,i1)
-  // with i0 as msb in the quicksort call above.
+  // with i0 as msb in the quick-sort call above.
   iEntries = iNrTrianglesIn * 3;
   iCurStartIndex = 0;
   for (i = 1; i < iEntries; i++) {

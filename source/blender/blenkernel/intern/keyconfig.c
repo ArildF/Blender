@@ -19,21 +19,22 @@
  */
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "RNA_types.h"
 
-#include "BLI_utildefines.h"
 #include "BLI_ghash.h"
 #include "BLI_listbase.h"
 #include "BLI_string.h"
+#include "BLI_utildefines.h"
 
 #include "DNA_listBase.h"
 #include "DNA_userdef_types.h"
 #include "DNA_windowmanager_types.h"
 
-#include "BKE_keyconfig.h" /* own include */
 #include "BKE_idprop.h"
+#include "BKE_keyconfig.h" /* own include */
 
 #include "MEM_guardedalloc.h"
 
@@ -54,7 +55,7 @@ wmKeyConfigPref *BKE_keyconfig_pref_ensure(UserDef *userdef, const char *kc_idna
   }
   if (kpt->prop == NULL) {
     IDPropertyTemplate val = {0};
-    kpt->prop = IDP_New(IDP_GROUP, &val, kc_idname); /* name is unimportant  */
+    kpt->prop = IDP_New(IDP_GROUP, &val, kc_idname); /* name is unimportant. */
   }
   return kpt;
 }
@@ -209,7 +210,7 @@ void BKE_keyconfig_pref_filter_items(struct UserDef *userdef,
                                      bool (*filter_fn)(wmKeyMapItem *kmi, void *user_data),
                                      void *user_data)
 {
-  for (wmKeyMap *keymap = userdef->user_keymaps.first; keymap; keymap = keymap->next) {
+  LISTBASE_FOREACH (wmKeyMap *, keymap, &userdef->user_keymaps) {
     BKE_keyconfig_keymap_filter_item(keymap, params, filter_fn, user_data);
   }
 }

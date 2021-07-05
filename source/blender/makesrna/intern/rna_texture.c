@@ -25,12 +25,12 @@
 #include "DNA_brush_types.h"
 #include "DNA_light_types.h"
 #include "DNA_material_types.h"
-#include "DNA_object_types.h"
-#include "DNA_texture_types.h"
-#include "DNA_world_types.h"
 #include "DNA_node_types.h"
+#include "DNA_object_types.h"
 #include "DNA_particle_types.h"
 #include "DNA_scene_types.h" /* MAXFRAME only */
+#include "DNA_texture_types.h"
+#include "DNA_world_types.h"
 
 #include "BLI_utildefines.h"
 
@@ -144,10 +144,11 @@ static const EnumPropertyItem blend_type_items[] = {
 #  include "BKE_colorband.h"
 #  include "BKE_context.h"
 #  include "BKE_image.h"
-#  include "BKE_texture.h"
 #  include "BKE_main.h"
+#  include "BKE_texture.h"
 
 #  include "DEG_depsgraph.h"
+#  include "DEG_depsgraph_build.h"
 
 #  include "ED_node.h"
 #  include "ED_render.h"
@@ -231,6 +232,12 @@ static void rna_Texture_type_set(PointerRNA *ptr, int value)
   Tex *tex = (Tex *)ptr->data;
 
   BKE_texture_type_set(tex, value);
+}
+
+void rna_TextureSlotTexture_update(bContext *C, PointerRNA *ptr)
+{
+  DEG_relations_tag_update(CTX_data_main(C));
+  rna_TextureSlot_update(C, ptr);
 }
 
 void rna_TextureSlot_update(bContext *C, PointerRNA *ptr)
@@ -317,7 +324,7 @@ char *rna_TextureSlot_path(PointerRNA *ptr)
   if (mtex->tex) {
     char name_esc[(sizeof(mtex->tex->id.name) - 2) * 2];
 
-    BLI_strescape(name_esc, mtex->tex->id.name + 2, sizeof(name_esc));
+    BLI_str_escape(name_esc, mtex->tex->id.name + 2, sizeof(name_esc));
     return BLI_sprintfN("texture_slots[\"%s\"]", name_esc);
   }
   else {
@@ -623,7 +630,7 @@ static void rna_def_mtex(BlenderRNA *brna)
   RNA_def_property_flag(prop, PROP_EDITABLE | PROP_CONTEXT_UPDATE);
   RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_ui_text(prop, "Texture", "Texture data-block used by this texture slot");
-  RNA_def_property_update(prop, NC_MATERIAL | ND_SHADING_LINKS, "rna_TextureSlot_update");
+  RNA_def_property_update(prop, NC_MATERIAL | ND_SHADING_LINKS, "rna_TextureSlotTexture_update");
 
   prop = RNA_def_property(srna, "name", PROP_STRING, PROP_NONE);
   RNA_def_property_string_funcs(
@@ -1038,7 +1045,7 @@ static void rna_def_texture_blend(BlenderRNA *brna)
       {TEX_HALO,
        "QUADRATIC_SPHERE",
        0,
-       "Quadratic sphere",
+       "Quadratic Sphere",
        "Create a quadratic progression in the shape of a sphere"},
       {TEX_RAD, "RADIAL", 0, "Radial", "Create a radial progression"},
       {0, NULL, 0, NULL, NULL},
@@ -1074,8 +1081,8 @@ static void rna_def_texture_stucci(BlenderRNA *brna)
 
   static const EnumPropertyItem prop_stucci_stype[] = {
       {TEX_PLASTIC, "PLASTIC", 0, "Plastic", "Use standard stucci"},
-      {TEX_WALLIN, "WALL_IN", 0, "Wall in", "Create Dimples"},
-      {TEX_WALLOUT, "WALL_OUT", 0, "Wall out", "Create Ridges"},
+      {TEX_WALLIN, "WALL_IN", 0, "Wall In", "Create Dimples"},
+      {TEX_WALLOUT, "WALL_OUT", 0, "Wall Out", "Create Ridges"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -1565,7 +1572,11 @@ static void rna_def_texture(BlenderRNA *brna)
   prop = RNA_def_property(srna, "use_color_ramp", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", TEX_COLORBAND);
   RNA_def_property_boolean_funcs(prop, NULL, "rna_Texture_use_color_ramp_set");
-  RNA_def_property_ui_text(prop, "Use Color Ramp", "Toggle color ramp operations");
+  RNA_def_property_ui_text(prop,
+                           "Use Color Ramp",
+                           "Map the texture intensity to the color ramp. "
+                           "Note that the alpha value is used for image textures, "
+                           "enable \"Calculate Alpha\" for images without an alpha channel");
   RNA_def_property_update(prop, 0, "rna_Texture_update");
 
   prop = RNA_def_property(srna, "color_ramp", PROP_POINTER, PROP_NEVER_NULL);
@@ -1630,6 +1641,7 @@ static void rna_def_texture(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "node_tree", PROP_POINTER, PROP_NONE);
   RNA_def_property_pointer_sdna(prop, NULL, "nodetree");
+  RNA_def_property_clear_flag(prop, PROP_PTR_NO_OWNERSHIP);
   RNA_def_property_ui_text(prop, "Node Tree", "Node tree for node-based textures");
   RNA_def_property_update(prop, 0, "rna_Texture_nodes_update");
 
@@ -1647,7 +1659,7 @@ static void rna_def_texture(BlenderRNA *brna)
   rna_def_texture_musgrave(brna);
   rna_def_texture_voronoi(brna);
   rna_def_texture_distorted_noise(brna);
-  /* XXX add more types here .. */
+  /* XXX add more types here. */
 
   RNA_api_texture(srna);
 }

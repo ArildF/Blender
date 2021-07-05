@@ -18,8 +18,7 @@
  * \ingroup GHOST
  */
 
-#ifndef __GHOST_EVENTNDOF_H__
-#define __GHOST_EVENTNDOF_H__
+#pragma once
 
 #ifndef WITH_INPUT_NDOF
 #  error NDOF code included in non-NDOF-enabled build
@@ -32,7 +31,7 @@ class GHOST_EventNDOFMotion : public GHOST_Event {
   GHOST_TEventNDOFMotionData m_axisData;
 
  public:
-  GHOST_EventNDOFMotion(GHOST_TUns64 time, GHOST_IWindow *window)
+  GHOST_EventNDOFMotion(uint64_t time, GHOST_IWindow *window)
       : GHOST_Event(time, GHOST_kEventNDOFMotion, window)
   {
     m_data = &m_axisData;
@@ -44,11 +43,9 @@ class GHOST_EventNDOFButton : public GHOST_Event {
   GHOST_TEventNDOFButtonData m_buttonData;
 
  public:
-  GHOST_EventNDOFButton(GHOST_TUns64 time, GHOST_IWindow *window)
+  GHOST_EventNDOFButton(uint64_t time, GHOST_IWindow *window)
       : GHOST_Event(time, GHOST_kEventNDOFButton, window)
   {
     m_data = &m_buttonData;
   }
 };
-
-#endif  // __GHOST_EVENTNDOF_H__

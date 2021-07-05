@@ -18,14 +18,14 @@
  * \ingroup bli
  */
 
-#include <stdlib.h> /* for qsort */
 #include <math.h>   /* for fabsf */
+#include <stdlib.h> /* for qsort */
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
-#include "BLI_listbase.h"
 #include "BLI_boxpack_2d.h" /* own include */
+#include "BLI_listbase.h"
+#include "BLI_utildefines.h"
 
 #include "BLI_sort.h" /* qsort_r */
 #define qsort_r BLI_qsort_r
@@ -97,6 +97,7 @@ BLI_INLINE int quad_flag(uint q)
 #define TL 2
 #define BR 3
 
+/* -------------------------------------------------------------------- */
 /** \name Box Accessor Functions
  * \{ */
 
@@ -121,6 +122,7 @@ static float box_ymax_get(const BoxPack *box)
 }
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Box Placement
  * \{ */
 
@@ -165,6 +167,7 @@ static void box_ymax_set(BoxPack *box, const float f)
 }
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name Box Utils
  * \{ */
 
@@ -203,6 +206,7 @@ static void vert_bias_update(BoxVert *v)
     printf("\tBox Debug i %i, w:%.3f h:%.3f x:%.3f y:%.3f\n", b->index, b->w, b->h, b->x, b->y)
 #endif
 
+/* -------------------------------------------------------------------- */
 /** \name Box/Vert Sorting
  * \{ */
 
@@ -216,7 +220,7 @@ static int box_areasort(const void *p1, const void *p2)
   if (a1 < a2) {
     return 1;
   }
-  else if (a1 > a2) {
+  if (a1 > a2) {
     return -1;
   }
   return 0;
@@ -246,10 +250,10 @@ static int vertex_sort(const void *p1, const void *p2, void *vs_ctx_p)
   if (UNLIKELY(v1->free == 0 && v2->free == 0)) {
     return 0;
   }
-  else if (UNLIKELY(v1->free == 0)) {
+  if (UNLIKELY(v1->free == 0)) {
     return 1;
   }
-  else if (UNLIKELY(v2->free == 0)) {
+  if (UNLIKELY(v2->free == 0)) {
     return -1;
   }
 #endif
@@ -266,7 +270,7 @@ static int vertex_sort(const void *p1, const void *p2, void *vs_ctx_p)
   if (a1 > a2) {
     return 1;
   }
-  else if (a1 < a2) {
+  if (a1 < a2) {
     return -1;
   }
   return 0;
@@ -286,7 +290,7 @@ static int vertex_sort(const void *p1, const void *p2, void *vs_ctx_p)
  *          to have some way of writing the boxes back to the original data.
  * \param len: the number of boxes in the array.
  * \param r_tot_x, r_tot_y: set so you can normalize the data.
- *  */
+ */
 void BLI_box_pack_2d(BoxPack *boxarray, const uint len, float *r_tot_x, float *r_tot_y)
 {
   uint box_index, verts_pack_len, i, j, k;
@@ -294,8 +298,8 @@ void BLI_box_pack_2d(BoxPack *boxarray, const uint len, float *r_tot_x, float *r
   bool isect;
   float tot_x = 0.0f, tot_y = 0.0f;
 
-  BoxPack *box, *box_test; /*current box and another for intersection tests*/
-  BoxVert *vert;           /* the current vert */
+  BoxPack *box, *box_test; /* Current box and another for intersection tests. */
+  BoxVert *vert;           /* The current vert. */
 
   struct VertSortContext vs_ctx;
 
@@ -308,9 +312,9 @@ void BLI_box_pack_2d(BoxPack *boxarray, const uint len, float *r_tot_x, float *r
   /* Sort boxes, biggest first */
   qsort(boxarray, (size_t)len, sizeof(BoxPack), box_areasort);
 
-  /* add verts to the boxes, these are only used internally  */
-  vert = MEM_mallocN((size_t)len * 4 * sizeof(BoxVert), "BoxPack Verts");
-  vertex_pack_indices = MEM_mallocN((size_t)len * 3 * sizeof(int), "BoxPack Indices");
+  /* Add verts to the boxes, these are only used internally. */
+  vert = MEM_mallocN(sizeof(BoxVert[4]) * (size_t)len, "BoxPack Verts");
+  vertex_pack_indices = MEM_mallocN(sizeof(int[3]) * (size_t)len, "BoxPack Indices");
 
   vs_ctx.vertarray = vert;
 
@@ -353,7 +357,7 @@ void BLI_box_pack_2d(BoxPack *boxarray, const uint len, float *r_tot_x, float *r
   /* Pack the First box!
    * then enter the main box-packing loop */
 
-  box = boxarray; /* get the first box  */
+  box = boxarray; /* Get the first box. */
   /* First time, no boxes packed */
   box->v[BL]->free = 0; /* Can't use any if these */
   box->v[BR]->free &= ~(BLF | BRF);
@@ -381,7 +385,7 @@ void BLI_box_pack_2d(BoxPack *boxarray, const uint len, float *r_tot_x, float *r
   box++; /* next box, needed for the loop below */
   /* ...done packing the first box */
 
-  /* Main boxpacking loop */
+  /* Main box-packing loop */
   for (box_index = 1; box_index < len; box_index++, box++) {
 
     /* These floats are used for sorting re-sorting */
@@ -410,8 +414,7 @@ void BLI_box_pack_2d(BoxPack *boxarray, const uint len, float *r_tot_x, float *r
 
       /* This vert has a free quadrant
        * Test if we can place the box here
-       * vert->free & quad_flags[j] - Checks
-       * */
+       * `vert->free & quad_flags[j]` - Checks. */
 
       for (j = 0; (j < 4) && isect; j++) {
         if (vert->free & quad_flag(j)) {
@@ -705,7 +708,7 @@ void BLI_box_pack_2d_fixedarea(ListBase *boxes, int width, int height, ListBase 
   LISTBASE_FOREACH_MUTABLE (FixedSizeBoxPack *, box, boxes) {
     LISTBASE_FOREACH (FixedSizeBoxPack *, space, &spaces) {
       /* Skip this space if it's too small. */
-      if (box->w > space->w || box->h > space->w) {
+      if (box->w > space->w || box->h > space->h) {
         continue;
       }
 

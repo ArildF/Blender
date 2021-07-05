@@ -25,8 +25,8 @@
  * For single linked lists see 'BLI_linklist.h'
  */
 
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
@@ -162,9 +162,8 @@ bool BLI_remlink_safe(ListBase *listbase, void *vlink)
     BLI_remlink(listbase, vlink);
     return true;
   }
-  else {
-    return false;
-  }
+
+  return false;
 }
 
 /**
@@ -225,7 +224,7 @@ void BLI_listbase_swaplinks(ListBase *listbase, void *vlinka, void *vlinkb)
 
 /**
  * Swaps \a vlinka and \a vlinkb from their respective lists.
- * Assumes they are both already in their lista!
+ * Assumes they are both already in their \a listbasea!
  */
 void BLI_listbases_swaplinks(ListBase *listbasea, ListBase *listbaseb, void *vlinka, void *vlinkb)
 {
@@ -433,7 +432,7 @@ void BLI_insertlinkbefore(ListBase *listbase, void *vnextlink, void *vnewlink)
 }
 
 /**
- * Insert a link in place of another, without changing it's position in the list.
+ * Insert a link in place of another, without changing its position in the list.
  *
  * Puts `vnewlink` in the position of `vreplacelink`, removing `vreplacelink`.
  * - `vreplacelink` *must* be in the list.
@@ -485,7 +484,8 @@ bool BLI_listbase_link_move(ListBase *listbase, void *vlink, int step)
   BLI_assert(BLI_findindex(listbase, link) != -1);
 
   /* find link to insert before/after */
-  for (int i = 0; i < ABS(step); i++) {
+  const int abs_step = abs(step);
+  for (int i = 0; i < abs_step; i++) {
     hook = is_up ? hook->prev : hook->next;
     if (!hook) {
       return false;

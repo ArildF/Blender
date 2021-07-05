@@ -31,9 +31,9 @@
 
 #include <stdlib.h>
 
-#include "DNA_ID.h" /* for ID_Type */
+#include "MEM_guardedalloc.h"
 
-#include "BKE_main.h" /* for MAX_LIBARRAY */
+#include "DNA_ID.h" /* for ID_Type and INDEX_ID_MAX */
 
 #include "BLI_threads.h" /* for SpinLock */
 
@@ -43,13 +43,12 @@
 #include "intern/debug/deg_debug.h"
 #include "intern/depsgraph_type.h"
 
-struct GHash;
-struct GSet;
 struct ID;
 struct Scene;
 struct ViewLayer;
 
-namespace DEG {
+namespace blender {
+namespace deg {
 
 struct IDNode;
 struct Node;
@@ -59,20 +58,19 @@ struct TimeSourceNode;
 
 /* Dependency Graph object */
 struct Depsgraph {
-  // TODO(sergey): Go away from C++ container and use some native BLI.
-  typedef vector<OperationNode *> OperationNodes;
-  typedef vector<IDNode *> IDDepsNodes;
+  typedef Vector<OperationNode *> OperationNodes;
+  typedef Vector<IDNode *> IDDepsNodes;
 
   Depsgraph(Main *bmain, Scene *scene, ViewLayer *view_layer, eEvaluationMode mode);
   ~Depsgraph();
 
   TimeSourceNode *add_time_source();
   TimeSourceNode *find_time_source() const;
+  void tag_time_source();
 
   IDNode *find_id_node(const ID *id) const;
   IDNode *add_id_node(ID *id, ID *id_cow_hint = nullptr);
   void clear_id_nodes();
-  void clear_id_nodes_conditional(const std::function<bool(ID_Type id_type)> &filter);
 
   /* Add new relationship between two nodes. */
   Relation *add_new_relation(Node *from, Node *to, const char *description, int flags = 0);
@@ -97,7 +95,7 @@ struct Depsgraph {
 
   /* <ID : IDNode> mapping from ID blocks to nodes representing these
    * blocks, used for quick lookups. */
-  GHash *id_hash;
+  Map<const ID *, IDNode *> id_hash;
 
   /* Ordered list of ID nodes, order matches ID allocation order.
    * Used for faster iteration, especially for areas which are critical to
@@ -110,20 +108,21 @@ struct Depsgraph {
   /* Indicates whether relations needs to be updated. */
   bool need_update;
 
+  /* Indicated whether IDs in this graph are to be tagged as if they first appear visible, with
+   * an optional tag for their animation (time) update. */
+  bool need_visibility_update;
+  bool need_visibility_time_update;
+
   /* Indicates which ID types were updated. */
-  char id_type_updated[MAX_LIBARRAY];
+  char id_type_updated[INDEX_ID_MAX];
 
   /* Indicates type of IDs present in the depsgraph. */
-  char id_type_exist[MAX_LIBARRAY];
+  char id_type_exist[INDEX_ID_MAX];
 
   /* Quick-Access Temp Data ............. */
 
   /* Nodes which have been tagged as "directly modified". */
-  GSet *entry_tags;
-
-  /* Special entry tag for time source. Allows to tag invisible dependency graphs for update when
-   * scene frame changes, so then when dependency graph becomes visible it is on a proper state. */
-  bool need_update_time;
+  Set<OperationNode *> entry_tags;
 
   /* Convenience Data ................... */
 
@@ -167,9 +166,15 @@ struct Depsgraph {
    * does not need any bases. */
   bool is_render_pipeline_depsgraph;
 
+  /* Notify editors about changes to IDs in this depsgraph. */
+  bool use_editors_update;
+
   /* Cached list of colliders/effectors for collections and the scene
    * created along with relations, for fast lookup during evaluation. */
-  GHash *physics_relations[DEG_PHYSICS_RELATIONS_NUM];
+  Map<const ID *, ListBase *> *physics_relations[DEG_PHYSICS_RELATIONS_NUM];
+
+  MEM_CXX_CLASS_ALLOC_FUNCS("Depsgraph");
 };
 
-}  // namespace DEG
+}  // namespace deg
+}  // namespace blender

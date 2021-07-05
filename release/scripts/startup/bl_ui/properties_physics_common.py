@@ -38,16 +38,16 @@ class PhysicButtonsPanel:
 def physics_add(layout, md, name, type, typeicon, toggles):
     row = layout.row(align=True)
     if md:
-        row.context_pointer_set("modifier", md)
         row.operator(
             "object.modifier_remove",
             text=name,
             text_ctxt=i18n_contexts.default,
             icon='X',
-        )
+        ).modifier = md.name
         if toggles:
-            row.prop(md, "show_render", text="")
             row.prop(md, "show_viewport", text="")
+            row.prop(md, "show_render", text="")
+        return row
     else:
         row.operator(
             "object.modifier_add",
@@ -73,23 +73,22 @@ class PHYSICS_PT_add(PhysicButtonsPanel, Panel):
     def draw(self, context):
         layout = self.layout
 
-        row = layout.row(align=True)
-        row.alignment = 'LEFT'
-        row.label(text="Enable physics for:")
-
         flow = layout.grid_flow(row_major=True, columns=0, even_columns=True, even_rows=False, align=True)
 
         obj = context.object
 
         col = flow.column()
 
-        if obj.field.type == 'NONE':
+        if not obj.field or obj.field.type == 'NONE':
             col.operator("object.forcefield_toggle", text="Force Field", icon='FORCE_FORCE')
         else:
             col.operator("object.forcefield_toggle", text="Force Field", icon='X')
 
         if obj.type == 'MESH':
-            physics_add(col, context.collision, "Collision", 'COLLISION', 'MOD_PHYSICS', False)
+            row = physics_add(col, context.collision, "Collision", 'COLLISION', 'MOD_PHYSICS', False)
+            if row and obj.collision:
+                row.prop(obj.collision, "use", text="", icon='HIDE_OFF' if obj.collision.use else 'HIDE_ON')
+
             physics_add(col, context.cloth, "Cloth", 'CLOTH', 'MOD_CLOTH', True)
             physics_add(col, context.dynamic_paint, "Dynamic Paint", 'DYNAMIC_PAINT', 'MOD_DYNAMICPAINT', True)
 
@@ -126,6 +125,7 @@ def point_cache_ui(self, cache, enabled, cachetype):
     layout.context_pointer_set("point_cache", cache)
 
     is_saved = bpy.data.is_saved
+    is_liboverride = cache.id_data.override_library is not None
 
     # NOTE: TODO temporarily used until the animate properties are properly skipped.
     layout.use_property_decorate = False  # No animation (remove this later on).
@@ -221,14 +221,16 @@ def point_cache_ui(self, cache, enabled, cachetype):
         col = flow.column()
         col.active = can_bake
 
-        if cache.is_baked is True:
+        if is_liboverride and not cache.use_disk_cache:
+            col.operator("ptcache.bake", icon='ERROR', text="Bake (Disk Cache mandatory)")
+        elif cache.is_baked is True:
             col.operator("ptcache.free_bake", text="Delete Bake")
         else:
             col.operator("ptcache.bake", text="Bake").bake = True
 
         sub = col.row()
-        sub.enabled = (cache.is_frame_skip or cache.is_outdated) and enabled
-        sub.operator("ptcache.bake", text="Calculate To Frame").bake = False
+        sub.enabled = enabled
+        sub.operator("ptcache.bake", text="Calculate to Frame").bake = False
 
         sub = col.column()
         sub.enabled = enabled
@@ -237,7 +239,7 @@ def point_cache_ui(self, cache, enabled, cachetype):
         col = flow.column()
         col.operator("ptcache.bake_all", text="Bake All Dynamics").bake = True
         col.operator("ptcache.free_bake_all", text="Delete All Bakes")
-        col.operator("ptcache.bake_all", text="Update All To Frame").bake = False
+        col.operator("ptcache.bake_all", text="Update All to Frame").bake = False
 
 
 def effector_weights_ui(self, weights, weight_type):
@@ -310,8 +312,10 @@ def basic_force_field_settings_ui(self, field):
     else:
         col.prop(field, "flow")
 
-    col.prop(field, "apply_to_location", text="Affect Location")
-    col.prop(field, "apply_to_rotation", text="Affect Rotation")
+    sub = col.column(heading="Affect")
+
+    sub.prop(field, "apply_to_location", text="Location")
+    sub.prop(field, "apply_to_rotation", text="Rotation")
 
     col = flow.column()
     sub = col.column(align=True)
@@ -328,6 +332,7 @@ def basic_force_field_settings_ui(self, field):
         col.prop(field, "use_gravity_falloff", text="Gravitation")
 
     col.prop(field, "use_absorption")
+    col.prop(field, "wind_factor")
 
 
 def basic_force_field_falloff_ui(self, field):
@@ -336,25 +341,29 @@ def basic_force_field_falloff_ui(self, field):
     if not field or field.type == 'NONE':
         return
 
-    flow = layout.grid_flow(row_major=True, columns=0, even_columns=True, even_rows=False, align=True)
-
-    col = flow.column()
+    col = layout.column()
     col.prop(field, "z_direction")
     col.prop(field, "falloff_power", text="Power")
 
-    col = flow.column()
-    col.prop(field, "use_min_distance", text="Use Minimum")
-
-    sub = col.column(align=True)
+    col = layout.column(align=False, heading="Min Distance")
+    col.use_property_decorate = False
+    row = col.row(align=True)
+    sub = row.row(align=True)
+    sub.prop(field, "use_min_distance", text="")
+    sub = sub.row(align=True)
     sub.active = field.use_min_distance
-    sub.prop(field, "distance_min", text="Min Distance")
+    sub.prop(field, "distance_min", text="")
+    row.prop_decorator(field, "distance_min")
 
-    col = flow.column()
-    col.prop(field, "use_max_distance", text="Use Maximum")
-
-    sub = col.column(align=True)
+    col = layout.column(align=False, heading="Max Distance")
+    col.use_property_decorate = False
+    row = col.row(align=True)
+    sub = row.row(align=True)
+    sub.prop(field, "use_max_distance", text="")
+    sub = sub.row(align=True)
     sub.active = field.use_max_distance
-    sub.prop(field, "distance_max", text="Max Distance")
+    sub.prop(field, "distance_max", text="")
+    row.prop_decorator(field, "distance_max")
 
 
 classes = (

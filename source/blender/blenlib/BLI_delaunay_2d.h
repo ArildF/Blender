@@ -14,12 +14,18 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BLI_DELAUNAY_2D_H__
-#define __BLI_DELAUNAY_2D_H__
+#pragma once
 
 /** \file
  * \ingroup bli
+ *
+ *  This header file contains both a C interface and a C++ interface
+ *  to the 2D Constrained Delaunay Triangulation library routine.
  */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * Interface for Constrained Delaunay Triangulation (CDT) in 2D.
@@ -141,12 +147,9 @@ typedef struct CDT_input {
  * - faces_orig, faces_orig_start_table, faces_orig_len_table
  *
  * For edges, the edges_orig triple can also say which original face
- * edge is part of a given output edge. If an index in edges_orig
- * is greater than the input's edges_len, then subtract input's edges_len
- * from it to some number i: then the face edge that starts from the
- * input vertex at input's faces[i] is the corresponding face edge.
- * for convenience, face_edge_offset in the result will be the input's
- * edges_len, so that this conversion can be easily done by the caller.
+ * edge is part of a given output edge. See the comment below
+ * on the C++ interface for how to decode the entries in the edges_orig
+ * table.
  */
 typedef struct CDT_result {
   int verts_len;
@@ -175,7 +178,9 @@ typedef enum CDT_output_type {
   CDT_FULL,
   /** All triangles fully enclosed by constraint edges or faces. */
   CDT_INSIDE,
-  /**  Only point, edge, and face constraints, and their intersections. */
+  /** Like previous, but detect holes and omit those from output. */
+  CDT_INSIDE_WITH_HOLES,
+  /** Only point, edge, and face constraints, and their intersections. */
   CDT_CONSTRAINTS,
   /**
    * Like CDT_CONSTRAINTS, but keep enough
@@ -183,7 +188,9 @@ typedef enum CDT_output_type {
    * #BMesh faces in Blender: that is,
    * no vertex appears more than once and no isolated holes in faces.
    */
-  CDT_CONSTRAINTS_VALID_BMESH
+  CDT_CONSTRAINTS_VALID_BMESH,
+  /** Like previous, but detect holes and omit those from output. */
+  CDT_CONSTRAINTS_VALID_BMESH_WITH_HOLES,
 } CDT_output_type;
 
 /**
@@ -196,4 +203,71 @@ CDT_result *BLI_delaunay_2d_cdt_calc(const CDT_input *input, const CDT_output_ty
 
 void BLI_delaunay_2d_cdt_free(CDT_result *result);
 
-#endif /* __BLI_DELAUNAY_2D_H__ */
+#ifdef __cplusplus
+}
+
+/* C++ Interface. */
+
+#  include "BLI_array.hh"
+#  include "BLI_double2.hh"
+#  include "BLI_math_mpq.hh"
+#  include "BLI_mpq2.hh"
+#  include "BLI_vector.hh"
+
+namespace blender::meshintersect {
+
+/* vec2<Arith_t> is a 2d vector with Arith_t as the type for coordinates. */
+template<typename Arith_t> struct vec2_impl;
+template<> struct vec2_impl<double> {
+  typedef double2 type;
+};
+
+#  ifdef WITH_GMP
+template<> struct vec2_impl<mpq_class> {
+  typedef mpq2 type;
+};
+#  endif
+
+template<typename Arith_t> using vec2 = typename vec2_impl<Arith_t>::type;
+
+template<typename Arith_t> class CDT_input {
+ public:
+  Array<vec2<Arith_t>> vert;
+  Array<std::pair<int, int>> edge;
+  Array<Vector<int>> face;
+  Arith_t epsilon{0};
+};
+
+template<typename Arith_t> class CDT_result {
+ public:
+  Array<vec2<Arith_t>> vert;
+  Array<std::pair<int, int>> edge;
+  Array<Vector<int>> face;
+  /** For each output vert, which input verts correspond to it? */
+  Array<Vector<int>> vert_orig;
+  /**
+   * For each output edge, which input edges does it overlap?
+   * The input edge ids are encoded as follows:
+   *   if the value is less than face_edge_offset, then it is
+   *      an index into the input edge[] array.
+   *   else let (a, b) = the quotient and remainder of dividing
+   *      the edge index by face_edge_offset; "a" will be the input face + 1,
+   *      and "b" will be a position within that face.
+   */
+  Array<Vector<int>> edge_orig;
+  /** For each output face, which original faces does it overlap? */
+  Array<Vector<int>> face_orig;
+  /** Used to encode edge_orig (see above). */
+  int face_edge_offset;
+};
+
+CDT_result<double> delaunay_2d_calc(const CDT_input<double> &input, CDT_output_type output_type);
+
+#  ifdef WITH_GMP
+CDT_result<mpq_class> delaunay_2d_calc(const CDT_input<mpq_class> &input,
+                                       CDT_output_type output_type);
+#  endif
+
+} /* namespace blender::meshintersect */
+
+#endif /* __cplusplus */

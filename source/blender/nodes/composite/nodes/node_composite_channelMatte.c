@@ -25,14 +25,14 @@
 
 /* ******************* Channel Matte Node ********************************* */
 static bNodeSocketTemplate cmp_node_channel_matte_in[] = {
-    {SOCK_RGBA, 1, N_("Image"), 1.0f, 1.0f, 1.0f, 1.0f},
-    {-1, 0, ""},
+    {SOCK_RGBA, N_("Image"), 1.0f, 1.0f, 1.0f, 1.0f},
+    {-1, ""},
 };
 
 static bNodeSocketTemplate cmp_node_channel_matte_out[] = {
-    {SOCK_RGBA, 0, N_("Image")},
-    {SOCK_FLOAT, 0, N_("Matte")},
-    {-1, 0, ""},
+    {SOCK_RGBA, N_("Image")},
+    {SOCK_FLOAT, N_("Matte")},
+    {-1, ""},
 };
 
 static void node_composit_init_channel_matte(bNodeTree *UNUSED(ntree), bNode *node)
@@ -44,10 +44,10 @@ static void node_composit_init_channel_matte(bNodeTree *UNUSED(ntree), bNode *no
   c->t3 = 0.0f;
   c->fsize = 0.0f;
   c->fstrength = 0.0f;
-  c->algorithm = 1;  /*max channel limiting */
-  c->channel = 1;    /* limit by red */
-  node->custom1 = 1; /* RGB channel */
-  node->custom2 = 2; /* Green Channel */
+  c->algorithm = 1;  /* Max channel limiting. */
+  c->channel = 1;    /* Limit by red. */
+  node->custom1 = 1; /* RGB channel. */
+  node->custom2 = 2; /* Green Channel. */
 }
 
 void register_node_type_cmp_channel_matte(void)

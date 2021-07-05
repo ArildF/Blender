@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software  Foundation,
+ * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * The Original Code is Copyright (C) Blender Foundation, 2002-2009
@@ -24,14 +24,14 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
-#include "BLI_math.h"
 #include "BLI_ghash.h"
+#include "BLI_math.h"
+#include "BLI_utildefines.h"
 
-#include "DNA_object_types.h"
-#include "DNA_scene_types.h"
 #include "DNA_brush_types.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_object_types.h"
+#include "DNA_scene_types.h"
 
 #include "BKE_brush.h"
 #include "BKE_colortools.h"
@@ -43,9 +43,9 @@
 
 #include "DEG_depsgraph.h"
 
-#include "ED_screen.h"
 #include "ED_image.h"
 #include "ED_mesh.h"
+#include "ED_screen.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -70,8 +70,8 @@ typedef struct UvAdjacencyElement {
 } UvAdjacencyElement;
 
 typedef struct UvEdge {
-  unsigned int uv1;
-  unsigned int uv2;
+  uint uv1;
+  uint uv2;
   /* general use flag
    * (Used to check if edge is boundary here, and propagates to adjacency elements) */
   char flag;
@@ -92,7 +92,7 @@ typedef struct UVInitialStroke {
   /* Initial Selection,for grab brushes for instance */
   UVInitialStrokeElement *initialSelection;
 
-  /* total initially selected UVs*/
+  /* Total initially selected UV's. */
   int totalInitialSelected;
 
   /* initial mouse coordinates */
@@ -101,9 +101,9 @@ typedef struct UVInitialStroke {
 
 /* custom data for uv smoothing brush */
 typedef struct UvSculptData {
-  /* Contains the first of each set of coincident uvs.
+  /* Contains the first of each set of coincident UV's.
    * These will be used to perform smoothing on and propagate the changes
-   * to their coincident uvs */
+   * to their coincident UV's */
   UvAdjacencyElement *uv;
 
   /* ...Is what it says */
@@ -121,7 +121,7 @@ typedef struct UvSculptData {
   /* timer to be used for airbrush-type brush */
   wmTimer *timer;
 
-  /* to determine quickly adjacent uvs */
+  /* to determine quickly adjacent UV's */
   UvElementMap *elementMap;
 
   /* uvsmooth Paint for fast reference */
@@ -172,7 +172,7 @@ static void HC_relaxation_iteration_uv(BMEditMesh *em,
 
   for (i = 0; i < sculptdata->totalUniqueUvs; i++) {
     copy_v2_v2(diff, tmp_uvdata[i].sum_co);
-    mul_v2_fl(diff, 1.f / tmp_uvdata[i].ncounter);
+    mul_v2_fl(diff, 1.0f / tmp_uvdata[i].ncounter);
     copy_v2_v2(tmp_uvdata[i].p, diff);
 
     tmp_uvdata[i].b[0] = diff[0] - sculptdata->uv[i].uv[0];
@@ -228,8 +228,6 @@ static void HC_relaxation_iteration_uv(BMEditMesh *em,
   }
 
   MEM_freeN(tmp_uvdata);
-
-  return;
 }
 
 static void laplacian_relaxation_iteration_uv(BMEditMesh *em,
@@ -262,7 +260,7 @@ static void laplacian_relaxation_iteration_uv(BMEditMesh *em,
    * here it is not needed since we translate along the UV plane always. */
   for (i = 0; i < sculptdata->totalUniqueUvs; i++) {
     copy_v2_v2(tmp_uvdata[i].p, tmp_uvdata[i].sum_co);
-    mul_v2_fl(tmp_uvdata[i].p, 1.f / tmp_uvdata[i].ncounter);
+    mul_v2_fl(tmp_uvdata[i].p, 1.0f / tmp_uvdata[i].ncounter);
   }
 
   for (i = 0; i < sculptdata->totalUniqueUvs; i++) {
@@ -302,8 +300,6 @@ static void laplacian_relaxation_iteration_uv(BMEditMesh *em,
   }
 
   MEM_freeN(tmp_uvdata);
-
-  return;
 }
 
 static void uv_sculpt_stroke_apply(bContext *C,
@@ -313,9 +309,9 @@ static void uv_sculpt_stroke_apply(bContext *C,
 {
   float co[2], radius, radius_root;
   Scene *scene = CTX_data_scene(C);
-  ARegion *ar = CTX_wm_region(C);
+  ARegion *region = CTX_wm_region(C);
   BMEditMesh *em = BKE_editmesh_from_object(obedit);
-  unsigned int tool;
+  uint tool;
   UvSculptData *sculptdata = (UvSculptData *)op->customdata;
   SpaceImage *sima;
   int invert;
@@ -327,11 +323,11 @@ static void uv_sculpt_stroke_apply(bContext *C,
   tool = sculptdata->tool;
   invert = sculptdata->invert ? -1 : 1;
   alpha = BKE_brush_alpha_get(scene, brush);
-  UI_view2d_region_to_view(&ar->v2d, event->mval[0], event->mval[1], &co[0], &co[1]);
+  UI_view2d_region_to_view(&region->v2d, event->mval[0], event->mval[1], &co[0], &co[1]);
 
   sima = CTX_wm_space_image(C);
   ED_space_image_get_size(sima, &width, &height);
-  ED_space_image_get_zoom(sima, ar, &zoomx, &zoomy);
+  ED_space_image_get_zoom(sima, region, &zoomx, &zoomy);
 
   radius = BKE_brush_size_get(scene, brush) / (width * zoomx);
   aspectRatio = width / (float)height;
@@ -386,7 +382,7 @@ static void uv_sculpt_stroke_apply(bContext *C,
    * Smooth Tool
    */
   else if (tool == UV_SCULPT_TOOL_RELAX) {
-    unsigned int method = toolsettings->uv_relax_method;
+    uint method = toolsettings->uv_relax_method;
     if (method == UV_SCULPT_TOOL_RELAX_HC) {
       HC_relaxation_iteration_uv(em, sculptdata, co, alpha, radius, aspectRatio);
     }
@@ -464,7 +460,7 @@ static int uv_element_offset_from_face_get(
   return element - map->buf;
 }
 
-static unsigned int uv_edge_hash(const void *key)
+static uint uv_edge_hash(const void *key)
 {
   const UvEdge *edge = key;
   return (BLI_ghashutil_uinthash(edge->uv2) + BLI_ghashutil_uinthash(edge->uv1));
@@ -476,9 +472,9 @@ static bool uv_edge_compare(const void *a, const void *b)
   const UvEdge *edge2 = b;
 
   if ((edge1->uv1 == edge2->uv1) && (edge1->uv2 == edge2->uv2)) {
-    return 0;
+    return false;
   }
-  return 1;
+  return true;
 }
 
 static UvSculptData *uv_sculpt_stroke_init(bContext *C, wmOperator *op, const wmEvent *event)
@@ -492,11 +488,11 @@ static UvSculptData *uv_sculpt_stroke_init(bContext *C, wmOperator *op, const wm
 
   op->customdata = data;
 
-  BKE_curvemapping_initialize(ts->uvsculpt->paint.brush->curve);
+  BKE_curvemapping_init(ts->uvsculpt->paint.brush->curve);
 
   if (data) {
     int counter = 0, i;
-    ARegion *ar = CTX_wm_region(C);
+    ARegion *region = CTX_wm_region(C);
     float co[2];
     BMFace *efa;
     MLoopUV *luv;
@@ -509,7 +505,7 @@ static UvSculptData *uv_sculpt_stroke_init(bContext *C, wmOperator *op, const wm
 
     bool do_island_optimization = !(ts->uv_sculpt_settings & UV_SCULPT_ALL_ISLANDS);
     int island_index = 0;
-    /* Holds, for each UvElement in elementMap, a pointer to its unique uv.*/
+    /* Holds, for each UvElement in elementMap, a pointer to its unique UV. */
     int *uniqueUv;
     data->tool = (RNA_enum_get(op->ptr, "mode") == BRUSH_STROKE_SMOOTH) ?
                      UV_SCULPT_TOOL_RELAX :
@@ -542,20 +538,19 @@ static UvSculptData *uv_sculpt_stroke_init(bContext *C, wmOperator *op, const wm
     }
 
     /* Mouse coordinates, useful for some functions like grab and sculpt all islands */
-    UI_view2d_region_to_view(&ar->v2d, event->mval[0], event->mval[1], &co[0], &co[1]);
+    UI_view2d_region_to_view(&region->v2d, event->mval[0], event->mval[1], &co[0], &co[1]);
 
     /* we need to find the active island here */
     if (do_island_optimization) {
       UvElement *element;
-      UvNearestHit hit = UV_NEAREST_HIT_INIT;
-      Image *ima = CTX_data_edit_image(C);
-      uv_find_nearest_vert(scene, ima, obedit, co, 0.0f, &hit);
+      UvNearestHit hit = UV_NEAREST_HIT_INIT_MAX(&region->v2d);
+      uv_find_nearest_vert(scene, obedit, co, 0.0f, &hit);
 
       element = BM_uv_element_get(data->elementMap, hit.efa, hit.l);
       island_index = element->island;
     }
 
-    /* Count 'unique' uvs */
+    /* Count 'unique' UV's */
     for (i = 0; i < data->elementMap->totalUVs; i++) {
       if (data->elementMap->buf[i].separate &&
           (!do_island_optimization || data->elementMap->buf[i].island == island_index)) {
@@ -608,7 +603,7 @@ static UvSculptData *uv_sculpt_stroke_init(bContext *C, wmOperator *op, const wm
           data->uv[counter].flag = 0;
           data->uv[counter].uv = luv->uv;
         }
-        /* pointer arithmetic to the rescue, as always :)*/
+        /* Pointer arithmetic to the rescue, as always :). */
         uniqueUv[element - data->elementMap->buf] = counter;
       }
     }
@@ -632,8 +627,8 @@ static UvSculptData *uv_sculpt_stroke_init(bContext *C, wmOperator *op, const wm
         offset2 = uniqueUv[itmp2];
 
         edges[counter].flag = 0;
-        /* using an order policy, sort uvs according to address space. This avoids
-         * Having two different UvEdges with the same uvs on different positions  */
+        /* Using an order policy, sort UV's according to address space.
+         * This avoids having two different UvEdges with the same UV's on different positions. */
         if (offset1 < offset2) {
           edges[counter].uv1 = offset1;
           edges[counter].uv2 = offset2;
@@ -679,7 +674,7 @@ static UvSculptData *uv_sculpt_stroke_init(bContext *C, wmOperator *op, const wm
     BLI_ghash_free(edgeHash, NULL, NULL);
     MEM_freeN(edges);
 
-    /* transfer boundary edge property to uvs */
+    /* transfer boundary edge property to UV's */
     if (ts->uv_sculpt_settings & UV_SCULPT_LOCK_BORDERS) {
       for (i = 0; i < data->totalUvEdges; i++) {
         if (!data->uvedges[i].flag) {
@@ -704,7 +699,7 @@ static UvSculptData *uv_sculpt_stroke_init(bContext *C, wmOperator *op, const wm
       radius = BKE_brush_size_get(scene, brush);
       sima = CTX_wm_space_image(C);
       ED_space_image_get_size(sima, &width, &height);
-      ED_space_image_get_zoom(sima, ar, &zoomx, &zoomy);
+      ED_space_image_get_zoom(sima, region, &zoomx, &zoomy);
 
       aspectRatio = width / (float)height;
       radius /= (width * zoomx);

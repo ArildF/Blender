@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BMESH_MARKING_H__
-#define __BMESH_MARKING_H__
+#pragma once
 
 /** \file
  * \ingroup bmesh
@@ -27,9 +26,19 @@ typedef struct BMEditSelection {
   char htype;
 } BMEditSelection;
 
+typedef enum eBMSelectionFlushFLags {
+  BM_SELECT_LEN_FLUSH_RECALC_NOTHING = 0,
+  BM_SELECT_LEN_FLUSH_RECALC_VERT = (1 << 0),
+  BM_SELECT_LEN_FLUSH_RECALC_EDGE = (1 << 1),
+  BM_SELECT_LEN_FLUSH_RECALC_FACE = (1 << 2),
+  BM_SELECT_LEN_FLUSH_RECALC_ALL = (BM_SELECT_LEN_FLUSH_RECALC_VERT |
+                                    BM_SELECT_LEN_FLUSH_RECALC_EDGE |
+                                    BM_SELECT_LEN_FLUSH_RECALC_FACE),
+} eBMSelectionFlushFLags;
+
 /* geometry hiding code */
 #define BM_elem_hide_set(bm, ele, hide) _bm_elem_hide_set(bm, &(ele)->head, hide)
-void _bm_elem_hide_set(BMesh *bm, BMHeader *ele, const bool hide);
+void _bm_elem_hide_set(BMesh *bm, BMHeader *head, const bool hide);
 void BM_vert_hide_set(BMVert *v, const bool hide);
 void BM_edge_hide_set(BMEdge *e, const bool hide);
 void BM_face_hide_set(BMFace *f, const bool hide);
@@ -59,21 +68,21 @@ void BM_mesh_elem_hflag_disable_all(BMesh *bm,
                                     const char hflag,
                                     const bool respecthide);
 
-/* individual element select functions, BM_elem_select_set is a shortcut for these
- * that automatically detects which one to use*/
+/* Individual element select functions, BM_elem_select_set is a shortcut for these
+ * that automatically detects which one to use. */
 void BM_vert_select_set(BMesh *bm, BMVert *v, const bool select);
 void BM_edge_select_set(BMesh *bm, BMEdge *e, const bool select);
 void BM_face_select_set(BMesh *bm, BMFace *f, const bool select);
 
 /* lower level functions which don't do flushing */
 void BM_edge_select_set_noflush(BMesh *bm, BMEdge *e, const bool select);
-void BM_face_select_set_noflush(BMesh *bm, BMFace *e, const bool select);
+void BM_face_select_set_noflush(BMesh *bm, BMFace *f, const bool select);
 
 void BM_mesh_select_mode_clean_ex(BMesh *bm, const short selectmode);
 void BM_mesh_select_mode_clean(BMesh *bm);
 
 void BM_mesh_select_mode_set(BMesh *bm, int selectmode);
-void BM_mesh_select_mode_flush_ex(BMesh *bm, const short selectmode);
+void BM_mesh_select_mode_flush_ex(BMesh *bm, const short selectmode, eBMSelectionFlushFLags flags);
 void BM_mesh_select_mode_flush(BMesh *bm);
 
 void BM_mesh_deselect_flush(BMesh *bm);
@@ -137,5 +146,3 @@ void BM_select_history_merge_from_targetmap(
   (bm)->selected = _bm_prev_selected; \
   } \
   (void)0
-
-#endif /* __BMESH_MARKING_H__ */

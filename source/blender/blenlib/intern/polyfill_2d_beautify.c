@@ -34,11 +34,11 @@
  * No globals - keep threadsafe.
  */
 
-#include "BLI_utildefines.h"
 #include "BLI_math.h"
+#include "BLI_utildefines.h"
 
-#include "BLI_memarena.h"
 #include "BLI_heap.h"
+#include "BLI_memarena.h"
 
 #include "BLI_polyfill_2d_beautify.h" /* own include */
 
@@ -64,14 +64,14 @@ static int oedge_cmp(const void *a1, const void *a2)
   if (x1->verts[0] > x2->verts[0]) {
     return 1;
   }
-  else if (x1->verts[0] < x2->verts[0]) {
+  if (x1->verts[0] < x2->verts[0]) {
     return -1;
   }
 
   if (x1->verts[1] > x2->verts[1]) {
     return 1;
   }
-  else if (x1->verts[1] < x2->verts[1]) {
+  if (x1->verts[1] < x2->verts[1]) {
     return -1;
   }
 
@@ -79,7 +79,7 @@ static int oedge_cmp(const void *a1, const void *a2)
   if (x1->e_half > x2->e_half) {
     return 1;
   }
-  else if (x1->e_half < x2->e_half) {
+  if (x1->e_half < x2->e_half) {
     return -1;
   }
   /* Should never get here, no two edges should be the same. */
@@ -141,7 +141,7 @@ float BLI_polyfill_beautify_quad_rotate_calc_ex(const float v1[2],
     if ((area_2x_123 >= 0.0f) != (area_2x_134 >= 0.0f)) {
       break;
     }
-    else if ((fabsf(area_2x_123) <= eps_zero_area) || (fabsf(area_2x_134) <= eps_zero_area)) {
+    if ((fabsf(area_2x_123) <= eps_zero_area) || (fabsf(area_2x_134) <= eps_zero_area)) {
       break;
     }
 
@@ -150,11 +150,10 @@ float BLI_polyfill_beautify_quad_rotate_calc_ex(const float v1[2],
       if (lock_degenerate) {
         break;
       }
-      else {
-        return -FLT_MAX; /* always rotate */
-      }
+
+      return -FLT_MAX; /* always rotate */
     }
-    else if ((fabsf(area_2x_234) <= eps_zero_area) || (fabsf(area_2x_241) <= eps_zero_area)) {
+    if ((fabsf(area_2x_234) <= eps_zero_area) || (fabsf(area_2x_241) <= eps_zero_area)) {
       return -FLT_MAX; /* always rotate */
     }
 
@@ -176,7 +175,7 @@ float BLI_polyfill_beautify_quad_rotate_calc_ex(const float v1[2],
       len_13 = len_v2v2(v1, v3);
       len_24 = len_v2v2(v2, v4);
 
-      /* note, area is in fact (area * 2),
+      /* NOTE: area is in fact (area * 2),
        * but in this case its OK, since we're comparing ratios */
 
       /* edge (2-4), current state */
@@ -321,7 +320,7 @@ static void polyedge_rotate(struct HalfEdge *edges, struct HalfEdge *e)
  * The intention is that this calculates the output of #BLI_polyfill_calc
  * \note assumes the \a coords form a boundary,
  * so any edges running along contiguous (wrapped) indices,
- * are ignored since the edges wont share 2 faces.
+ * are ignored since the edges won't share 2 faces.
  */
 void BLI_polyfill_beautify(const float (*coords)[2],
                            const uint coords_tot,
@@ -376,7 +375,7 @@ void BLI_polyfill_beautify(const float (*coords)[2],
   for (uint i = 0, base_index = 0; i < order_edges_len; base_index++) {
     const struct OrderEdge *oe_a = &order_edges[i++];
     const struct OrderEdge *oe_b = &order_edges[i++];
-    BLI_assert(oe_a->verts[0] == oe_a->verts[0] && oe_a->verts[1] == oe_a->verts[1]);
+    BLI_assert(oe_a->verts[0] == oe_b->verts[0] && oe_a->verts[1] == oe_b->verts[1]);
     half_edges[oe_a->e_half].e_radial = oe_b->e_half;
     half_edges[oe_b->e_half].e_radial = oe_a->e_half;
     half_edges[oe_a->e_half].base_index = base_index;

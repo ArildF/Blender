@@ -21,8 +21,11 @@
  * \ingroup editors
  */
 
-#ifndef __ED_PARTICLE_H__
-#define __ED_PARTICLE_H__
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct Object;
 struct PTCacheEdit;
@@ -31,6 +34,7 @@ struct ParticleSystem;
 struct Scene;
 struct UndoType;
 struct ViewLayer;
+struct wmGenericUserData;
 struct bContext;
 struct rcti;
 
@@ -65,10 +69,14 @@ void PE_update_object(struct Depsgraph *depsgraph,
 bool PE_mouse_particles(
     struct bContext *C, const int mval[2], bool extend, bool deselect, bool toggle);
 bool PE_box_select(struct bContext *C, const struct rcti *rect, const int sel_op);
-bool PE_circle_select(struct bContext *C, const int sel_op, const int mval[2], float rad);
+bool PE_circle_select(struct bContext *C,
+                      struct wmGenericUserData *wm_userdata,
+                      const int sel_op,
+                      const int mval[2],
+                      float rad);
 int PE_lasso_select(struct bContext *C,
-                    const int mcords[][2],
-                    const short moves,
+                    const int mcoords[][2],
+                    const int mcoords_len,
                     const int sel_op);
 bool PE_deselect_all_visible_ex(struct PTCacheEdit *edit);
 bool PE_deselect_all_visible(struct bContext *C);
@@ -76,4 +84,6 @@ bool PE_deselect_all_visible(struct bContext *C);
 /* particle_edit_undo.c */
 void ED_particle_undosys_type(struct UndoType *ut);
 
-#endif /* __ED_PARTICLE_H__ */
+#ifdef __cplusplus
+}
+#endif

@@ -25,13 +25,10 @@ set(INC
   ../../makesdna
   ../../makesrna
   ../../windowmanager
+  ../../../../intern/clog
   ../../../../intern/glew-mx
   ../../../../intern/guardedalloc
   ../../../../intern/mantaflow/extern
-)
-
-set(INC_SYS
-  ${GLEW_INCLUDE_PATH}
 )
 
 set(SRC
@@ -74,6 +71,5 @@ if(WITH_BULLET)
   add_definitions(-DWITH_BULLET)
 endif()
 
-add_definitions(${GL_DEFINITIONS})
 
 blender_add_lib(bf_editor_physics "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")

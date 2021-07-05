@@ -21,7 +21,7 @@ CCL_NAMESPACE_BEGIN
 /* "Correlated Multi-Jittered Sampling"
  * Andrew Kensler, Pixar Technical Memo 13-01, 2013 */
 
-/* todo: find good value, suggested 64 gives pattern on cornell box ceiling */
+/* TODO: find good value, suggested 64 gives pattern on cornell box ceiling. */
 #define CMJ_RANDOM_OFFSET_LIMIT 4096
 
 ccl_device_inline bool cmj_is_pow2(int i)
@@ -179,7 +179,7 @@ ccl_device void cmj_sample_2D(int s, int N, int p, float *fx, float *fy)
     smodm = cmj_fast_mod_pow2(s, m);
   }
   else {
-    /* Doing s*inmv gives precision issues here. */
+    /* Doing `s * inmv` gives precision issues here. */
     sdivm = s / m;
     smodm = s - sdivm * m;
   }
@@ -194,5 +194,38 @@ ccl_device void cmj_sample_2D(int s, int N, int p, float *fx, float *fy)
   *fy = (s + jy) * invN;
 }
 #endif
+
+ccl_device float pmj_sample_1D(KernelGlobals *kg, int sample, int rng_hash, int dimension)
+{
+  /* Fallback to random */
+  if (sample >= NUM_PMJ_SAMPLES) {
+    const int p = rng_hash + dimension;
+    return cmj_randfloat(sample, p);
+  }
+  else {
+    const uint mask = cmj_hash_simple(dimension, rng_hash) & 0x007fffff;
+    const int index = ((dimension % NUM_PMJ_PATTERNS) * NUM_PMJ_SAMPLES + sample) * 2;
+    return __uint_as_float(kernel_tex_fetch(__sample_pattern_lut, index) ^ mask) - 1.0f;
+  }
+}
+
+ccl_device float2 pmj_sample_2D(KernelGlobals *kg, int sample, int rng_hash, int dimension)
+{
+  if (sample >= NUM_PMJ_SAMPLES) {
+    const int p = rng_hash + dimension;
+    const float fx = cmj_randfloat(sample, p);
+    const float fy = cmj_randfloat(sample, p + 1);
+    return make_float2(fx, fy);
+  }
+  else {
+    const int index = ((dimension % NUM_PMJ_PATTERNS) * NUM_PMJ_SAMPLES + sample) * 2;
+    const uint maskx = cmj_hash_simple(dimension, rng_hash) & 0x007fffff;
+    const uint masky = cmj_hash_simple(dimension + 1, rng_hash) & 0x007fffff;
+    const float fx = __uint_as_float(kernel_tex_fetch(__sample_pattern_lut, index) ^ maskx) - 1.0f;
+    const float fy = __uint_as_float(kernel_tex_fetch(__sample_pattern_lut, index + 1) ^ masky) -
+                     1.0f;
+    return make_float2(fx, fy);
+  }
+}
 
 CCL_NAMESPACE_END

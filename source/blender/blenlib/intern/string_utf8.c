@@ -23,17 +23,19 @@
  * \ingroup bli
  */
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
 #include <wctype.h>
 #include <wcwidth.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include "BLI_utildefines.h"
 
 #include "BLI_string_utf8.h" /* own include */
-
+#ifdef WIN32
+#  include "utfconv.h"
+#endif
 #ifdef __GNUC__
 #  pragma GCC diagnostic error "-Wsign-conversion"
 #endif
@@ -41,7 +43,7 @@
 // #define DEBUG_STRSIZE
 
 /* array copied from glib's gutf8.c, */
-/* Note: last two values (0xfe and 0xff) are forbidden in utf-8,
+/* NOTE: last two values (0xfe and 0xff) are forbidden in utf-8,
  * so they are considered 1 byte length too. */
 static const size_t utf8_skip_data[256] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -215,18 +217,15 @@ int BLI_utf8_invalid_strip(char *str, size_t length)
       tot++;
       break;
     }
-    else {
-      /* strip, keep looking */
-      memmove(str, str + 1, length + 1); /* +1 for NULL char! */
-      tot++;
-    }
+    /* strip, keep looking */
+    memmove(str, str + 1, length + 1); /* +1 for NULL char! */
+    tot++;
   }
 
   return tot;
 }
 
-/* compatible with BLI_strncpy, but esnure no partial utf8 chars */
-
+/** Compatible with #BLI_strncpy, but ensure no partial UTF8 chars. */
 #define BLI_STR_UTF8_CPY(dst, src, maxncpy) \
   { \
     size_t utf8_size; \
@@ -266,7 +265,7 @@ char *BLI_strncpy_utf8(char *__restrict dst, const char *__restrict src, size_t 
   memset(dst, 0xff, sizeof(*dst) * maxncpy);
 #endif
 
-  /* note: currently we don't attempt to deal with invalid utf8 chars */
+  /* NOTE: currently we don't attempt to deal with invalid utf8 chars. */
   BLI_STR_UTF8_CPY(dst, src, maxncpy);
 
   return r_dst;
@@ -282,32 +281,16 @@ size_t BLI_strncpy_utf8_rlen(char *__restrict dst, const char *__restrict src, s
   memset(dst, 0xff, sizeof(*dst) * maxncpy);
 #endif
 
-  /* note: currently we don't attempt to deal with invalid utf8 chars */
+  /* NOTE: currently we don't attempt to deal with invalid utf8 chars. */
   BLI_STR_UTF8_CPY(dst, src, maxncpy);
 
   return (size_t)(dst - r_dst);
 }
 
-char *BLI_strncat_utf8(char *__restrict dst, const char *__restrict src, size_t maxncpy)
-{
-  while (*dst && maxncpy > 0) {
-    dst++;
-    maxncpy--;
-  }
-
-#ifdef DEBUG_STRSIZE
-  memset(dst, 0xff, sizeof(*dst) * maxncpy);
-#endif
-
-  BLI_STR_UTF8_CPY(dst, src, maxncpy);
-
-  return dst;
-}
-
 #undef BLI_STR_UTF8_CPY
 
 /* --------------------------------------------------------------------------*/
-/* wchar_t / utf8 functions  */
+/* wchar_t / utf8 functions */
 
 size_t BLI_strncpy_wchar_as_utf8(char *__restrict dst,
                                  const wchar_t *__restrict src,
@@ -373,23 +356,23 @@ size_t BLI_strlen_utf8_ex(const char *strc, size_t *r_len_bytes)
 
 size_t BLI_strlen_utf8(const char *strc)
 {
-  size_t len;
-
-  for (len = 0; *strc; len++) {
-    strc += BLI_str_utf8_size_safe(strc);
-  }
-
-  return len;
+  size_t len_bytes;
+  return BLI_strlen_utf8_ex(strc, &len_bytes);
 }
 
 size_t BLI_strnlen_utf8_ex(const char *strc, const size_t maxlen, size_t *r_len_bytes)
 {
-  size_t len;
+  size_t len = 0;
   const char *strc_orig = strc;
   const char *strc_end = strc + maxlen;
 
-  for (len = 0; *strc && strc < strc_end; len++) {
-    strc += BLI_str_utf8_size_safe(strc);
+  while (true) {
+    size_t step = (size_t)BLI_str_utf8_size_safe(strc);
+    if (!*strc || strc + step > strc_end) {
+      break;
+    }
+    strc += step;
+    len++;
   }
 
   *r_len_bytes = (size_t)(strc - strc_orig);
@@ -403,55 +386,22 @@ size_t BLI_strnlen_utf8_ex(const char *strc, const size_t maxlen, size_t *r_len_
  */
 size_t BLI_strnlen_utf8(const char *strc, const size_t maxlen)
 {
-  size_t len;
-  const char *strc_end = strc + maxlen;
-
-  for (len = 0; *strc && strc < strc_end; len++) {
-    strc += BLI_str_utf8_size_safe(strc);
-  }
-
-  return len;
+  size_t len_bytes;
+  return BLI_strnlen_utf8_ex(strc, maxlen, &len_bytes);
 }
 
 size_t BLI_strncpy_wchar_from_utf8(wchar_t *__restrict dst_w,
                                    const char *__restrict src_c,
                                    const size_t maxncpy)
 {
-  const size_t maxlen = maxncpy - 1;
-  size_t len = 0;
-
-  BLI_assert(maxncpy != 0);
-
-#ifdef DEBUG_STRSIZE
-  memset(dst_w, 0xff, sizeof(*dst_w) * maxncpy);
+#ifdef WIN32
+  return conv_utf_8_to_16(src_c, dst_w, maxncpy);
+#else
+  return BLI_str_utf8_as_utf32((char32_t *)dst_w, src_c, maxncpy);
 #endif
-
-  while (*src_c && len != maxlen) {
-    size_t step = 0;
-    uint unicode = BLI_str_utf8_as_unicode_and_size(src_c, &step);
-    if (unicode != BLI_UTF8_ERR) {
-      /* TODO: `wchar_t` type is an implementation-defined and may represent
-       * 16-bit or 32-bit depending on operating system.
-       * So the ideal would be to do the corresponding encoding.
-       * But for now just assert that it has no conflicting use. */
-      BLI_assert(step <= sizeof(wchar_t));
-      *dst_w = (wchar_t)unicode;
-      src_c += step;
-    }
-    else {
-      *dst_w = '?';
-      src_c = BLI_str_find_next_char_utf8(src_c, NULL);
-    }
-    dst_w++;
-    len++;
-  }
-
-  *dst_w = 0;
-
-  return len;
 }
 
-/* end wchar_t / utf8 functions  */
+/* end wchar_t / utf8 functions */
 /* --------------------------------------------------------------------------*/
 
 /* count columns that character/string occupies, based on wcwidth.c */
@@ -494,8 +444,8 @@ int BLI_str_utf8_char_width_safe(const char *p)
 
 /* copied from glib's gutf8.c, added 'Err' arg */
 
-/* note, glib uses uint for unicode, best we do the same,
- * though we don't typedef it - campbell */
+/* NOTE(campbell): glib uses uint for unicode, best we do the same,
+ * though we don't typedef it. */
 
 #define UTF8_COMPUTE(Char, Mask, Len, Err) \
   if (Char < 128) { \
@@ -630,8 +580,10 @@ uint BLI_str_utf8_as_unicode_and_size_safe(const char *__restrict p, size_t *__r
   return result;
 }
 
-/* another variant that steps over the index,
- * note, currently this also falls back to latin1 for text drawing. */
+/**
+ * Another variant that steps over the index.
+ * \note currently this also falls back to latin1 for text drawing.
+ */
 uint BLI_str_utf8_as_unicode_step(const char *__restrict p, size_t *__restrict index)
 {
   int i, len;

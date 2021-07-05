@@ -4,8 +4,8 @@ uniform sampler2D depthTex;
 uniform float alpha = 1.0;
 
 in vec3 pos;
-in vec3 lnor;
-in vec3 vnor;
+in vec4 lnor;
+in vec4 vnor;
 in vec4 norAndFlag;
 
 flat out vec4 finalColor;
@@ -20,18 +20,31 @@ void main()
 {
   GPU_INTEL_VERTEX_SHADER_WORKAROUND
 
+  /* Avoid undefined behavior after return. */
+  finalColor = vec4(0.0);
+  gl_Position = vec4(0.0);
+
   vec3 nor;
-  /* Select the right normal by cheking if the generic attrib is used.  */
-  if (!all(equal(lnor, vec3(0)))) {
-    nor = lnor;
+  /* Select the right normal by checking if the generic attribute is used. */
+  if (!all(equal(lnor.xyz, vec3(0)))) {
+    if (lnor.w < 0.0) {
+      return;
+    }
+    nor = lnor.xyz;
     finalColor = colorLNormal;
   }
-  else if (!all(equal(vnor, vec3(0)))) {
-    nor = vnor;
+  else if (!all(equal(vnor.xyz, vec3(0)))) {
+    if (vnor.w < 0.0) {
+      return;
+    }
+    nor = vnor.xyz;
     finalColor = colorVNormal;
   }
   else {
     nor = norAndFlag.xyz;
+    if (all(equal(nor, vec3(0)))) {
+      return;
+    }
     finalColor = colorNormal;
   }
 

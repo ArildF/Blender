@@ -27,12 +27,12 @@
 #include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
 
-#include "BKE_library.h"
-#include "BKE_library_query.h"
+#include "BKE_deform.h"
+#include "BKE_lib_id.h"
+#include "BKE_lib_query.h"
 #include "BKE_mesh.h"
 #include "BKE_mesh_mirror.h"
 #include "BKE_modifier.h"
-#include "BKE_deform.h"
 
 #include "bmesh.h"
 #include "bmesh_tools.h"
@@ -41,17 +41,17 @@
 
 #include "MOD_modifiertypes.h"
 
-Mesh *BKE_mesh_mirror_bisect_on_mirror_plane(MirrorModifierData *mmd,
-                                             const Mesh *mesh,
-                                             int axis,
-                                             const float plane_co[3],
-                                             float plane_no[3])
+Mesh *BKE_mesh_mirror_bisect_on_mirror_plane_for_modifier(MirrorModifierData *mmd,
+                                                          const Mesh *mesh,
+                                                          int axis,
+                                                          const float plane_co[3],
+                                                          float plane_no[3])
 {
   bool do_bisect_flip_axis = ((axis == 0 && mmd->flag & MOD_MIR_BISECT_FLIP_AXIS_X) ||
                               (axis == 1 && mmd->flag & MOD_MIR_BISECT_FLIP_AXIS_Y) ||
                               (axis == 2 && mmd->flag & MOD_MIR_BISECT_FLIP_AXIS_Z));
 
-  const float bisect_distance = 0.001f;
+  const float bisect_distance = mmd->bisect_threshold;
 
   Mesh *result;
   BMesh *bm;
@@ -70,14 +70,14 @@ Mesh *BKE_mesh_mirror_bisect_on_mirror_plane(MirrorModifierData *mmd,
   /* Define bisecting plane (aka mirror plane). */
   float plane[4];
   if (!do_bisect_flip_axis) {
-    /* That reversed condition is a tad weird, but for some reason that's how you keep
-     * the part of the mesh which is on the non-mirrored side when flip option is disabled,
-     * think that that is the expected behavior. */
+    /* That reversed condition is a little weird, but for some reason that's how you keep
+     * the part of the mesh which is on the non-mirrored side when flip option is disabled.
+     * I think this is the expected behavior. */
     negate_v3(plane_no);
   }
   plane_from_point_normal_v3(plane, plane_co, plane_no);
 
-  BM_mesh_bisect_plane(bm, plane, false, false, 0, 0, bisect_distance);
+  BM_mesh_bisect_plane(bm, plane, true, false, 0, 0, bisect_distance);
 
   /* Plane definitions for vert killing. */
   float plane_offset[4];
@@ -97,11 +97,47 @@ Mesh *BKE_mesh_mirror_bisect_on_mirror_plane(MirrorModifierData *mmd,
   return result;
 }
 
-Mesh *BKE_mesh_mirror_apply_mirror_on_axis(MirrorModifierData *mmd,
-                                           const ModifierEvalContext *UNUSED(ctx),
-                                           Object *ob,
-                                           const Mesh *mesh,
-                                           int axis)
+void BKE_mesh_mirror_apply_mirror_on_axis(struct Main *bmain,
+                                          Mesh *mesh,
+                                          const int axis,
+                                          const float dist)
+{
+  BMesh *bm = BKE_mesh_to_bmesh_ex(mesh,
+                                   &(struct BMeshCreateParams){
+                                       .use_toolflags = 1,
+                                   },
+                                   &(struct BMeshFromMeshParams){
+                                       .calc_face_normal = true,
+                                       .cd_mask_extra =
+                                           {
+                                               .vmask = CD_MASK_SHAPEKEY,
+                                           },
+                                   });
+  BMO_op_callf(bm,
+               (BMO_FLAG_DEFAULTS & ~BMO_FLAG_RESPECT_HIDE),
+               "symmetrize input=%avef direction=%i dist=%f use_shapekey=%b",
+               axis,
+               dist,
+               true);
+
+  BM_mesh_bm_to_me(bmain,
+                   bm,
+                   mesh,
+                   (&(struct BMeshToMeshParams){
+                       .calc_object_remap = true,
+
+                   }));
+  BM_mesh_free(bm);
+}
+
+/**
+ * \warning This should _not_ be used to modify original meshes since
+ * it doesn't handle shape-keys, use #BKE_mesh_mirror_apply_mirror_on_axis instead.
+ */
+Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
+                                                        Object *ob,
+                                                        const Mesh *mesh,
+                                                        const int axis)
 {
   const float tolerance_sq = mmd->tolerance * mmd->tolerance;
   const bool do_vtargetmap = (mmd->flag & MOD_MIR_NO_MERGE) == 0;
@@ -147,6 +183,19 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis(MirrorModifierData *mmd,
     if (do_bisect) {
       copy_v3_v3(plane_co, itmp[3]);
       copy_v3_v3(plane_no, itmp[axis]);
+
+      /* Account for non-uniform scale in `ob`, see: T87592. */
+      float ob_scale[3] = {
+          len_squared_v3(ob->obmat[0]),
+          len_squared_v3(ob->obmat[1]),
+          len_squared_v3(ob->obmat[2]),
+      };
+      /* Scale to avoid precision loss with extreme values. */
+      const float ob_scale_max = max_fff(UNPACK3(ob_scale));
+      if (LIKELY(ob_scale_max != 0.0f)) {
+        mul_v3_fl(ob_scale, 1.0f / ob_scale_max);
+        mul_v3_v3(plane_no, ob_scale);
+      }
     }
   }
   else if (do_bisect) {
@@ -157,7 +206,8 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis(MirrorModifierData *mmd,
 
   Mesh *mesh_bisect = NULL;
   if (do_bisect) {
-    mesh_bisect = BKE_mesh_mirror_bisect_on_mirror_plane(mmd, mesh, axis, plane_co, plane_no);
+    mesh_bisect = BKE_mesh_mirror_bisect_on_mirror_plane_for_modifier(
+        mmd, mesh, axis, plane_co, plane_no);
     mesh = mesh_bisect;
   }
 
@@ -197,7 +247,7 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis(MirrorModifierData *mmd,
 
   if (do_vtargetmap) {
     /* second half is filled with -1 */
-    vtargetmap = MEM_malloc_arrayN(maxVerts, 2 * sizeof(int), "MOD_mirror tarmap");
+    vtargetmap = MEM_malloc_arrayN(maxVerts, sizeof(int[2]), "MOD_mirror tarmap");
 
     vtmap_a = vtargetmap;
     vtmap_b = vtargetmap + maxVerts;
@@ -290,6 +340,8 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis(MirrorModifierData *mmd,
       (is_zero_v2(mmd->uv_offset_copy) == false)) {
     const bool do_mirr_u = (mmd->flag & MOD_MIR_MIRROR_U) != 0;
     const bool do_mirr_v = (mmd->flag & MOD_MIR_MIRROR_V) != 0;
+    /* If set, flip around center of each tile. */
+    const bool do_mirr_udim = (mmd->flag & MOD_MIR_MIRROR_UDIM) != 0;
 
     const int totuv = CustomData_number_of_layers(&result->ldata, CD_MLOOPUV);
 
@@ -299,10 +351,22 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis(MirrorModifierData *mmd,
       dmloopuv += j; /* second set of loops only */
       for (; j-- > 0; dmloopuv++) {
         if (do_mirr_u) {
-          dmloopuv->uv[0] = 1.0f - dmloopuv->uv[0] + mmd->uv_offset[0];
+          float u = dmloopuv->uv[0];
+          if (do_mirr_udim) {
+            dmloopuv->uv[0] = ceilf(u) - fmodf(u, 1.0f) + mmd->uv_offset[0];
+          }
+          else {
+            dmloopuv->uv[0] = 1.0f - u + mmd->uv_offset[0];
+          }
         }
         if (do_mirr_v) {
-          dmloopuv->uv[1] = 1.0f - dmloopuv->uv[1] + mmd->uv_offset[1];
+          float v = dmloopuv->uv[1];
+          if (do_mirr_udim) {
+            dmloopuv->uv[1] = ceilf(v) - fmodf(v, 1.0f) + mmd->uv_offset[1];
+          }
+          else {
+            dmloopuv->uv[1] = 1.0f - v + mmd->uv_offset[1];
+          }
         }
         dmloopuv->uv[0] += mmd->uv_offset_copy[0];
         dmloopuv->uv[1] += mmd->uv_offset_copy[1];
@@ -384,16 +448,16 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis(MirrorModifierData *mmd,
                          maxVerts;
     int *flip_map = NULL, flip_map_len = 0;
 
-    flip_map = defgroup_flip_map(ob, &flip_map_len, false);
+    flip_map = BKE_object_defgroup_flip_map(ob, &flip_map_len, false);
 
     if (flip_map) {
       for (i = 0; i < maxVerts; dvert++, i++) {
         /* merged vertices get both groups, others get flipped */
         if (do_vtargetmap && (vtargetmap[i] != -1)) {
-          defvert_flip_merged(dvert, flip_map, flip_map_len);
+          BKE_defvert_flip_merged(dvert, flip_map, flip_map_len);
         }
         else {
-          defvert_flip(dvert, flip_map, flip_map_len);
+          BKE_defvert_flip(dvert, flip_map, flip_map_len);
         }
       }
 

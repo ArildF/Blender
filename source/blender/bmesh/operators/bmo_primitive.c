@@ -55,21 +55,21 @@ static const short icoface[20][3] = {
 };
 
 static const float icouvs[60][2] = {
-    {0.818181f, 0.000000f}, {0.727272f, 0.157461f}, {0.909090f, 0.157461f}, {0.727272f, 0.157461f},
-    {0.636363f, 0.000000f}, {0.545454f, 0.157461f}, {0.090909f, 0.000000f}, {0.000000f, 0.157461f},
-    {0.181818f, 0.157461f}, {0.272727f, 0.000000f}, {0.181818f, 0.157461f}, {0.363636f, 0.157461f},
-    {0.454545f, 0.000000f}, {0.363636f, 0.157461f}, {0.545454f, 0.157461f}, {0.727272f, 0.157461f},
-    {0.545454f, 0.157461f}, {0.636363f, 0.314921f}, {0.909090f, 0.157461f}, {0.727272f, 0.157461f},
-    {0.818181f, 0.314921f}, {0.181818f, 0.157461f}, {0.000000f, 0.157461f}, {0.090909f, 0.314921f},
-    {0.363636f, 0.157461f}, {0.181818f, 0.157461f}, {0.272727f, 0.314921f}, {0.545454f, 0.157461f},
-    {0.363636f, 0.157461f}, {0.454545f, 0.314921f}, {0.727272f, 0.157461f}, {0.636363f, 0.314921f},
-    {0.818181f, 0.314921f}, {0.909090f, 0.157461f}, {0.818181f, 0.314921f}, {1.000000f, 0.314921f},
-    {0.181818f, 0.157461f}, {0.090909f, 0.314921f}, {0.272727f, 0.314921f}, {0.363636f, 0.157461f},
-    {0.272727f, 0.314921f}, {0.454545f, 0.314921f}, {0.545454f, 0.157461f}, {0.454545f, 0.314921f},
-    {0.636363f, 0.314921f}, {0.818181f, 0.314921f}, {0.636363f, 0.314921f}, {0.727272f, 0.472382f},
-    {1.000000f, 0.314921f}, {0.818181f, 0.314921f}, {0.909090f, 0.472382f}, {0.272727f, 0.314921f},
-    {0.090909f, 0.314921f}, {0.181818f, 0.472382f}, {0.454545f, 0.314921f}, {0.272727f, 0.314921f},
-    {0.363636f, 0.472382f}, {0.636363f, 0.314921f}, {0.454545f, 0.314921f}, {0.545454f, 0.472382f},
+    {0.181819f, 0.000000f}, {0.272728f, 0.157461f}, {0.090910f, 0.157461f}, {0.272728f, 0.157461f},
+    {0.363637f, 0.000000f}, {0.454546f, 0.157461f}, {0.909091f, 0.000000f}, {1.000000f, 0.157461f},
+    {0.818182f, 0.157461f}, {0.727273f, 0.000000f}, {0.818182f, 0.157461f}, {0.636364f, 0.157461f},
+    {0.545455f, 0.000000f}, {0.636364f, 0.157461f}, {0.454546f, 0.157461f}, {0.272728f, 0.157461f},
+    {0.454546f, 0.157461f}, {0.363637f, 0.314921f}, {0.090910f, 0.157461f}, {0.272728f, 0.157461f},
+    {0.181819f, 0.314921f}, {0.818182f, 0.157461f}, {1.000000f, 0.157461f}, {0.909091f, 0.314921f},
+    {0.636364f, 0.157461f}, {0.818182f, 0.157461f}, {0.727273f, 0.314921f}, {0.454546f, 0.157461f},
+    {0.636364f, 0.157461f}, {0.545455f, 0.314921f}, {0.272728f, 0.157461f}, {0.363637f, 0.314921f},
+    {0.181819f, 0.314921f}, {0.090910f, 0.157461f}, {0.181819f, 0.314921f}, {0.000000f, 0.314921f},
+    {0.818182f, 0.157461f}, {0.909091f, 0.314921f}, {0.727273f, 0.314921f}, {0.636364f, 0.157461f},
+    {0.727273f, 0.314921f}, {0.545455f, 0.314921f}, {0.454546f, 0.157461f}, {0.545455f, 0.314921f},
+    {0.363637f, 0.314921f}, {0.181819f, 0.314921f}, {0.363637f, 0.314921f}, {0.272728f, 0.472382f},
+    {0.000000f, 0.314921f}, {0.181819f, 0.314921f}, {0.090910f, 0.472382f}, {0.727273f, 0.314921f},
+    {0.909091f, 0.314921f}, {0.818182f, 0.472382f}, {0.545455f, 0.314921f}, {0.727273f, 0.314921f},
+    {0.636364f, 0.472382f}, {0.363637f, 0.314921f}, {0.545455f, 0.314921f}, {0.454546f, 0.472382f},
 };
 
 static const int monkeyo = 4;
@@ -728,10 +728,10 @@ void bmo_create_grid_exec(BMesh *bm, BMOperator *op)
   BMOpSlot *slot_verts_out = BMO_slot_get(op->slots_out, "verts.out");
 
   const float dia = BMO_slot_float_get(op->slots_in, "size");
-  const uint xtot = max_ii(2, BMO_slot_int_get(op->slots_in, "x_segments"));
-  const uint ytot = max_ii(2, BMO_slot_int_get(op->slots_in, "y_segments"));
-  const float xtot_inv2 = 2.0f / (xtot - 1);
-  const float ytot_inv2 = 2.0f / (ytot - 1);
+  const uint xtot = max_ii(1, BMO_slot_int_get(op->slots_in, "x_segments"));
+  const uint ytot = max_ii(1, BMO_slot_int_get(op->slots_in, "y_segments"));
+  const float xtot_inv2 = 2.0f / (xtot);
+  const float ytot_inv2 = 2.0f / (ytot);
 
   const int cd_loop_uv_offset = CustomData_get_offset(&bm->ldata, CD_MLOOPUV);
   const bool calc_uvs = (cd_loop_uv_offset != -1) && BMO_slot_bool_get(op->slots_in, "calc_uvs");
@@ -746,14 +746,14 @@ void bmo_create_grid_exec(BMesh *bm, BMOperator *op)
 
   BMO_slot_mat4_get(op->slots_in, "matrix", mat);
 
-  BMO_slot_buffer_alloc(op, op->slots_out, "verts.out", xtot * ytot);
+  BMO_slot_buffer_alloc(op, op->slots_out, "verts.out", (xtot + 1) * (ytot + 1));
   varr = (BMVert **)slot_verts_out->data.buf;
 
   i = 0;
   vec[2] = 0.0f;
-  for (y = 0; y < ytot; y++) {
+  for (y = 0; y <= ytot; y++) {
     vec[1] = ((y * ytot_inv2) - 1.0f) * dia;
-    for (x = 0; x < xtot; x++) {
+    for (x = 0; x <= xtot; x++) {
       vec[0] = ((x * xtot_inv2) - 1.0f) * dia;
       mul_v3_m4v3(tvec, mat, vec);
       varr[i] = BM_vert_create(bm, tvec, NULL, BM_CREATE_NOP);
@@ -762,10 +762,10 @@ void bmo_create_grid_exec(BMesh *bm, BMOperator *op)
     }
   }
 
-#define XY(_x, _y) ((_x) + ((_y) * (xtot)))
+#define XY(_x, _y) ((_x) + ((_y) * (xtot + 1)))
 
-  for (y = 1; y < ytot; y++) {
-    for (x = 1; x < xtot; x++) {
+  for (y = 1; y <= ytot; y++) {
+    for (x = 1; x <= xtot; x++) {
       BMFace *f;
 
       vquad[0] = varr[XY(x - 1, y - 1)];
@@ -805,8 +805,8 @@ void BM_mesh_calc_uvs_grid(BMesh *bm,
   BMLoop *l;
   BMIter iter, liter;
 
-  const float dx = 1.0f / (float)(x_segments - 1);
-  const float dy = 1.0f / (float)(y_segments - 1);
+  const float dx = 1.0f / (float)(x_segments);
+  const float dy = 1.0f / (float)(y_segments);
   const float dx_wrap = 1.0 - (dx / 2.0f);
   float x = 0.0f;
   float y = dy;
@@ -867,19 +867,19 @@ void bmo_create_uvsphere_exec(BMesh *bm, BMOperator *op)
   BMIter iter;
   const float axis[3] = {0, 0, 1};
   float vec[3], mat[4][4], cmat[3][3];
-  float phi, phid;
   int a;
 
   BMO_slot_mat4_get(op->slots_in, "matrix", mat);
 
-  phid = 2.0f * (float)M_PI / tot;
+  const float phid = (float)M_PI / tot;
   /* phi = 0.25f * (float)M_PI; */ /* UNUSED */
 
   /* one segment first */
-  phi = 0;
-  phid /= 2;
   for (a = 0; a <= tot; a++) {
     /* Going in this direction, then edge extruding, makes normals face outward */
+    /* Calculate with doubles for higher precision, see: T87779. */
+    const float phi = M_PI * ((double)a / (double)tot);
+
     vec[0] = 0.0;
     vec[1] = dia * sinf(phi);
     vec[2] = dia * cosf(phi);
@@ -891,7 +891,6 @@ void bmo_create_uvsphere_exec(BMesh *bm, BMOperator *op)
       BMO_edge_flag_enable(bm, e, EDGE_ORIG);
     }
 
-    phi += phid;
     preveve = eve;
   }
 
@@ -924,7 +923,7 @@ void bmo_create_uvsphere_exec(BMesh *bm, BMOperator *op)
 
     len = 2 * dia * sinf(phid / 2.0f);
 
-    /* length of one segment in shortest parallen */
+    /* Length of one segment in shortest parallel. */
     vec[0] = dia * sinf(phid);
     vec[1] = 0.0f;
     vec[2] = dia * cosf(phid);
@@ -962,7 +961,7 @@ void bmo_create_uvsphere_exec(BMesh *bm, BMOperator *op)
     BM_mesh_calc_uvs_sphere(bm, FACE_MARK, cd_loop_uv_offset);
   }
 
-  /* and now do imat */
+  /* Now apply the inverse matrix. */
   BM_ITER_MESH (eve, &iter, bm, BM_VERTS_OF_MESH) {
     if (BMO_vert_flag_test(bm, eve, VERT_MARK)) {
       mul_m4_v3(mat, eve->co);
@@ -1272,7 +1271,7 @@ void bmo_create_circle_exec(BMesh *bm, BMOperator *op)
   const bool calc_uvs = (cd_loop_uv_offset != -1) && BMO_slot_bool_get(op->slots_in, "calc_uvs");
 
   BMVert *v1, *lastv1 = NULL, *cent1, *firstv1 = NULL;
-  float vec[3], mat[4][4], phi, phid;
+  float vec[3], mat[4][4];
   int a;
 
   if (!segs) {
@@ -1280,9 +1279,6 @@ void bmo_create_circle_exec(BMesh *bm, BMOperator *op)
   }
 
   BMO_slot_mat4_get(op->slots_in, "matrix", mat);
-
-  phid = 2.0f * (float)M_PI / segs;
-  phi = 0;
 
   if (cap_ends) {
     zero_v3(vec);
@@ -1292,8 +1288,11 @@ void bmo_create_circle_exec(BMesh *bm, BMOperator *op)
     BMO_vert_flag_enable(bm, cent1, VERT_MARK);
   }
 
-  for (a = 0; a < segs; a++, phi += phid) {
+  for (a = 0; a < segs; a++) {
     /* Going this way ends up with normal(s) upward */
+
+    /* Calculate with doubles for higher precision, see: T87779. */
+    const float phi = (2.0 * M_PI) * ((double)a / (double)segs);
     vec[0] = -radius * sinf(phi);
     vec[1] = radius * cosf(phi);
     vec[2] = 0.0f;
@@ -1392,17 +1391,16 @@ void bmo_create_cone_exec(BMesh *bm, BMOperator *op)
 {
   BMVert *v1, *v2, *lastv1 = NULL, *lastv2 = NULL, *cent1, *cent2, *firstv1, *firstv2;
   BMFace *f;
-  float vec[3], mat[4][4], phi, phid;
-  float dia1 = BMO_slot_float_get(op->slots_in, "diameter1");
-  float dia2 = BMO_slot_float_get(op->slots_in, "diameter2");
-  float depth = BMO_slot_float_get(op->slots_in, "depth");
+  float vec[3], mat[4][4];
+  const float dia1 = BMO_slot_float_get(op->slots_in, "diameter1");
+  const float dia2 = BMO_slot_float_get(op->slots_in, "diameter2");
+  const float depth_half = 0.5f * BMO_slot_float_get(op->slots_in, "depth");
   int segs = BMO_slot_int_get(op->slots_in, "segments");
   const bool cap_ends = BMO_slot_bool_get(op->slots_in, "cap_ends");
   const bool cap_tris = BMO_slot_bool_get(op->slots_in, "cap_tris");
 
   const int cd_loop_uv_offset = CustomData_get_offset(&bm->ldata, CD_MLOOPUV);
   const bool calc_uvs = (cd_loop_uv_offset != -1) && BMO_slot_bool_get(op->slots_in, "calc_uvs");
-  int a;
 
   if (!segs) {
     return;
@@ -1410,19 +1408,15 @@ void bmo_create_cone_exec(BMesh *bm, BMOperator *op)
 
   BMO_slot_mat4_get(op->slots_in, "matrix", mat);
 
-  phid = 2.0f * (float)M_PI / segs;
-  phi = 0;
-
-  depth *= 0.5f;
   if (cap_ends) {
     vec[0] = vec[1] = 0.0f;
-    vec[2] = -depth;
+    vec[2] = -depth_half;
     mul_m4_v3(mat, vec);
 
     cent1 = BM_vert_create(bm, vec, NULL, BM_CREATE_NOP);
 
     vec[0] = vec[1] = 0.0f;
-    vec[2] = depth;
+    vec[2] = depth_half;
     mul_m4_v3(mat, vec);
 
     cent2 = BM_vert_create(bm, vec, NULL, BM_CREATE_NOP);
@@ -1431,23 +1425,29 @@ void bmo_create_cone_exec(BMesh *bm, BMOperator *op)
     BMO_vert_flag_enable(bm, cent2, VERT_MARK);
   }
 
-  for (a = 0; a < segs; a++, phi += phid) {
+  const int side_faces_len = segs - 1;
+  BMFace **side_faces = MEM_mallocN(sizeof(*side_faces) * side_faces_len, __func__);
+
+  for (int i = 0; i < segs; i++) {
+    /* Calculate with doubles for higher precision, see: T87779. */
+    const float phi = (2.0 * M_PI) * ((double)i / (double)segs);
+
     vec[0] = dia1 * sinf(phi);
     vec[1] = dia1 * cosf(phi);
-    vec[2] = -depth;
+    vec[2] = -depth_half;
     mul_m4_v3(mat, vec);
     v1 = BM_vert_create(bm, vec, NULL, BM_CREATE_NOP);
 
     vec[0] = dia2 * sinf(phi);
     vec[1] = dia2 * cosf(phi);
-    vec[2] = depth;
+    vec[2] = depth_half;
     mul_m4_v3(mat, vec);
     v2 = BM_vert_create(bm, vec, NULL, BM_CREATE_NOP);
 
     BMO_vert_flag_enable(bm, v1, VERT_MARK);
     BMO_vert_flag_enable(bm, v2, VERT_MARK);
 
-    if (a) {
+    if (i) {
       if (cap_ends) {
         f = BM_face_create_quad_tri(bm, cent1, lastv1, v1, NULL, NULL, BM_CREATE_NOP);
         if (calc_uvs) {
@@ -1466,6 +1466,7 @@ void bmo_create_cone_exec(BMesh *bm, BMOperator *op)
       if (calc_uvs) {
         BMO_face_flag_enable(bm, f, FACE_MARK);
       }
+      side_faces[i - 1] = f;
     }
     else {
       firstv1 = v1;
@@ -1474,10 +1475,6 @@ void bmo_create_cone_exec(BMesh *bm, BMOperator *op)
 
     lastv1 = v1;
     lastv2 = v2;
-  }
-
-  if (!a) {
-    return;
   }
 
   if (cap_ends) {
@@ -1503,11 +1500,38 @@ void bmo_create_cone_exec(BMesh *bm, BMOperator *op)
     BM_mesh_calc_uvs_cone(bm, mat, dia2, dia1, segs, cap_ends, FACE_MARK, cd_loop_uv_offset);
   }
 
+  /* Collapse vertices at the first end. */
+  if (dia1 == 0.0f) {
+    if (cap_ends) {
+      BM_vert_kill(bm, cent1);
+    }
+    for (int i = 0; i < side_faces_len; i++) {
+      f = side_faces[i];
+      BMLoop *l = BM_FACE_FIRST_LOOP(f);
+      BM_edge_collapse(bm, l->prev->e, l->prev->v, true, true);
+    }
+  }
+
+  /* Collapse vertices at the second end. */
+  if (dia2 == 0.0f) {
+    if (cap_ends) {
+      BM_vert_kill(bm, cent2);
+    }
+    for (int i = 0; i < side_faces_len; i++) {
+      f = side_faces[i];
+      BMLoop *l = BM_FACE_FIRST_LOOP(f);
+      BM_edge_collapse(bm, l->next->e, l->next->v, true, true);
+    }
+  }
+
   if (!cap_tris) {
     BMO_op_callf(bm, op->flag, "dissolve_faces faces=%ff", FACE_NEW);
   }
 
-  BMO_op_callf(bm, op->flag, "remove_doubles verts=%fv dist=%f", VERT_MARK, 0.0000005 * depth);
+  if (side_faces != NULL) {
+    MEM_freeN(side_faces);
+  }
+
   BMO_slot_buffer_from_enabled_flag(bm, op, op->slots_out, "verts.out", BM_VERT, VERT_MARK);
 }
 
@@ -1560,9 +1584,9 @@ void BM_mesh_calc_uvs_cone(BMesh *bm,
   float inv_mat[4][4];
   int loop_index;
 
-  /* Transform the upvector like we did the cone itself, without location. */
+  /* Transform the up-vector like we did the cone itself, without location. */
   mul_mat3_m4_v3(mat, local_up);
-  /* Remove global scaling... */
+  /* Remove global scaling. */
   normalize_v3(local_up);
 
   invert_m4_m4(inv_mat, mat);

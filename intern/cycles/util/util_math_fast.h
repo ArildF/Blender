@@ -84,10 +84,10 @@ ccl_device_inline int fast_rint(float x)
 {
   /* used by sin/cos/tan range reduction. */
 #ifdef __KERNEL_SSE4__
-  /* Single roundps instruction on SSE4.1+ (for gcc/clang at least). */
+  /* Single `roundps` instruction on SSE4.1+ (for gcc/clang at least). */
   return float_to_int(rintf(x));
 #else
-  /* emulate rounding by adding/substracting 0.5. */
+  /* emulate rounding by adding/subtracting 0.5. */
   return float_to_int(x + copysignf(0.5f, x));
 #endif
 }
@@ -243,7 +243,7 @@ ccl_device float fast_sinpif(float x)
   const float P = 3.584135056f; /* P = 16-4*Q */
   return y * (Q + P * fabsf(y));
 
-  /* The original article used used inferior constants for Q and P and
+  /* The original article used inferior constants for Q and P and
    * so had max error 1.091e-3.
    *
    * The optimal value for Q was determined by exhaustive search, minimizing
@@ -362,7 +362,7 @@ ccl_device float fast_atan2f(float y, float x)
 ccl_device float fast_log2f(float x)
 {
   /* NOTE: clamp to avoid special cases and make result "safe" from large
-   * negative values/nans. */
+   * negative values/NAN's. */
   x = clamp(x, FLT_MIN, FLT_MAX);
   unsigned bits = __float_as_uint(x);
   int exponent = (int)(bits >> 23) - 127;
@@ -445,7 +445,10 @@ ccl_device_inline float fast_expf(float x)
   return fast_exp2f(x / M_LN2_F);
 }
 
-#ifndef __KERNEL_GPU__
+#if defined(__KERNEL_CPU__) && !defined(_MSC_VER)
+/* MSVC seems to have a code-gen bug here in at least SSE41/AVX, see
+ * T78047 and T78869 for details. Just disable for now, it only makes
+ * a small difference in denoising performance. */
 ccl_device float4 fast_exp2f4(float4 x)
 {
   const float4 one = make_float4(1.0f);
@@ -465,6 +468,11 @@ ccl_device float4 fast_exp2f4(float4 x)
 ccl_device_inline float4 fast_expf4(float4 x)
 {
   return fast_exp2f4(x / M_LN2_F);
+}
+#else
+ccl_device_inline float4 fast_expf4(float4 x)
+{
+  return make_float4(fast_expf(x.x), fast_expf(x.y), fast_expf(x.z), fast_expf(x.w));
 }
 #endif
 
@@ -605,7 +613,7 @@ ccl_device_inline float fast_erfcf(float x)
 
 ccl_device_inline float fast_ierff(float x)
 {
-  /* From: Approximating the erfinv function by Mike Giles. */
+  /* From: Approximating the `erfinv` function by Mike Giles. */
   /* To avoid trouble at the limit, clamp input to 1-eps. */
   float a = fabsf(x);
   if (a > 0.99999994f) {

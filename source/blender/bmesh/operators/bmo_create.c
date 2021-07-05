@@ -184,7 +184,7 @@ void bmo_contextual_create_exec(BMesh *bm, BMOperator *op)
   /* -------------------------------------------------------------------- */
   /* Dissolve Face */
   if (totf != 0) { /* should be (totf > 1)... see below */
-    /* note: allow this to run on single faces so running on a single face
+    /* NOTE: allow this to run on single faces so running on a single face
      * won't go on to create a face, treating them as random */
     BMOperator op_sub;
     BMO_op_initf(bm, &op_sub, op->flag, "dissolve_faces faces=%ff", ELE_NEW);
@@ -204,7 +204,7 @@ void bmo_contextual_create_exec(BMesh *bm, BMOperator *op)
   /* Fill EdgeLoop's - fills isolated loops, different from edgenet */
   if (tote > 2) {
     BMOperator op_sub;
-    /* note: in most cases 'edgenet_fill' will handle this case since in common cases
+    /* NOTE: in most cases 'edgenet_fill' will handle this case since in common cases
      * users fill in empty spaces, however its possible to have an edge selection around
      * existing geometry that makes 'edgenet_fill' fail. */
     BMO_op_initf(bm, &op_sub, op->flag, "edgeloop_fill edges=%fe", ELE_NEW);
@@ -228,7 +228,7 @@ void bmo_contextual_create_exec(BMesh *bm, BMOperator *op)
 
     /* tricky feature for making a line/edge from selection history...
      *
-     * Rather then do nothing, when 5+ verts are selected, check if they are in our history,
+     * Rather than do nothing, when 5+ verts are selected, check if they are in our history,
      * when this is so, we can make edges from them, but _not_ a face,
      * if it is the intention to make a face the user can just hit F again
      * since there will be edges next time around.
@@ -280,7 +280,7 @@ void bmo_contextual_create_exec(BMesh *bm, BMOperator *op)
    * last resort when all else fails.
    */
   if (totv > 2) {
-    /* TODO, some of these vertes may be connected by edges,
+    /* TODO: some of these vertices may be connected by edges,
      * this connectivity could be used rather than treating
      * them as a bunch of isolated verts. */
 

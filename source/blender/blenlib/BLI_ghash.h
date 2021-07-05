@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BLI_GHASH_H__
-#define __BLI_GHASH_H__
+#pragma once
 
 /** \file
  * \ingroup bli
@@ -28,8 +27,9 @@
  * This is also used to implement a 'set' (see #GSet below).
  */
 
-#include "BLI_sys_types.h" /* for bool */
 #include "BLI_compiler_attrs.h"
+#include "BLI_compiler_compat.h"
+#include "BLI_sys_types.h" /* for bool */
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,6 +74,7 @@ enum {
 #endif
 };
 
+/* -------------------------------------------------------------------- */
 /** \name GHash API
  *
  * Defined in ``BLI_ghash.c``
@@ -86,7 +87,7 @@ GHash *BLI_ghash_new_ex(GHashHashFP hashfp,
 GHash *BLI_ghash_new(GHashHashFP hashfp,
                      GHashCmpFP cmpfp,
                      const char *info) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT;
-GHash *BLI_ghash_copy(GHash *gh,
+GHash *BLI_ghash_copy(const GHash *gh,
                       GHashKeyCopyFP keycopyfp,
                       GHashValCopyFP valcopyfp) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT;
 void BLI_ghash_free(GHash *gh, GHashKeyFreeFP keyfreefp, GHashValFreeFP valfreefp);
@@ -95,8 +96,8 @@ void BLI_ghash_insert(GHash *gh, void *key, void *val);
 bool BLI_ghash_reinsert(
     GHash *gh, void *key, void *val, GHashKeyFreeFP keyfreefp, GHashValFreeFP valfreefp);
 void *BLI_ghash_replace_key(GHash *gh, void *key);
-void *BLI_ghash_lookup(GHash *gh, const void *key) ATTR_WARN_UNUSED_RESULT;
-void *BLI_ghash_lookup_default(GHash *gh,
+void *BLI_ghash_lookup(const GHash *gh, const void *key) ATTR_WARN_UNUSED_RESULT;
+void *BLI_ghash_lookup_default(const GHash *gh,
                                const void *key,
                                void *val_default) ATTR_WARN_UNUSED_RESULT;
 void **BLI_ghash_lookup_p(GHash *gh, const void *key) ATTR_WARN_UNUSED_RESULT;
@@ -115,15 +116,16 @@ void BLI_ghash_clear_ex(GHash *gh,
 void *BLI_ghash_popkey(GHash *gh,
                        const void *key,
                        GHashKeyFreeFP keyfreefp) ATTR_WARN_UNUSED_RESULT;
-bool BLI_ghash_haskey(GHash *gh, const void *key) ATTR_WARN_UNUSED_RESULT;
+bool BLI_ghash_haskey(const GHash *gh, const void *key) ATTR_WARN_UNUSED_RESULT;
 bool BLI_ghash_pop(GHash *gh, GHashIterState *state, void **r_key, void **r_val)
     ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
-unsigned int BLI_ghash_len(GHash *gh) ATTR_WARN_UNUSED_RESULT;
+unsigned int BLI_ghash_len(const GHash *gh) ATTR_WARN_UNUSED_RESULT;
 void BLI_ghash_flag_set(GHash *gh, unsigned int flag);
 void BLI_ghash_flag_clear(GHash *gh, unsigned int flag);
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name GHash Iterator
  * \{ */
 
@@ -136,7 +138,7 @@ void BLI_ghashIterator_step(GHashIterator *ghi);
 BLI_INLINE void *BLI_ghashIterator_getKey(GHashIterator *ghi) ATTR_WARN_UNUSED_RESULT;
 BLI_INLINE void *BLI_ghashIterator_getValue(GHashIterator *ghi) ATTR_WARN_UNUSED_RESULT;
 BLI_INLINE void **BLI_ghashIterator_getValue_p(GHashIterator *ghi) ATTR_WARN_UNUSED_RESULT;
-BLI_INLINE bool BLI_ghashIterator_done(GHashIterator *ghi) ATTR_WARN_UNUSED_RESULT;
+BLI_INLINE bool BLI_ghashIterator_done(const GHashIterator *ghi) ATTR_WARN_UNUSED_RESULT;
 
 struct _gh_Entry {
   void *next, *key, *val;
@@ -153,7 +155,7 @@ BLI_INLINE void **BLI_ghashIterator_getValue_p(GHashIterator *ghi)
 {
   return &((struct _gh_Entry *)ghi->curEntry)->val;
 }
-BLI_INLINE bool BLI_ghashIterator_done(GHashIterator *ghi)
+BLI_INLINE bool BLI_ghashIterator_done(const GHashIterator *ghi)
 {
   return !ghi->curEntry;
 }
@@ -175,6 +177,7 @@ BLI_INLINE bool BLI_ghashIterator_done(GHashIterator *ghi)
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name GSet API
  * A 'set' implementation (unordered collection of unique elements).
  *
@@ -199,17 +202,17 @@ GSet *BLI_gset_new_ex(GSetHashFP hashfp,
 GSet *BLI_gset_new(GSetHashFP hashfp,
                    GSetCmpFP cmpfp,
                    const char *info) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT;
-GSet *BLI_gset_copy(GSet *gs, GSetKeyCopyFP keycopyfp) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT;
-unsigned int BLI_gset_len(GSet *gs) ATTR_WARN_UNUSED_RESULT;
+GSet *BLI_gset_copy(const GSet *gs, GSetKeyCopyFP keycopyfp) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT;
+unsigned int BLI_gset_len(const GSet *gs) ATTR_WARN_UNUSED_RESULT;
 void BLI_gset_flag_set(GSet *gs, unsigned int flag);
 void BLI_gset_flag_clear(GSet *gs, unsigned int flag);
 void BLI_gset_free(GSet *gs, GSetKeyFreeFP keyfreefp);
-void BLI_gset_insert(GSet *gh, void *key);
+void BLI_gset_insert(GSet *gs, void *key);
 bool BLI_gset_add(GSet *gs, void *key);
 bool BLI_gset_ensure_p_ex(GSet *gs, const void *key, void ***r_key);
 bool BLI_gset_reinsert(GSet *gh, void *key, GSetKeyFreeFP keyfreefp);
 void *BLI_gset_replace_key(GSet *gs, void *key);
-bool BLI_gset_haskey(GSet *gs, const void *key) ATTR_WARN_UNUSED_RESULT;
+bool BLI_gset_haskey(const GSet *gs, const void *key) ATTR_WARN_UNUSED_RESULT;
 bool BLI_gset_pop(GSet *gs, GSetIterState *state, void **r_key) ATTR_WARN_UNUSED_RESULT
     ATTR_NONNULL();
 bool BLI_gset_remove(GSet *gs, const void *key, GSetKeyFreeFP keyfreefp);
@@ -217,11 +220,12 @@ void BLI_gset_clear_ex(GSet *gs, GSetKeyFreeFP keyfreefp, const unsigned int nen
 void BLI_gset_clear(GSet *gs, GSetKeyFreeFP keyfreefp);
 
 /* When set's are used for key & value. */
-void *BLI_gset_lookup(GSet *gh, const void *key) ATTR_WARN_UNUSED_RESULT;
+void *BLI_gset_lookup(const GSet *gs, const void *key) ATTR_WARN_UNUSED_RESULT;
 void *BLI_gset_pop_key(GSet *gs, const void *key) ATTR_WARN_UNUSED_RESULT;
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name GSet Iterator
  * \{ */
 
@@ -230,7 +234,7 @@ void *BLI_gset_pop_key(GSet *gs, const void *key) ATTR_WARN_UNUSED_RESULT;
 /* so we can cast but compiler sees as different */
 typedef struct GSetIterator {
   GHashIterator _ghi
-#ifdef __GNUC__
+#if defined(__GNUC__) && !defined(__clang__)
       __attribute__((deprecated))
 #endif
       ;
@@ -256,9 +260,9 @@ BLI_INLINE void BLI_gsetIterator_step(GSetIterator *gsi)
 {
   BLI_ghashIterator_step((GHashIterator *)gsi);
 }
-BLI_INLINE bool BLI_gsetIterator_done(GSetIterator *gsi)
+BLI_INLINE bool BLI_gsetIterator_done(const GSetIterator *gsi)
 {
-  return BLI_ghashIterator_done((GHashIterator *)gsi);
+  return BLI_ghashIterator_done((const GHashIterator *)gsi);
 }
 
 #define GSET_ITER(gs_iter_, gset_) \
@@ -272,13 +276,14 @@ BLI_INLINE bool BLI_gsetIterator_done(GSetIterator *gsi)
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name GHash/GSet Debugging API's
  * \{ */
 
 /* For testing, debugging only */
 #ifdef GHASH_INTERNAL_API
-int BLI_ghash_buckets_len(GHash *gh);
-int BLI_gset_buckets_len(GSet *gs);
+int BLI_ghash_buckets_len(const GHash *gh);
+int BLI_gset_buckets_len(const GSet *gs);
 
 double BLI_ghash_calc_quality_ex(GHash *gh,
                                  double *r_load,
@@ -297,6 +302,7 @@ double BLI_gset_calc_quality(GSet *gs);
 #endif /* GHASH_INTERNAL_API */
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name GHash/GSet Macros
  * \{ */
 
@@ -324,6 +330,7 @@ double BLI_gset_calc_quality(GSet *gs);
 
 /** \} */
 
+/* -------------------------------------------------------------------- */
 /** \name GHash/GSet Utils
  *
  * Defined in ``BLI_ghash_utils.c``
@@ -342,8 +349,8 @@ bool BLI_ghashutil_ptrcmp(const void *a, const void *b);
 unsigned int BLI_ghashutil_strhash_n(const char *key, size_t n);
 #define BLI_ghashutil_strhash(key) \
   (CHECK_TYPE_ANY(key, char *, const char *, const char *const), BLI_ghashutil_strhash_p(key))
-unsigned int BLI_ghashutil_strhash_p(const void *key);
-unsigned int BLI_ghashutil_strhash_p_murmur(const void *key);
+unsigned int BLI_ghashutil_strhash_p(const void *ptr);
+unsigned int BLI_ghashutil_strhash_p_murmur(const void *ptr);
 bool BLI_ghashutil_strcmp(const void *a, const void *b);
 
 #define BLI_ghashutil_inthash(key) \
@@ -415,5 +422,3 @@ GSet *BLI_gset_int_new(const char *info) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT;
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BLI_GHASH_H__ */

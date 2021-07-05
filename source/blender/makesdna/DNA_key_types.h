@@ -16,8 +16,7 @@
  * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
  * All rights reserved.
  */
-#ifndef __DNA_KEY_TYPES_H__
-#define __DNA_KEY_TYPES_H__
+#pragma once
 
 /** \file
  * \ingroup DNA
@@ -27,9 +26,13 @@
  * aren't intended to be shared between multiple data blocks as with other ID types.
  */
 
+#include "DNA_ID.h"
 #include "DNA_defs.h"
 #include "DNA_listBase.h"
-#include "DNA_ID.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct AnimData;
 struct Ipo;
@@ -43,10 +46,10 @@ typedef struct KeyBlock {
    * so this value increments by 0.1f per frame.
    */
   float pos;
-  /** influence (typically [0 - 1] but can be more), (Key->type == KEY_RELATIVE) only.*/
+  /** influence (typically [0 - 1] but can be more), `(Key->type == KEY_RELATIVE)` only. */
   float curval;
 
-  /** interpolation type (Key->type == KEY_NORMAL) only. */
+  /** Interpolation type `(Key->type == KEY_NORMAL)` only. */
   short type;
   char _pad1[2];
 
@@ -59,7 +62,7 @@ typedef struct KeyBlock {
   /** for meshes only, match the unique number with the customdata layer */
   int uid;
 
-  /** array of shape key values, size is (Key->elemsize * KeyBlock->totelem) */
+  /** array of shape key values, size is `(Key->elemsize * KeyBlock->totelem)` */
   void *data;
   /** MAX_NAME (unique name, user assigned) */
   char name[64];
@@ -78,7 +81,7 @@ typedef struct Key {
   struct AnimData *adt;
 
   /**
-   * commonly called 'Basis', (Key->type == KEY_RELATIVE) only.
+   * commonly called 'Basis', `(Key->type == KEY_RELATIVE)` only.
    * Looks like this is  _always_ 'key->block.first',
    * perhaps later on it could be defined as some other KeyBlock - campbell
    */
@@ -108,12 +111,12 @@ typedef struct Key {
   char _pad2;
 
   /** Only used when (Key->type == KEY_NORMAL), this value is used as a time slider,
-   * rather then using the scenes time, this value can be animated to give greater control */
+   * rather than using the scene's time, this value can be animated to give greater control */
   float ctime;
 
   /**
    * Can never be 0, this is used for detecting old data.
-   * current free uid for keyblocks
+   * current free UID for key-blocks.
    */
   int uidgen;
 } Key;
@@ -160,4 +163,6 @@ enum {
 #define KEYELEM_ELEM_LEN_BEZTRIPLE 4
 #define KEYELEM_FLOAT_LEN_BEZTRIPLE (KEYELEM_ELEM_LEN_BEZTRIPLE * KEYELEM_ELEM_SIZE_CURVE)
 
-#endif /* __DNA_KEY_TYPES_H__  */
+#ifdef __cplusplus
+}
+#endif

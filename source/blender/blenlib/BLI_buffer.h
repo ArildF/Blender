@@ -14,12 +14,15 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BLI_BUFFER_H__
-#define __BLI_BUFFER_H__
+#pragma once
 
 /** \file
  * \ingroup bli
  */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct BLI_Buffer {
   void *data;
@@ -39,7 +42,7 @@ enum {
   BLI_Buffer name_ = { \
       (name_##_static_), sizeof(type_), 0, static_count_, BLI_BUFFER_USE_STATIC | (flag_)}
 
-/* never use static*/
+/* Never use static. */
 #define BLI_buffer_declare(type_, name_, flag_) \
   bool name_##user; /* warn for free only */ \
   BLI_Buffer name_ = {NULL, sizeof(type_), 0, 0, (flag_)}
@@ -74,6 +77,16 @@ void BLI_buffer_resize(BLI_Buffer *buffer, const size_t new_count);
 /* Ensure size, throwing away old data, respecting BLI_BUFFER_USE_CALLOC */
 void BLI_buffer_reinit(BLI_Buffer *buffer, const size_t new_count);
 
+/* Append an array of elements. */
+void _bli_buffer_append_array(BLI_Buffer *buffer, void *data, size_t count);
+#define BLI_buffer_append_array(buffer_, type_, data_, count_) \
+  { \
+    type_ *__tmp = (data_); \
+    BLI_assert(sizeof(type_) == (buffer_)->elem_size); \
+    _bli_buffer_append_array(buffer_, __tmp, count_); \
+  } \
+  (void)0
+
 /* Does not free the buffer structure itself */
 void _bli_buffer_free(BLI_Buffer *buffer);
 #define BLI_buffer_free(name_) \
@@ -93,4 +106,6 @@ void _bli_buffer_free(BLI_Buffer *buffer);
 
 #define BLI_buffer_field_free(name_) _bli_buffer_free(name_)
 
-#endif /* __BLI_BUFFER_H__ */
+#ifdef __cplusplus
+}
+#endif

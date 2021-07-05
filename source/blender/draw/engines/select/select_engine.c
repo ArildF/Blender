@@ -32,8 +32,8 @@
 #include "draw_cache_impl.h"
 #include "draw_manager.h"
 
-#include "select_private.h"
 #include "select_engine.h"
+#include "select_private.h"
 
 #define SELECT_ENGINE "SELECT_ENGINE"
 
@@ -65,7 +65,7 @@ static void select_engine_framebuffer_setup(void)
   size[1] = GPU_texture_height(dtxl->depth);
 
   if (e_data.framebuffer_select_id == NULL) {
-    e_data.framebuffer_select_id = GPU_framebuffer_create();
+    e_data.framebuffer_select_id = GPU_framebuffer_create("framebuffer_select_id");
   }
 
   if ((e_data.texture_u32 != NULL) && ((GPU_texture_width(e_data.texture_u32) != size[0]) ||
@@ -79,7 +79,8 @@ static void select_engine_framebuffer_setup(void)
   GPU_framebuffer_texture_attach(e_data.framebuffer_select_id, dtxl->depth, 0, 0);
 
   if (e_data.texture_u32 == NULL) {
-    e_data.texture_u32 = GPU_texture_create_2d(size[0], size[1], GPU_R32UI, NULL, NULL);
+    e_data.texture_u32 = GPU_texture_create_2d(
+        "select_buf_ids", size[0], size[1], 1, GPU_R32UI, NULL);
     GPU_framebuffer_texture_attach(e_data.framebuffer_select_id, e_data.texture_u32, 0, 0);
 
     GPU_framebuffer_check_valid(e_data.framebuffer_select_id, NULL);
@@ -136,7 +137,7 @@ static void select_engine_init(void *vedata)
     DRW_view_viewmat_get(view_default, viewmat, false);
     DRW_view_winmat_get(view_default, winmat, false);
     projmat_from_subregion(winmat,
-                           (int[2]){draw_ctx->ar->winx, draw_ctx->ar->winy},
+                           (int[2]){draw_ctx->region->winx, draw_ctx->region->winy},
                            e_data.context.last_rect.xmin,
                            e_data.context.last_rect.xmax,
                            e_data.context.last_rect.ymin,
@@ -307,9 +308,6 @@ static void select_draw_scene(void *vedata)
     return;
   }
 
-  /* dithering and AA break color coding, so disable */
-  glDisable(GL_DITHER);
-
   DRW_view_set_active(stl->g_data->view_faces);
 
   if (!DRW_pass_is_empty(psl->depth_only_pass)) {
@@ -368,21 +366,21 @@ DrawEngineType draw_engine_select_type = {
     &select_cache_init,
     &select_cache_populate,
     NULL,
-    NULL,
     &select_draw_scene,
+    NULL,
     NULL,
     NULL,
     NULL,
 };
 
-/* Note: currently unused, we may want to register so we can see this when debugging the view. */
+/* NOTE: currently unused, we may want to register so we can see this when debugging the view. */
 
 RenderEngineType DRW_engine_viewport_select_type = {
     NULL,
     NULL,
     SELECT_ENGINE,
     N_("Select ID"),
-    RE_INTERNAL,
+    RE_INTERNAL | RE_USE_STEREO_VIEWPORT | RE_USE_GPU_CONTEXT,
     NULL,
     NULL,
     NULL,

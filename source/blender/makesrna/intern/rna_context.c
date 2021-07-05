@@ -23,8 +23,8 @@
 #include "DNA_ID.h"
 #include "DNA_userdef_types.h"
 
-#include "BLI_utildefines.h"
 #include "BKE_context.h"
+#include "BLI_utildefines.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
@@ -36,12 +36,12 @@ const EnumPropertyItem rna_enum_context_mode_items[] = {
     {CTX_MODE_EDIT_MESH, "EDIT_MESH", 0, "Mesh Edit", ""},
     {CTX_MODE_EDIT_CURVE, "EDIT_CURVE", 0, "Curve Edit", ""},
     {CTX_MODE_EDIT_SURFACE, "EDIT_SURFACE", 0, "Surface Edit", ""},
-    {CTX_MODE_EDIT_TEXT, "EDIT_TEXT", 0, "Edit Edit", ""},
+    {CTX_MODE_EDIT_TEXT, "EDIT_TEXT", 0, "Text Edit", ""},
     /* PARSKEL reuse will give issues */
     {CTX_MODE_EDIT_ARMATURE, "EDIT_ARMATURE", 0, "Armature Edit", ""},
     {CTX_MODE_EDIT_METABALL, "EDIT_METABALL", 0, "Metaball Edit", ""},
     {CTX_MODE_EDIT_LATTICE, "EDIT_LATTICE", 0, "Lattice Edit", ""},
-    {CTX_MODE_POSE, "POSE", 0, "Pose ", ""},
+    {CTX_MODE_POSE, "POSE", 0, "Pose", ""},
     {CTX_MODE_SCULPT, "SCULPT", 0, "Sculpt", ""},
     {CTX_MODE_PAINT_WEIGHT, "PAINT_WEIGHT", 0, "Weight Paint", ""},
     {CTX_MODE_PAINT_VERTEX, "PAINT_VERTEX", 0, "Vertex Paint", ""},
@@ -52,6 +52,7 @@ const EnumPropertyItem rna_enum_context_mode_items[] = {
     {CTX_MODE_EDIT_GPENCIL, "EDIT_GPENCIL", 0, "Grease Pencil Edit", ""},
     {CTX_MODE_SCULPT_GPENCIL, "SCULPT_GPENCIL", 0, "Grease Pencil Sculpt", ""},
     {CTX_MODE_WEIGHT_GPENCIL, "WEIGHT_GPENCIL", 0, "Grease Pencil Weight Paint", ""},
+    {CTX_MODE_VERTEX_GPENCIL, "VERTEX_GPENCIL", 0, "Grease Pencil Vertex Paint", ""},
     {0, NULL, 0, NULL, NULL},
 };
 

@@ -21,35 +21,36 @@
  * \ingroup edtransform
  */
 
-#include "DNA_particle_types.h"
 #include "DNA_modifier_types.h"
+#include "DNA_particle_types.h"
 
 #include "MEM_guardedalloc.h"
 
 #include "BLI_math.h"
 
 #include "BKE_context.h"
-#include "BKE_report.h"
 #include "BKE_particle.h"
 #include "BKE_pointcache.h"
 
 #include "ED_particle.h"
 
 #include "transform.h"
+#include "transform_snap.h"
+
+/* Own include. */
 #include "transform_convert.h"
 
 /* -------------------------------------------------------------------- */
 /** \name Particle Edit Transform Creation
- *
  * \{ */
 
-void createTransParticleVerts(bContext *C, TransInfo *t)
+void createTransParticleVerts(TransInfo *t)
 {
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
 
     TransData *td = NULL;
     TransDataExtension *tx;
-    Object *ob = CTX_data_active_object(C);
+    Object *ob = OBACT(t->view_layer);
     ParticleEditSettings *pset = PE_settings(t->scene);
     PTCacheEdit *edit = PE_get_current(t->depsgraph, t->scene, ob);
     ParticleSystem *psys = NULL;
@@ -90,7 +91,7 @@ void createTransParticleVerts(bContext *C, TransInfo *t)
       }
     }
 
-    /* note: in prop mode we need at least 1 selected */
+    /* NOTE: in prop mode we need at least 1 selected. */
     if (hasselected == 0) {
       return;
     }
@@ -181,7 +182,7 @@ void createTransParticleVerts(bContext *C, TransInfo *t)
         tail++;
       }
       if (is_prop_edit && head != tail) {
-        calc_distanceCurveVerts(head, tail - 1);
+        calc_distanceCurveVerts(head, tail - 1, false);
       }
     }
   }
@@ -191,10 +192,9 @@ void createTransParticleVerts(bContext *C, TransInfo *t)
 
 /* -------------------------------------------------------------------- */
 /** \name Node Transform Creation
- *
  * \{ */
 
-void flushTransParticles(TransInfo *t)
+static void flushTransParticles(TransInfo *t)
 {
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     Scene *scene = t->scene;
@@ -243,6 +243,20 @@ void flushTransParticles(TransInfo *t)
     BKE_particle_batch_cache_dirty_tag(psys, BKE_PARTICLE_BATCH_DIRTY_ALL);
     DEG_id_tag_update(&ob->id, ID_RECALC_PSYS_REDO);
   }
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Recalc Transform Particles Data
+ * \{ */
+
+void recalcData_particles(TransInfo *t)
+{
+  if (t->state != TRANS_CANCEL) {
+    applyProject(t);
+  }
+  flushTransParticles(t);
 }
 
 /** \} */

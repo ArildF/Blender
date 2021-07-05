@@ -59,7 +59,8 @@ int getname_anim_fcurve(char *name, ID *id, FCurve *fcu)
   if (name == NULL) {
     return icon;
   }
-  else if (ELEM(NULL, id, fcu, fcu->rna_path)) {
+
+  if (ELEM(NULL, id, fcu, fcu->rna_path)) {
     if (fcu == NULL) {
       strcpy(name, TIP_("<invalid>"));
     }
@@ -111,7 +112,8 @@ int getname_anim_fcurve(char *name, ID *id, FCurve *fcu)
         char *constName = BLI_str_quoted_substrN(fcu->rna_path, "constraints[");
 
         /* assemble the string to display in the UI... */
-        structname = BLI_sprintfN("%s : %s", pchanName, constName);
+        structname = BLI_sprintfN(
+            "%s : %s", pchanName ? pchanName : "", constName ? constName : "");
         free_structname = 1;
 
         /* free the temp names */
@@ -177,8 +179,7 @@ int getname_anim_fcurve(char *name, ID *id, FCurve *fcu)
       icon = RNA_struct_ui_icon(ptr.type);
 
       /* valid path - remove the invalid tag since we now know how to use it saving
-       * users manual effort to reenable using "Revive Disabled FCurves" [#29629]
-       */
+       * users manual effort to re-enable using "Revive Disabled FCurves" T29629. */
       fcu->flag &= ~FCURVE_DISABLED;
     }
     else {
@@ -204,7 +205,7 @@ int getname_anim_fcurve(char *name, ID *id, FCurve *fcu)
 #define HSV_BANDWIDTH 0.3f
 
 /* used to determine the color of F-Curves with FCURVE_COLOR_AUTO_RAINBOW set */
-// void fcurve_rainbow(unsigned int cur, unsigned int tot, float *out)
+// void fcurve_rainbow(uint cur, uint tot, float *out)
 void getcolor_fcurve_rainbow(int cur, int tot, float out[3])
 {
   float hsv[3], fac;

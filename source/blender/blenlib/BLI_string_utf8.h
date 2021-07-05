@@ -14,25 +14,22 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BLI_STRING_UTF8_H__
-#define __BLI_STRING_UTF8_H__
+#pragma once
 
 /** \file
  * \ingroup bli
  */
 
+#include "BLI_compiler_attrs.h"
+#include "BLI_sys_types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "BLI_compiler_attrs.h"
-#include "BLI_sys_types.h"
-
 char *BLI_strncpy_utf8(char *__restrict dst, const char *__restrict src, size_t maxncpy)
     ATTR_NONNULL();
 size_t BLI_strncpy_utf8_rlen(char *__restrict dst, const char *__restrict src, size_t maxncpy)
-    ATTR_NONNULL();
-char *BLI_strncat_utf8(char *__restrict dst, const char *__restrict src, size_t maxncpy)
     ATTR_NONNULL();
 ptrdiff_t BLI_utf8_invalid_byte(const char *str, size_t length) ATTR_NONNULL();
 int BLI_utf8_invalid_strip(char *str, size_t length) ATTR_NONNULL();
@@ -70,10 +67,10 @@ size_t BLI_strnlen_utf8_ex(const char *strc, const size_t maxlen, size_t *r_len_
 size_t BLI_strnlen_utf8(const char *strc, const size_t maxlen) ATTR_NONNULL();
 size_t BLI_strncpy_wchar_as_utf8(char *__restrict dst,
                                  const wchar_t *__restrict src,
-                                 const size_t maxcpy) ATTR_NONNULL();
+                                 const size_t maxncpy) ATTR_NONNULL();
 size_t BLI_strncpy_wchar_from_utf8(wchar_t *__restrict dst,
                                    const char *__restrict src,
-                                   const size_t maxcpy) ATTR_NONNULL();
+                                   const size_t maxncpy) ATTR_NONNULL();
 
 /* count columns that character/string occupies, based on wcwidth.c */
 int BLI_wcwidth(char32_t ucs);
@@ -106,6 +103,7 @@ int BLI_str_utf8_offset_from_column(const char *str, int column);
 #define BLI_UTF8_WIDTH_MAX 2 /* columns */
 #define BLI_UTF8_ERR ((unsigned int)-1)
 
+/* -------------------------------------------------------------------- */
 /** \name String Copy/Format Macros
  * Avoid repeating destination with `sizeof(..)`.
  * \note `ARRAY_SIZE` allows pointers on some platforms.
@@ -116,6 +114,4 @@ int BLI_str_utf8_offset_from_column(const char *str, int column);
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

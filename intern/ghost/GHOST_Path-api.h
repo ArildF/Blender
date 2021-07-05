@@ -21,8 +21,7 @@
  * \ingroup GHOST
  */
 
-#ifndef __GHOST_PATH_API_H__
-#define __GHOST_PATH_API_H__
+#pragma once
 
 #include "GHOST_Types.h"
 
@@ -49,19 +48,25 @@ extern GHOST_TSuccess GHOST_DisposeSystemPaths(void);
  * "unpack and run" path, then look for properly installed path, including versioning.
  * \return Unsigned char string pointing to system dir (eg /usr/share/blender/).
  */
-extern const GHOST_TUns8 *GHOST_getSystemDir(int version, const char *versionstr);
+extern const char *GHOST_getSystemDir(int version, const char *versionstr);
 
 /**
  * Determine the base dir in which user configuration is stored, including versioning.
  * \return Unsigned char string pointing to user dir (eg ~).
  */
-extern const GHOST_TUns8 *GHOST_getUserDir(int version, const char *versionstr);
+extern const char *GHOST_getUserDir(int version, const char *versionstr);
+
+/**
+ * Determine a special ("well known") and easy to reach user directory.
+ * \return Unsigned char string pointing to user dir (eg `~/Documents/`).
+ */
+extern const char *GHOST_getUserSpecialDir(GHOST_TUserSpecialDirTypes type);
 
 /**
  * Determine the dir in which the binary file is found.
  * \return Unsigned char string pointing to binary dir (eg ~/usr/local/bin/).
  */
-extern const GHOST_TUns8 *GHOST_getBinaryDir(void);
+extern const char *GHOST_getBinaryDir(void);
 
 /**
  * Add the file to the operating system most recently used files
@@ -70,6 +75,4 @@ extern void GHOST_addToSystemRecentFiles(const char *filename);
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

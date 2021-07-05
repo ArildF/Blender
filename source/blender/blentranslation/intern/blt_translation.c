@@ -47,7 +47,7 @@ bool BLT_is_default_context(const char *msgctxt)
   /* We use the "short" test, a more complete one could be:
    * return (!msgctxt || !msgctxt[0] || STREQ(msgctxt, BLT_I18NCONTEXT_DEFAULT_BPYRNA))
    */
-  /* Note: trying without the void string check for now, it *should* not be necessary... */
+  /* NOTE: trying without the void string check for now, it *should* not be necessary... */
   return (!msgctxt || msgctxt[0] == BLT_I18NCONTEXT_DEFAULT_BPYRNA[0]);
 }
 
@@ -81,7 +81,7 @@ const char *BLT_pgettext(const char *msgctxt, const char *msgid)
 bool BLT_translate(void)
 {
 #ifdef WITH_INTERNATIONAL
-  return BLI_thread_is_main() && (U.transopts & USER_DOTRANSLATE);
+  return BLI_thread_is_main();
 #else
   return false;
 #endif
@@ -120,9 +120,9 @@ const char *BLT_translate_do(const char *msgctxt, const char *msgid)
   if (BLT_translate()) {
     return BLT_pgettext(msgctxt, msgid);
   }
-  else {
-    return msgid;
-  }
+
+  return msgid;
+
 #else
   (void)msgctxt;
   return msgid;
@@ -135,9 +135,9 @@ const char *BLT_translate_do_iface(const char *msgctxt, const char *msgid)
   if (BLT_translate_iface()) {
     return BLT_pgettext(msgctxt, msgid);
   }
-  else {
-    return msgid;
-  }
+
+  return msgid;
+
 #else
   (void)msgctxt;
   return msgid;
@@ -150,9 +150,9 @@ const char *BLT_translate_do_tooltip(const char *msgctxt, const char *msgid)
   if (BLT_translate_tooltips()) {
     return BLT_pgettext(msgctxt, msgid);
   }
-  else {
-    return msgid;
-  }
+
+  return msgid;
+
 #else
   (void)msgctxt;
   return msgid;
@@ -165,9 +165,9 @@ const char *BLT_translate_do_new_dataname(const char *msgctxt, const char *msgid
   if (BLT_translate_new_dataname()) {
     return BLT_pgettext(msgctxt, msgid);
   }
-  else {
-    return msgid;
-  }
+
+  return msgid;
+
 #else
   (void)msgctxt;
   return msgid;

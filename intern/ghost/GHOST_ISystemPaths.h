@@ -21,8 +21,7 @@
  * \ingroup GHOST
  */
 
-#ifndef __GHOST_ISYSTEMPATHS_H__
-#define __GHOST_ISYSTEMPATHS_H__
+#pragma once
 
 #include "GHOST_Types.h"
 
@@ -69,20 +68,26 @@ class GHOST_ISystemPaths {
    * "unpack and run" path, then look for properly installed path, including versioning.
    * \return Unsigned char string pointing to system dir (eg /usr/share/blender/).
    */
-  virtual const GHOST_TUns8 *getSystemDir(int version, const char *versionstr) const = 0;
+  virtual const char *getSystemDir(int version, const char *versionstr) const = 0;
 
   /**
    * Determine the base dir in which user configuration is stored, including versioning.
    * If needed, it will create the base directory.
    * \return Unsigned char string pointing to user dir (eg ~/.blender/).
    */
-  virtual const GHOST_TUns8 *getUserDir(int version, const char *versionstr) const = 0;
+  virtual const char *getUserDir(int version, const char *versionstr) const = 0;
+
+  /**
+   * Determine a special ("well known") and easy to reach user directory.
+   * \return Unsigned char string pointing to user dir (eg `~/Documents/`).
+   */
+  virtual const char *getUserSpecialDir(GHOST_TUserSpecialDirTypes type) const = 0;
 
   /**
    * Determine the directory of the current binary
    * \return Unsigned char string pointing to the binary dir
    */
-  virtual const GHOST_TUns8 *getBinaryDir() const = 0;
+  virtual const char *getBinaryDir() const = 0;
 
   /**
    * Add the file to the operating system most recently used files
@@ -90,12 +95,10 @@ class GHOST_ISystemPaths {
   virtual void addToSystemRecentFiles(const char *filename) const = 0;
 
  private:
-  /** The one and only system paths*/
+  /** The one and only system paths. */
   static GHOST_ISystemPaths *m_systemPaths;
 
 #ifdef WITH_CXX_GUARDEDALLOC
   MEM_CXX_CLASS_ALLOC_FUNCS("GHOST:GHOST_ISystemPaths")
 #endif
 };
-
-#endif

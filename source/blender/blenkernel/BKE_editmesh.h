@@ -14,8 +14,7 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef __BKE_EDITMESH_H__
-#define __BKE_EDITMESH_H__
+#pragma once
 
 /** \file
  * \ingroup bke
@@ -28,13 +27,17 @@
 #include "BKE_customdata.h"
 #include "bmesh.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct BMLoop;
 struct BMesh;
+struct BMPartialUpdate;
+struct BMeshCalcTessellation_Params;
 struct BoundBox;
 struct Depsgraph;
-struct EditMeshData;
 struct Mesh;
-struct MeshStatVis;
 struct Object;
 struct Scene;
 
@@ -42,7 +45,7 @@ struct Scene;
  * This structure is used for mesh edit-mode.
  *
  * through this, you get access to both the edit #BMesh,
- * it's tessellation, and various stuff that doesn't belong in the BMesh
+ * its tessellation, and various stuff that doesn't belong in the BMesh
  * struct itself.
  *
  * the entire derivedmesh and modifier system works with this structure,
@@ -50,12 +53,8 @@ struct Scene;
 typedef struct BMEditMesh {
   struct BMesh *bm;
 
-  /*this is for undoing failed operations*/
-  struct BMEditMesh *emcopy;
-  int emcopyusers;
-
   /* we store tessellations as triplets of three loops,
-   * which each define a triangle.*/
+   * which each define a triangle. */
   struct BMLoop *(*looptris)[3];
   int tottri;
 
@@ -64,14 +63,14 @@ typedef struct BMEditMesh {
   /** Cached cage bounding box for selection. */
   struct BoundBox *bb_cage;
 
-  /*derivedmesh stuff*/
+  /** Evaluated mesh data-mask. */
   CustomData_MeshMasks lastDataMask;
 
-  /*selection mode*/
+  /* Selection mode. */
   short selectmode;
   short mat_nr;
 
-  /*temp variables for x-mirror editing*/
+  /* Temp variables for x-mirror editing. */
   int mirror_cdlayer; /* -1 is invalid */
 
   /**
@@ -83,7 +82,18 @@ typedef struct BMEditMesh {
 } BMEditMesh;
 
 /* editmesh.c */
+void BKE_editmesh_looptri_calc_ex(BMEditMesh *em,
+                                  const struct BMeshCalcTessellation_Params *params);
 void BKE_editmesh_looptri_calc(BMEditMesh *em);
+void BKE_editmesh_looptri_calc_with_partial_ex(BMEditMesh *em,
+                                               struct BMPartialUpdate *bmpinfo,
+                                               const struct BMeshCalcTessellation_Params *params);
+void BKE_editmesh_looptri_calc_with_partial(BMEditMesh *em, struct BMPartialUpdate *bmpinfo);
+void BKE_editmesh_looptri_and_normals_calc_with_partial(BMEditMesh *em,
+                                                        struct BMPartialUpdate *bmpinfo);
+
+void BKE_editmesh_looptri_and_normals_calc(BMEditMesh *em);
+
 BMEditMesh *BKE_editmesh_create(BMesh *bm, const bool do_tessellate);
 BMEditMesh *BKE_editmesh_copy(BMEditMesh *em);
 BMEditMesh *BKE_editmesh_from_object(struct Object *ob);
@@ -96,8 +106,17 @@ float (*BKE_editmesh_vert_coords_alloc(struct Depsgraph *depsgraph,
                                        struct Object *ob,
                                        int *r_vert_len))[3];
 float (*BKE_editmesh_vert_coords_alloc_orco(BMEditMesh *em, int *r_vert_len))[3];
+const float (*BKE_editmesh_vert_coords_when_deformed(struct Depsgraph *depsgraph,
+                                                     struct BMEditMesh *em,
+                                                     struct Scene *scene,
+                                                     struct Object *obedit,
+                                                     int *r_vert_len,
+                                                     bool *r_is_alloc))[3];
+
 void BKE_editmesh_lnorspace_update(BMEditMesh *em, struct Mesh *me);
 void BKE_editmesh_ensure_autosmooth(BMEditMesh *em, struct Mesh *me);
 struct BoundBox *BKE_editmesh_cage_boundbox_get(BMEditMesh *em);
 
-#endif /* __BKE_EDITMESH_H__ */
+#ifdef __cplusplus
+}
+#endif

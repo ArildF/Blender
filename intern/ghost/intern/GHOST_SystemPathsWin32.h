@@ -21,8 +21,7 @@
  * \ingroup GHOST
  */
 
-#ifndef __GHOST_SYSTEMPATHSWIN32_H__
-#define __GHOST_SYSTEMPATHSWIN32_H__
+#pragma once
 
 #ifndef WIN32
 #  error WIN32 only!
@@ -54,25 +53,29 @@ class GHOST_SystemPathsWin32 : public GHOST_SystemPaths {
    * "unpack and run" path, then look for properly installed path, including versioning.
    * \return Unsigned char string pointing to system dir (eg /usr/share/).
    */
-  const GHOST_TUns8 *getSystemDir(int version, const char *versionstr) const;
+  const char *getSystemDir(int version, const char *versionstr) const;
 
   /**
    * Determine the base dir in which user configuration is stored, including versioning.
    * If needed, it will create the base directory.
    * \return Unsigned char string pointing to user dir (eg ~/).
    */
-  const GHOST_TUns8 *getUserDir(int version, const char *versionstr) const;
+  const char *getUserDir(int version, const char *versionstr) const;
+
+  /**
+   * Determine a special ("well known") and easy to reach user directory.
+   * \return Unsigned char string pointing to user dir (eg `~/Documents/`).
+   */
+  const char *getUserSpecialDir(GHOST_TUserSpecialDirTypes type) const;
 
   /**
    * Determine the directory of the current binary
    * \return Unsigned char string pointing to the binary dir
    */
-  const GHOST_TUns8 *getBinaryDir() const;
+  const char *getBinaryDir() const;
 
   /**
    * Add the file to the operating system most recently used files
    */
   void addToSystemRecentFiles(const char *filename) const;
 };
-
-#endif  // __GHOST_SYSTEMPATHSWIN32_H__

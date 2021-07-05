@@ -27,9 +27,24 @@
 
 #include "node_exec.h"
 
-bool sh_node_poll_default(bNodeType *UNUSED(ntype), bNodeTree *ntree)
+bool sh_node_poll_default(bNodeType *UNUSED(ntype), bNodeTree *ntree, const char **r_disabled_hint)
 {
-  return STREQ(ntree->idname, "ShaderNodeTree");
+  if (!STREQ(ntree->idname, "ShaderNodeTree")) {
+    *r_disabled_hint = "Not a shader node tree";
+    return false;
+  }
+  return true;
+}
+
+static bool sh_fn_poll_default(bNodeType *UNUSED(ntype),
+                               bNodeTree *ntree,
+                               const char **r_disabled_hint)
+{
+  if (!STREQ(ntree->idname, "ShaderNodeTree") && !STREQ(ntree->idname, "GeometryNodeTree")) {
+    *r_disabled_hint = "Not a shader or geometry node tree";
+    return false;
+  }
+  return true;
 }
 
 void sh_node_type_base(
@@ -40,6 +55,12 @@ void sh_node_type_base(
   ntype->poll = sh_node_poll_default;
   ntype->insert_link = node_insert_link_default;
   ntype->update_internal_links = node_update_internal_links_default;
+}
+
+void sh_fn_node_type_base(bNodeType *ntype, int type, const char *name, short nclass, short flag)
+{
+  sh_node_type_base(ntype, type, name, nclass, flag);
+  ntype->poll = sh_fn_poll_default;
 }
 
 /* ****** */
@@ -246,11 +267,11 @@ void ntreeExecGPUNodes(bNodeTreeExec *exec, GPUMaterial *mat, bNode *output_node
     }
 
     if (do_it) {
-      if (node->typeinfo->gpufunc) {
+      if (node->typeinfo->gpu_fn) {
         node_get_stack(node, stack, nsin, nsout);
         gpu_stack_from_data_list(gpuin, &node->inputs, nsin);
         gpu_stack_from_data_list(gpuout, &node->outputs, nsout);
-        if (node->typeinfo->gpufunc(mat, node, &nodeexec->data, gpuin, gpuout)) {
+        if (node->typeinfo->gpu_fn(mat, node, &nodeexec->data, gpuin, gpuout)) {
           data_from_gpu_stack_list(&node->outputs, nsout, gpuout);
         }
       }
@@ -276,7 +297,7 @@ void node_shader_gpu_bump_tex_coord(GPUMaterial *mat, bNode *node, GPUNodeLink *
 void node_shader_gpu_default_tex_coord(GPUMaterial *mat, bNode *node, GPUNodeLink **link)
 {
   if (!*link) {
-    *link = GPU_attribute(CD_ORCO, "");
+    *link = GPU_attribute(mat, CD_ORCO, "");
     GPU_link(mat, "generated_texco", GPU_builtin(GPU_VIEW_POSITION), *link, link);
     node_shader_gpu_bump_tex_coord(mat, node, link);
   }
@@ -310,4 +331,18 @@ void node_shader_gpu_tex_mapping(GPUMaterial *mat,
       GPU_link(mat, "vector_normalize", in[0].link, &in[0].link);
     }
   }
+}
+
+void get_XYZ_to_RGB_for_gpu(XYZ_to_RGB *data)
+{
+  const float *xyz_to_rgb = IMB_colormanagement_get_xyz_to_rgb();
+  data->r[0] = xyz_to_rgb[0];
+  data->r[1] = xyz_to_rgb[3];
+  data->r[2] = xyz_to_rgb[6];
+  data->g[0] = xyz_to_rgb[1];
+  data->g[1] = xyz_to_rgb[4];
+  data->g[2] = xyz_to_rgb[7];
+  data->b[0] = xyz_to_rgb[2];
+  data->b[1] = xyz_to_rgb[5];
+  data->b[2] = xyz_to_rgb[8];
 }

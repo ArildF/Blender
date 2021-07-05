@@ -28,8 +28,8 @@
 
 #include "bmesh.h"
 
-#include "BKE_deform.h"
 #include "BKE_customdata.h"
+#include "BKE_deform.h"
 
 #include "bmesh_wireframe.h"
 
@@ -63,7 +63,7 @@ static void bm_vert_boundary_tangent(
   float tvec_a[3], tvec_b[3];
 
   /* get 2 boundary edges, there should only _be_ 2,
-   * in case there are more - results wont be valid of course */
+   * in case there are more - results won't be valid of course */
   BM_ITER_ELEM (e_iter, &iter, v, BM_EDGES_OF_VERT) {
     if (BM_elem_flag_test(e_iter, BM_ELEM_TAG)) {
       if (e_a == NULL) {
@@ -77,7 +77,7 @@ static void bm_vert_boundary_tangent(
   }
 
   if (e_a && e_b) {
-    /* note, with an incorrectly flushed selection this can crash */
+    /* NOTE: with an incorrectly flushed selection this can crash. */
     l_a = bm_edge_tag_faceloop(e_a);
     l_b = bm_edge_tag_faceloop(e_b);
 
@@ -142,13 +142,13 @@ static bool bm_loop_is_radial_boundary(BMLoop *l_first)
   if (l == l_first) {
     return true; /* a real boundary */
   }
-  else {
-    do {
-      if (BM_elem_flag_test(l->f, BM_ELEM_TAG)) {
-        return false;
-      }
-    } while ((l = l->radial_next) != l_first);
-  }
+
+  do {
+    if (BM_elem_flag_test(l->f, BM_ELEM_TAG)) {
+      return false;
+    }
+  } while ((l = l->radial_next) != l_first);
+
   return true;
 }
 
@@ -195,7 +195,7 @@ void BM_mesh_wireframe(BMesh *bm,
   BMVert **verts_neg = MEM_mallocN(sizeof(BMVert *) * totvert_orig, __func__);
   BMVert **verts_pos = MEM_mallocN(sizeof(BMVert *) * totvert_orig, __func__);
 
-  /* will over-alloc, but makes for easy lookups by index to keep aligned  */
+  /* Will over-alloc, but makes for easy lookups by index to keep aligned. */
   BMVert **verts_boundary = use_boundary ? MEM_mallocN(sizeof(BMVert *) * totvert_orig, __func__) :
                                            NULL;
 
@@ -270,7 +270,7 @@ void BM_mesh_wireframe(BMesh *bm,
 
         if (cd_dvert_offset != -1) {
           MDeformVert *dvert = BM_ELEM_CD_GET_VOID_P(v_src, cd_dvert_offset);
-          float defgrp_fac = defvert_find_weight(dvert, defgrp_index);
+          float defgrp_fac = BKE_defvert_find_weight(dvert, defgrp_index);
 
           if (defgrp_invert) {
             defgrp_fac = 1.0f - defgrp_fac;

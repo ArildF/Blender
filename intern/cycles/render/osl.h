@@ -72,15 +72,18 @@ class OSLShaderManager : public ShaderManager {
 
   static void free_memory();
 
-  void reset(Scene *scene);
+  void reset(Scene *scene) override;
 
-  bool use_osl()
+  bool use_osl() override
   {
     return true;
   }
 
-  void device_update(Device *device, DeviceScene *dscene, Scene *scene, Progress &progress);
-  void device_free(Device *device, DeviceScene *dscene, Scene *scene);
+  void device_update_specific(Device *device,
+                              DeviceScene *dscene,
+                              Scene *scene,
+                              Progress &progress) override;
+  void device_free(Device *device, DeviceScene *dscene, Scene *scene) override;
 
   /* osl compile and query */
   static bool osl_compile(const string &inputfile, const string &outputfile);
@@ -93,9 +96,11 @@ class OSLShaderManager : public ShaderManager {
   OSLShaderInfo *shader_loaded_info(const string &hash);
 
   /* create OSL node using OSLQuery */
-  OSLNode *osl_node(const std::string &filepath,
-                    const std::string &bytecode_hash = "",
-                    const std::string &bytecode = "");
+  static OSLNode *osl_node(ShaderGraph *graph,
+                           ShaderManager *manager,
+                           const std::string &filepath,
+                           const std::string &bytecode_hash = "",
+                           const std::string &bytecode = "");
 
  protected:
   void texture_system_init();
@@ -190,4 +195,4 @@ class OSLCompiler {
 
 CCL_NAMESPACE_END
 
-#endif /* __OSL_H__  */
+#endif /* __OSL_H__ */

@@ -17,8 +17,7 @@
  * All rights reserved.
  */
 
-#ifndef __BLI_DYNSTR_H__
-#define __BLI_DYNSTR_H__
+#pragma once
 
 /** \file
  * \ingroup bli
@@ -33,6 +32,10 @@
 #include <stdarg.h>
 
 #include "BLI_compiler_attrs.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct DynStr;
 
@@ -50,11 +53,13 @@ void BLI_dynstr_appendf(DynStr *__restrict ds, const char *__restrict format, ..
 void BLI_dynstr_vappendf(DynStr *__restrict ds, const char *__restrict format, va_list args)
     ATTR_PRINTF_FORMAT(2, 0) ATTR_NONNULL(1, 2);
 
-int BLI_dynstr_get_len(DynStr *ds) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
-char *BLI_dynstr_get_cstring(DynStr *ds) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
-void BLI_dynstr_get_cstring_ex(DynStr *__restrict ds, char *__restrict str) ATTR_NONNULL();
+int BLI_dynstr_get_len(const DynStr *ds) ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
+char *BLI_dynstr_get_cstring(const DynStr *ds) ATTR_MALLOC ATTR_WARN_UNUSED_RESULT ATTR_NONNULL();
+void BLI_dynstr_get_cstring_ex(const DynStr *__restrict ds, char *__restrict rets) ATTR_NONNULL();
 
 void BLI_dynstr_clear(DynStr *ds) ATTR_NONNULL();
 void BLI_dynstr_free(DynStr *ds) ATTR_NONNULL();
 
-#endif /* __BLI_DYNSTR_H__ */
+#ifdef __cplusplus
+}
+#endif

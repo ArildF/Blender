@@ -29,22 +29,22 @@
 
 #include "BLT_translation.h"
 
-#include "BKE_global.h"
 #include "BKE_context.h"
 #include "BKE_editmesh.h"
+#include "BKE_global.h"
 #include "BKE_layer.h"
 #include "BKE_report.h"
 
-#include "RNA_define.h"
 #include "RNA_access.h"
+#include "RNA_define.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
 
+#include "ED_gizmo_utils.h"
 #include "ED_mesh.h"
 #include "ED_screen.h"
 #include "ED_view3d.h"
-#include "ED_gizmo_utils.h"
 
 #include "UI_resources.h"
 
@@ -67,7 +67,7 @@ typedef struct {
 
   /* Aligned with objects array. */
   struct {
-    BMBackup mesh;
+    BMBackup mesh_backup;
     bool is_valid;
     bool is_dirty;
   } * backup;
@@ -81,8 +81,8 @@ static void mesh_bisect_interactive_calc(bContext *C,
                                          float plane_no[3])
 {
   View3D *v3d = CTX_wm_view3d(C);
-  ARegion *ar = CTX_wm_region(C);
-  RegionView3D *rv3d = ar->regiondata;
+  ARegion *region = CTX_wm_region(C);
+  RegionView3D *rv3d = region->regiondata;
 
   int x_start = RNA_int_get(op->ptr, "xstart");
   int y_start = RNA_int_get(op->ptr, "ystart");
@@ -96,18 +96,18 @@ static void mesh_bisect_interactive_calc(bContext *C,
   const float zfac = ED_view3d_calc_zfac(rv3d, co_ref, NULL);
 
   /* view vector */
-  ED_view3d_win_to_vector(ar, co_a_ss, co_a);
+  ED_view3d_win_to_vector(region, co_a_ss, co_a);
 
   /* view delta */
   sub_v2_v2v2(co_delta_ss, co_a_ss, co_b_ss);
-  ED_view3d_win_to_delta(ar, co_delta_ss, co_b, zfac);
+  ED_view3d_win_to_delta(region, co_delta_ss, co_b, zfac);
 
   /* cross both to get a normal */
   cross_v3_v3v3(plane_no, co_a, co_b);
   normalize_v3(plane_no); /* not needed but nicer for user */
 
   /* point on plane, can use either start or endpoint */
-  ED_view3d_win_to_3d(v3d, ar, co_ref, co_a_ss, plane_co);
+  ED_view3d_win_to_3d(v3d, region, co_ref, co_a_ss, plane_co);
 }
 
 static int mesh_bisect_invoke(bContext *C, wmOperator *op, const wmEvent *event)
@@ -160,7 +160,7 @@ static int mesh_bisect_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
       if (em->bm->totedgesel != 0) {
         opdata->backup[ob_index].is_valid = true;
-        opdata->backup[ob_index].mesh = EDBM_redo_state_store(em);
+        opdata->backup[ob_index].mesh_backup = EDBM_redo_state_store(em);
       }
     }
 
@@ -184,7 +184,7 @@ static void edbm_bisect_exit(bContext *C, BisectData *opdata)
 
   for (int ob_index = 0; ob_index < opdata->backup_len; ob_index++) {
     if (opdata->backup[ob_index].is_valid) {
-      EDBM_redo_state_free(&opdata->backup[ob_index].mesh, NULL, false);
+      EDBM_redo_state_free(&opdata->backup[ob_index].mesh_backup);
     }
   }
   MEM_freeN(opdata->backup);
@@ -280,7 +280,7 @@ static int mesh_bisect_exec(bContext *C, wmOperator *op)
 
   /* -------------------------------------------------------------------- */
   /* Modal support */
-  /* Note: keep this isolated, exec can work without this */
+  /* NOTE: keep this isolated, exec can work without this. */
   if (opdata != NULL) {
     mesh_bisect_interactive_calc(C, op, plane_co, plane_no);
     /* Write back to the props. */
@@ -301,7 +301,7 @@ static int mesh_bisect_exec(bContext *C, wmOperator *op)
 
     if (opdata != NULL) {
       if (opdata->backup[ob_index].is_dirty) {
-        EDBM_redo_state_restore(opdata->backup[ob_index].mesh, em, false);
+        EDBM_redo_state_restore(&opdata->backup[ob_index].mesh_backup, em, false);
         opdata->backup[ob_index].is_dirty = false;
       }
     }
@@ -347,7 +347,7 @@ static int mesh_bisect_exec(bContext *C, wmOperator *op)
       BMOperator bmop_attr;
 
       /* The fill normal sign is ignored as the face-winding is defined by surrounding faces.
-       * The normal is passed so triangle fill wont have to calculate it. */
+       * The normal is passed so triangle fill won't have to calculate it. */
       normalize_v3_v3(normal_fill, plane_no_local);
 
       /* Fill */
@@ -383,7 +383,12 @@ static int mesh_bisect_exec(bContext *C, wmOperator *op)
         bm, bmop.slots_out, "geom_cut.out", BM_VERT | BM_EDGE, BM_ELEM_SELECT, true);
 
     if (EDBM_op_finish(em, &bmop, op, true)) {
-      EDBM_update_generic(obedit->data, true, true);
+      EDBM_update(obedit->data,
+                  &(const struct EDBMUpdate_Params){
+                      .calc_looptri = true,
+                      .calc_normals = false,
+                      .is_destructive = true,
+                  });
       EDBM_selectmode_flush(em);
       ret = OPERATOR_FINISHED;
     }
@@ -444,15 +449,17 @@ void MESH_OT_bisect(struct wmOperatorType *ot)
   RNA_def_boolean(
       ot->srna, "clear_outer", false, "Clear Outer", "Remove geometry in front of the plane");
 
-  RNA_def_float(ot->srna,
-                "threshold",
-                0.0001,
-                0.0,
-                10.0,
-                "Axis Threshold",
-                "Preserves the existing geometry along the cut plane",
-                0.00001,
-                0.1);
+  prop = RNA_def_float(ot->srna,
+                       "threshold",
+                       0.0001,
+                       0.0,
+                       10.0,
+                       "Axis Threshold",
+                       "Preserves the existing geometry along the cut plane",
+                       0.00001,
+                       0.1);
+  /* Without higher precision, the default value displays as zero. */
+  RNA_def_property_ui_range(prop, 0.0, 10.0, 0.01, 5);
 
   WM_operator_properties_gesture_straightline(ot, WM_CURSOR_EDIT);
 

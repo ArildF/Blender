@@ -17,8 +17,10 @@
  * All rights reserved.
  */
 
-#ifndef __BLI_RAND_H__
-#define __BLI_RAND_H__
+#pragma once
+
+#include "BLI_compiler_attrs.h"
+#include "BLI_sys_types.h"
 
 /** \file
  * \ingroup bli
@@ -58,10 +60,19 @@ void BLI_rng_get_tri_sample_float_v2(struct RNG *rng,
                                      const float v2[2],
                                      const float v3[2],
                                      float r_pt[2]) ATTR_NONNULL();
+void BLI_rng_get_tri_sample_float_v3(RNG *rng,
+                                     const float v1[3],
+                                     const float v2[3],
+                                     const float v3[3],
+                                     float r_pt[3]) ATTR_NONNULL();
+
 void BLI_rng_shuffle_array(struct RNG *rng,
                            void *data,
                            unsigned int elem_size_i,
                            unsigned int elem_tot) ATTR_NONNULL(1, 2);
+
+void BLI_rng_shuffle_bitmap(struct RNG *rng, unsigned int *bitmap, unsigned int bits_tot)
+    ATTR_NONNULL(1, 2);
 
 /** Note that skipping is as slow as generating n numbers! */
 void BLI_rng_skip(struct RNG *rng, int n) ATTR_NONNULL(1);
@@ -80,6 +91,9 @@ void BLI_array_randomize(void *data,
                          unsigned int elem_size,
                          unsigned int elem_tot,
                          unsigned int seed);
+
+void BLI_bitmap_randomize(unsigned int *bitmap, unsigned int bits_tot, unsigned int seed)
+    ATTR_NONNULL(1);
 
 /** Better seed for the random number generator, using noise.c hash[] */
 /** Allows up to BLENDER_MAX_THREADS threads to address */
@@ -102,16 +116,14 @@ int BLI_rng_thread_rand(RNG_THREAD_ARRAY *rngarr, int thread) ATTR_WARN_UNUSED_R
 
 /** Return the _n_th number of the given low-discrepancy sequence. */
 void BLI_halton_1d(unsigned int prime, double offset, int n, double *r);
-void BLI_halton_2d(unsigned int prime[2], double offset[2], int n, double *r);
-void BLI_halton_3d(unsigned int prime[3], double offset[3], int n, double *r);
+void BLI_halton_2d(const unsigned int prime[2], double offset[2], int n, double *r);
+void BLI_halton_3d(const unsigned int prime[3], double offset[3], int n, double *r);
 void BLI_hammersley_1d(unsigned int n, double *r);
 
 /** Return the whole low-discrepancy sequence up to _n_. */
-void BLI_halton_2d_sequence(unsigned int prime[2], double offset[2], int n, double *r);
+void BLI_halton_2d_sequence(const unsigned int prime[2], double offset[2], int n, double *r);
 void BLI_hammersley_2d_sequence(unsigned int n, double *r);
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BLI_RAND_H__ */

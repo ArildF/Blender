@@ -20,10 +20,10 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_math.h"
 #include "BLI_kdtree_impl.h"
-#include "BLI_utildefines.h"
+#include "BLI_math.h"
 #include "BLI_strict_flags.h"
+#include "BLI_utildefines.h"
 
 #define _CONCAT_AUX(MACRO_ARG1, MACRO_ARG2) MACRO_ARG1##MACRO_ARG2
 #define _CONCAT(MACRO_ARG1, MACRO_ARG2) _CONCAT_AUX(MACRO_ARG1, MACRO_ARG2)
@@ -79,7 +79,7 @@ static float len_squared_vnvn(const float v0[KD_DIMS], const float v1[KD_DIMS])
 {
   float d = 0.0f;
   for (uint j = 0; j < KD_DIMS; j++) {
-    d += SQUARE(v0[j] - v1[j]);
+    d += square_f(v0[j] - v1[j]);
   }
   return d;
 }
@@ -132,7 +132,7 @@ void BLI_kdtree_nd_(insert)(KDTree *tree, int index, const float co[KD_DIMS])
   BLI_assert(tree->nodes_len <= tree->nodes_len_capacity);
 #endif
 
-  /* note, array isn't calloc'd,
+  /* NOTE: array isn't calloc'd,
    * need to initialize all struct members */
 
   node->left = node->right = KD_NODE_UNSET;
@@ -158,7 +158,7 @@ static uint kdtree_balance(KDTreeNode *nodes, uint nodes_len, uint axis, const u
     return 0 + ofs;
   }
 
-  /* quicksort style sorting around median */
+  /* Quick-sort style sorting around median. */
   left = 0;
   right = nodes_len - 1;
   median = nodes_len / 2;
@@ -878,11 +878,11 @@ static void deduplicate_recursive(const struct DeDuplicateParams *p, uint i)
  * the iteration order.
  * \param duplicates: An array of int's the length of #KDTree.nodes_len
  * Values initialized to -1 are candidates to me merged.
- * Setting the index to it's own position in the array prevents it from being touched,
+ * Setting the index to its own position in the array prevents it from being touched,
  * although it can still be used as a target.
  * \returns The number of merges found (includes any merges already in the \a duplicates array).
  *
- * \note Merging is always a single step (target indices wont be marked for merging).
+ * \note Merging is always a single step (target indices won't be marked for merging).
  */
 int BLI_kdtree_nd_(calc_duplicates_fast)(const KDTree *tree,
                                          const float range,
@@ -893,7 +893,7 @@ int BLI_kdtree_nd_(calc_duplicates_fast)(const KDTree *tree,
   struct DeDuplicateParams p = {
       .nodes = tree->nodes,
       .range = range,
-      .range_sq = SQUARE(range),
+      .range_sq = square_f(range),
       .duplicates = duplicates,
       .duplicates_found = &found,
   };
@@ -967,7 +967,7 @@ static int kdtree_node_cmp_deduplicate(const void *n0_p, const void *n1_p)
 }
 
 /**
- * Remove exact duplicates (run before before balancing).
+ * Remove exact duplicates (run before balancing).
  *
  * Keep the first element added when duplicates are found.
  */

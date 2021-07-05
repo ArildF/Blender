@@ -18,6 +18,7 @@
  * \ingroup RNA
  */
 
+/* Use a define instead of `#pragma once` because of `BKE_addon.h`, `ED_object.h` & others. */
 #ifndef __RNA_TYPES_H__
 #define __RNA_TYPES_H__
 
@@ -81,17 +82,45 @@ typedef enum PropertyType {
 /* also update rna_property_subtype_unit when you change this */
 typedef enum PropertyUnit {
   PROP_UNIT_NONE = (0 << 16),
-  PROP_UNIT_LENGTH = (1 << 16),       /* m */
-  PROP_UNIT_AREA = (2 << 16),         /* m^2 */
-  PROP_UNIT_VOLUME = (3 << 16),       /* m^3 */
-  PROP_UNIT_MASS = (4 << 16),         /* kg */
-  PROP_UNIT_ROTATION = (5 << 16),     /* radians */
-  PROP_UNIT_TIME = (6 << 16),         /* frame */
-  PROP_UNIT_VELOCITY = (7 << 16),     /* m/s */
-  PROP_UNIT_ACCELERATION = (8 << 16), /* m/(s^2) */
-  PROP_UNIT_CAMERA = (9 << 16),       /* mm */
-  PROP_UNIT_POWER = (10 << 16),       /* W */
+  PROP_UNIT_LENGTH = (1 << 16),        /* m */
+  PROP_UNIT_AREA = (2 << 16),          /* m^2 */
+  PROP_UNIT_VOLUME = (3 << 16),        /* m^3 */
+  PROP_UNIT_MASS = (4 << 16),          /* kg */
+  PROP_UNIT_ROTATION = (5 << 16),      /* radians */
+  PROP_UNIT_TIME = (6 << 16),          /* frame */
+  PROP_UNIT_TIME_ABSOLUTE = (7 << 16), /* time in seconds (independent of scene) */
+  PROP_UNIT_VELOCITY = (8 << 16),      /* m/s */
+  PROP_UNIT_ACCELERATION = (9 << 16),  /* m/(s^2) */
+  PROP_UNIT_CAMERA = (10 << 16),       /* mm */
+  PROP_UNIT_POWER = (11 << 16),        /* W */
+  PROP_UNIT_TEMPERATURE = (12 << 16),  /* C */
 } PropertyUnit;
+
+/**
+ * Use values besides #PROP_SCALE_LINEAR
+ * so the movement of the mouse doesn't map linearly to the value of the slider.
+ *
+ * For some settings it's useful to space motion in a non-linear way, see T77868.
+ *
+ * NOTE: The scale types are available for all float sliders.
+ * For integer sliders they are only available if they use the visible value bar.
+ * Sliders with logarithmic scale and value bar must have a range > 0
+ * while logarithmic sliders without the value bar can have a range of >= 0.
+ */
+typedef enum PropertyScaleType {
+  /** Linear scale (default). */
+  PROP_SCALE_LINEAR = 0,
+  /**
+   * Logarithmic scale
+   * - Maximum range: `0 <= x < inf`
+   */
+  PROP_SCALE_LOG = 1,
+  /**
+   * Cubic scale.
+   * - Maximum range: `-inf < x < inf`
+   */
+  PROP_SCALE_CUBIC = 2,
+} PropertyScaleType;
 
 #define RNA_SUBTYPE_UNIT(subtype) ((subtype)&0x00FF0000)
 #define RNA_SUBTYPE_VALUE(subtype) ((subtype) & ~0x00FF0000)
@@ -121,12 +150,15 @@ typedef enum PropertySubType {
   PROP_PASSWORD = 6,
 
   /* numbers */
+  /** A dimension in pixel units, possibly before DPI scaling (so value may not be the final pixel
+   * value but the one to apply DPI scale to). */
   PROP_PIXEL = 12,
   PROP_UNSIGNED = 13,
   PROP_PERCENTAGE = 14,
   PROP_FACTOR = 15,
   PROP_ANGLE = 16 | PROP_UNIT_ROTATION,
   PROP_TIME = 17 | PROP_UNIT_TIME,
+  PROP_TIME_ABSOLUTE = 17 | PROP_UNIT_TIME_ABSOLUTE,
   /** Distance in 3d space, don't use for pixel distance for eg. */
   PROP_DISTANCE = 18 | PROP_UNIT_LENGTH,
   PROP_DISTANCE_CAMERA = 19 | PROP_UNIT_CAMERA,
@@ -154,6 +186,9 @@ typedef enum PropertySubType {
 
   /** Light */
   PROP_POWER = 42 | PROP_UNIT_POWER,
+
+  /* temperature */
+  PROP_TEMPERATURE = 43 | PROP_UNIT_TEMPERATURE,
 } PropertySubType;
 
 /* Make sure enums are updated with these */
@@ -180,8 +215,8 @@ typedef enum PropertyFlag {
    */
   PROP_ANIMATABLE = (1 << 1),
   /**
-   * This flag means when the property's widget is in 'textedit' mode, it will be updated
-   * after every typed char, instead of waiting final validation. Used e.g. for text searchbox.
+   * This flag means when the property's widget is in 'text-edit' mode, it will be updated
+   * after every typed char, instead of waiting final validation. Used e.g. for text search-box.
    * It will also cause UI_BUT_VALUE_CLEAR to be set for text buttons. We could add an own flag
    * for search/filter properties, but this works just fine for now.
    */
@@ -220,7 +255,7 @@ typedef enum PropertyFlag {
    * Currently only used for UI, this is similar to PROP_NEVER_NULL
    * except that the value may be NULL at times, used for ObData, where an Empty's will be NULL
    * but setting NULL on a mesh object is not possible.
-   * So, if its not NULL, setting NULL cant be done!
+   * So if it's not NULL, setting NULL can't be done!
    */
   PROP_NEVER_UNLINK = (1 << 25),
 
@@ -236,7 +271,7 @@ typedef enum PropertyFlag {
 
   /**
    * flag contains multiple enums.
-   * note: not to be confused with prop->enumbitflags
+   * NOTE: not to be confused with prop->enumbitflags
    * this exposes the flag as multiple options in python and the UI.
    *
    * \note These can't be animated so use with care.
@@ -292,8 +327,22 @@ typedef enum PropertyOverrideFlag {
   /**
    * Forbid usage of this property in comparison (& hence override) code.
    * Useful e.g. for collections of data like mesh's geometry, particles, etc.
+   * Also for runtime data that should never be considered as part of actual Blend data (e.g.
+   * depsgraph from ViewLayers...).
    */
   PROPOVERRIDE_NO_COMPARISON = (1 << 1),
+
+  /**
+   * Means the property can be fully ignored by override process.
+   * Unlike NO_COMPARISON, it can still be used by diffing code, but no override operation will be
+   * created for it, and no attempt to restore the data from linked reference either.
+   *
+   * WARNING: This flag should be used with a lot of caution, as it completely by-passes override
+   * system. It is currently only used for ID's names, since we cannot prevent local override to
+   * get a different name from the linked reference, and ID names are 'rna name property' (i.e. are
+   * used in overrides of collections of IDs). See also `BKE_lib_override_library_update()` where
+   * we deal manually with the value of that property at DNA level. */
+  PROPOVERRIDE_IGNORE = (1 << 2),
 
   /*** Collections-related ***/
 
@@ -358,6 +407,11 @@ typedef struct ArrayIterator {
   IteratorSkipFunc skip;
 } ArrayIterator;
 
+typedef struct CountIterator {
+  void *ptr;
+  int item;
+} CountIterator;
+
 typedef struct CollectionPropertyIterator {
   /* internal */
   PointerRNA parent;
@@ -366,6 +420,7 @@ typedef struct CollectionPropertyIterator {
   union {
     ArrayIterator array;
     ListBaseIterator listbase;
+    CountIterator count;
     void *custom;
   } internal;
   int idprop;
@@ -388,7 +443,7 @@ typedef struct CollectionListBase {
 
 typedef enum RawPropertyType {
   PROP_RAW_UNSET = -1,
-  PROP_RAW_INT,  // XXX - abused for types that are not set, eg. MFace.verts, needs fixing.
+  PROP_RAW_INT, /* XXX: abused for types that are not set, eg. MFace.verts, needs fixing. */
   PROP_RAW_SHORT,
   PROP_RAW_CHAR,
   PROP_RAW_BOOLEAN,
@@ -500,7 +555,7 @@ typedef struct ParameterList {
 
 typedef struct ParameterIterator {
   struct ParameterList *parms;
-  /* PointerRNA funcptr; */ /*UNUSED*/
+  // PointerRNA funcptr; /* UNUSED */
   void *data;
   int size, offset;
 
@@ -592,12 +647,12 @@ typedef enum StructFlag {
   /** Indicates that this struct is an ID struct, and to use reference-counting. */
   STRUCT_ID = (1 << 0),
   STRUCT_ID_REFCOUNT = (1 << 1),
-  /** defaults on, clear for user preferences and similar */
+  /** defaults on, indicates when changes in members of a StructRNA should trigger undo steps. */
   STRUCT_UNDO = (1 << 2),
 
   /* internal flags */
   STRUCT_RUNTIME = (1 << 3),
-  STRUCT_GENERATED = (1 << 4),
+  /* STRUCT_GENERATED = (1 << 4), */ /* UNUSED */
   STRUCT_FREE_POINTERS = (1 << 5),
   /** Menus and Panels don't need properties */
   STRUCT_NO_IDPROPERTIES = (1 << 6),
@@ -609,6 +664,12 @@ typedef enum StructFlag {
   STRUCT_PUBLIC_NAMESPACE = (1 << 9),
   /** All subtypes are added too. */
   STRUCT_PUBLIC_NAMESPACE_INHERIT = (1 << 10),
+  /**
+   * When the #PointerRNA.owner_id is NULL, this signifies the property should be accessed
+   * without any context (the key-map UI and import/export for example).
+   * So accessing the property should not read from the current context to derive values/limits.
+   */
+  STRUCT_NO_CONTEXT_WITHOUT_OWNER_ID = (1 << 11),
 } StructFlag;
 
 typedef int (*StructValidateFunc)(struct PointerRNA *ptr, void *data, int *have_function);
@@ -641,7 +702,7 @@ typedef struct BlenderRNA BlenderRNA;
  * Extending
  *
  * This struct must be embedded in *Type structs in
- * order to make then definable through RNA.
+ * order to make them definable through RNA.
  */
 typedef struct ExtensionRNA {
   void *data;

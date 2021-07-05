@@ -21,11 +21,14 @@
 #include <stdlib.h>
 
 #include "DNA_cloth_types.h"
-#include "DNA_object_types.h"
-#include "DNA_object_force_types.h"
-#include "DNA_particle_types.h"
-#include "DNA_scene_types.h"
+#include "DNA_dynamicpaint_types.h"
 #include "DNA_fluid_types.h"
+#include "DNA_object_force_types.h"
+#include "DNA_object_types.h"
+#include "DNA_particle_types.h"
+#include "DNA_pointcache_types.h"
+#include "DNA_rigidbody_types.h"
+#include "DNA_scene_types.h"
 
 #include "RNA_define.h"
 #include "RNA_enum_types.h"
@@ -138,6 +141,69 @@ static bool rna_Cache_get_valid_owner_ID(PointerRNA *ptr, Object **ob, Scene **s
   return (*ob != NULL || *scene != NULL);
 }
 
+static char *rna_PointCache_path(PointerRNA *ptr)
+{
+  ModifierData *md;
+  Object *ob = (Object *)ptr->owner_id;
+  PointCache *cache = ptr->data;
+
+  for (md = ob->modifiers.first; md; md = md->next) {
+    const ModifierTypeInfo *mti = BKE_modifier_get_info(md->type);
+
+    if (!(mti->flags & eModifierTypeFlag_UsesPointCache)) {
+      continue;
+    }
+
+    char name_esc[sizeof(md->name) * 2];
+    BLI_str_escape(name_esc, md->name, sizeof(name_esc));
+
+    switch (md->type) {
+      case eModifierType_ParticleSystem: {
+        ParticleSystemModifierData *psmd = (ParticleSystemModifierData *)md;
+        if (psmd->psys->pointcache == cache) {
+          return BLI_sprintfN("modifiers[\"%s\"].particle_system.point_cache", name_esc);
+        }
+        break;
+      }
+      case eModifierType_DynamicPaint: {
+        DynamicPaintModifierData *pmd = (DynamicPaintModifierData *)md;
+        if (pmd->canvas) {
+          DynamicPaintSurface *surface = pmd->canvas->surfaces.first;
+          for (; surface; surface = surface->next) {
+            if (surface->pointcache == cache) {
+              char name_surface_esc[sizeof(surface->name) * 2];
+              BLI_str_escape(name_surface_esc, surface->name, sizeof(name_surface_esc));
+              return BLI_sprintfN(
+                  "modifiers[\"%s\"].canvas_settings.canvas_surfaces[\"%s\"].point_cache",
+                  name_esc,
+                  name_surface_esc);
+            }
+          }
+        }
+        break;
+      }
+      case eModifierType_Cloth: {
+        ClothModifierData *clmd = (ClothModifierData *)md;
+        if (clmd->point_cache == cache) {
+          return BLI_sprintfN("modifiers[\"%s\"].point_cache", name_esc);
+        }
+        break;
+      }
+      case eModifierType_Softbody: {
+        SoftBody *sb = ob->soft;
+        if (sb && sb->shared->pointcache == cache) {
+          return BLI_sprintfN("modifiers[\"%s\"].point_cache", name_esc);
+        }
+        break;
+      }
+      default: {
+        return BLI_sprintfN("modifiers[\"%s\"].point_cache", name_esc);
+      }
+    }
+  }
+  return NULL;
+}
+
 static void rna_Cache_change(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
 {
   Object *ob = NULL;
@@ -221,7 +287,7 @@ static void rna_Cache_idname_change(Main *UNUSED(bmain), Scene *UNUSED(scene), P
         pid2 = pid;
       }
       else if (cache->name[0] != '\0' && STREQ(cache->name, pid->cache->name)) {
-        /*TODO: report "name exists" to user */
+        /* TODO: report "name exists" to user. */
         BLI_strncpy(cache->name, cache->prev_name, sizeof(cache->name));
         use_new_name = false;
       }
@@ -366,12 +432,12 @@ static char *rna_CollisionSettings_path(PointerRNA *UNUSED(ptr))
   /* both methods work ok, but return the shorter path */
 #  if 0
   Object *ob = (Object *)ptr->owner_id;
-  ModifierData *md = (ModifierData *)modifiers_findByType(ob, eModifierType_Collision);
+  ModifierData *md = (ModifierData *)BKE_modifiers_findby_type(ob, eModifierType_Collision);
 
   if (md) {
     char name_esc[sizeof(md->name) * 2];
 
-    BLI_strescape(name_esc, md->name, sizeof(name_esc));
+    BLI_str_escape(name_esc, md->name, sizeof(name_esc));
     return BLI_sprintfN("modifiers[\"%s\"].settings", name_esc);
   }
   else {
@@ -540,10 +606,10 @@ static void rna_SoftBodySettings_spring_vgroup_set(PointerRNA *ptr, const char *
 static char *rna_SoftBodySettings_path(PointerRNA *ptr)
 {
   Object *ob = (Object *)ptr->owner_id;
-  ModifierData *md = (ModifierData *)modifiers_findByType(ob, eModifierType_Softbody);
+  ModifierData *md = (ModifierData *)BKE_modifiers_findby_type(ob, eModifierType_Softbody);
   char name_esc[sizeof(md->name) * 2];
 
-  BLI_strescape(name_esc, md->name, sizeof(name_esc));
+  BLI_str_escape(name_esc, md->name, sizeof(name_esc));
   return BLI_sprintfN("modifiers[\"%s\"].settings", name_esc);
 }
 
@@ -580,6 +646,13 @@ static void rna_FieldSettings_update(Main *UNUSED(bmain), Scene *UNUSED(scene), 
     if (ob->pd->forcefield != PFIELD_TEXTURE && ob->pd->tex) {
       id_us_min(&ob->pd->tex->id);
       ob->pd->tex = NULL;
+    }
+
+    /* In the case of specific force-fields that are using the #EffectorData's normal, we need to
+     * rebuild mesh and BVH-tree for #SurfaceModifier to work correctly. */
+    if (ELEM(ob->pd->shape, PFIELD_SHAPE_SURFACE, PFIELD_SHAPE_POINTS) ||
+        ob->pd->forcefield == PFIELD_GUIDE) {
+      DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
     }
 
     DEG_id_tag_update(&ob->id, ID_RECALC_TRANSFORM);
@@ -712,44 +785,56 @@ static char *rna_EffectorWeight_path(PointerRNA *ptr)
     }
   }
   else {
-    Object *ob = (Object *)ptr->owner_id;
+    ID *id = ptr->owner_id;
+
+    if (id && GS(id->name) == ID_SCE) {
+      const Scene *scene = (Scene *)id;
+      const RigidBodyWorld *rbw = scene->rigidbody_world;
+
+      if (rbw->effector_weights == ew) {
+        return BLI_strdup("rigidbody_world.effector_weights");
+      }
+    }
+
+    Object *ob = (Object *)id;
     ModifierData *md;
 
     /* check softbody modifier */
-    md = (ModifierData *)modifiers_findByType(ob, eModifierType_Softbody);
+    md = (ModifierData *)BKE_modifiers_findby_type(ob, eModifierType_Softbody);
     if (md) {
       /* no pointer from modifier data to actual softbody storage, would be good to add */
       if (ob->soft->effector_weights == ew) {
         char name_esc[sizeof(md->name) * 2];
-        BLI_strescape(name_esc, md->name, sizeof(name_esc));
+        BLI_str_escape(name_esc, md->name, sizeof(name_esc));
         return BLI_sprintfN("modifiers[\"%s\"].settings.effector_weights", name_esc);
       }
     }
 
     /* check cloth modifier */
-    md = (ModifierData *)modifiers_findByType(ob, eModifierType_Cloth);
+    md = (ModifierData *)BKE_modifiers_findby_type(ob, eModifierType_Cloth);
     if (md) {
       ClothModifierData *cmd = (ClothModifierData *)md;
       if (cmd->sim_parms->effector_weights == ew) {
         char name_esc[sizeof(md->name) * 2];
-        BLI_strescape(name_esc, md->name, sizeof(name_esc));
+        BLI_str_escape(name_esc, md->name, sizeof(name_esc));
         return BLI_sprintfN("modifiers[\"%s\"].settings.effector_weights", name_esc);
       }
     }
 
-    /* check smoke modifier */
-    md = (ModifierData *)modifiers_findByType(ob, eModifierType_Fluid);
+    /* check fluid modifier */
+    md = (ModifierData *)BKE_modifiers_findby_type(ob, eModifierType_Fluid);
     if (md) {
-      FluidModifierData *mmd = (FluidModifierData *)md;
-      if (mmd->domain->effector_weights == ew) {
+      FluidModifierData *fmd = (FluidModifierData *)md;
+      if (fmd->type == MOD_FLUID_TYPE_DOMAIN && fmd->domain &&
+          fmd->domain->effector_weights == ew) {
         char name_esc[sizeof(md->name) * 2];
-        BLI_strescape(name_esc, md->name, sizeof(name_esc));
-        return BLI_sprintfN("modifiers[\"%s\"].settings.effector_weights", name_esc);
+        BLI_str_escape(name_esc, md->name, sizeof(name_esc));
+        return BLI_sprintfN("modifiers[\"%s\"].domain_settings.effector_weights", name_esc);
       }
     }
 
     /* check dynamic paint modifier */
-    md = (ModifierData *)modifiers_findByType(ob, eModifierType_DynamicPaint);
+    md = (ModifierData *)BKE_modifiers_findby_type(ob, eModifierType_DynamicPaint);
     if (md) {
       DynamicPaintModifierData *pmd = (DynamicPaintModifierData *)md;
 
@@ -761,8 +846,8 @@ static char *rna_EffectorWeight_path(PointerRNA *ptr)
             char name_esc[sizeof(md->name) * 2];
             char name_esc_surface[sizeof(surface->name) * 2];
 
-            BLI_strescape(name_esc, md->name, sizeof(name_esc));
-            BLI_strescape(name_esc_surface, surface->name, sizeof(name_esc_surface));
+            BLI_str_escape(name_esc, md->name, sizeof(name_esc));
+            BLI_str_escape(name_esc_surface, surface->name, sizeof(name_esc_surface));
             return BLI_sprintfN(
                 "modifiers[\"%s\"].canvas_settings.canvas_surfaces[\"%s\"]"
                 ".effector_weights",
@@ -779,16 +864,14 @@ static char *rna_EffectorWeight_path(PointerRNA *ptr)
 static void rna_CollisionSettings_dependency_update(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
   Object *ob = (Object *)ptr->owner_id;
-  ModifierData *md = modifiers_findByType(ob, eModifierType_Collision);
+  ModifierData *md = BKE_modifiers_findby_type(ob, eModifierType_Collision);
 
-  /* add/remove modifier as needed */
+  /* add the modifier if needed */
   if (ob->pd->deflect && !md) {
     ED_object_modifier_add(NULL, bmain, scene, ob, NULL, eModifierType_Collision);
   }
-  else if (!ob->pd->deflect && md) {
-    ED_object_modifier_remove(NULL, bmain, ob, md);
-  }
 
+  DEG_id_tag_update(&ob->id, ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY);
   WM_main_add_notifier(NC_OBJECT | ND_DRAW, ob);
 }
 
@@ -865,10 +948,14 @@ static void rna_def_pointcache_common(StructRNA *srna)
       {0, NULL, 0, NULL, NULL},
   };
 
+  RNA_def_struct_path_func(srna, "rna_PointCache_path");
+
+  RNA_define_lib_overridable(true);
+
   prop = RNA_def_property(srna, "frame_start", PROP_INT, PROP_TIME);
   RNA_def_property_int_sdna(prop, NULL, "startframe");
   RNA_def_property_range(prop, -MAXFRAME, MAXFRAME);
-  RNA_def_property_ui_range(prop, 1, MAXFRAME, 1, 1);
+  RNA_def_property_ui_range(prop, 0, MAXFRAME, 1, 1);
   RNA_def_property_ui_text(prop, "Start", "Frame on which the simulation starts");
 
   prop = RNA_def_property(srna, "frame_end", PROP_INT, PROP_TIME);
@@ -959,6 +1046,8 @@ static void rna_def_pointcache_common(StructRNA *srna)
       "Use this file's path for the disk cache when library linked into another file "
       "(for local bakes per scene file, disable this option)");
   RNA_def_property_update(prop, NC_OBJECT, "rna_Cache_idname_change");
+
+  RNA_define_lib_overridable(false);
 }
 
 static void rna_def_ptcache_point_caches(BlenderRNA *brna, PropertyRNA *cprop)
@@ -1006,7 +1095,7 @@ static void rna_def_pointcache_active(BlenderRNA *brna)
    * Those caches items have exact same content as 'active' one, except for that collection,
    * to prevent ugly recursive layout pattern.
    *
-   * Note: This shall probably be redone from scratch in a proper way at some point,
+   * NOTE: This shall probably be redone from scratch in a proper way at some point,
    *       but for now that will do, and shall not break anything in the API. */
   prop = RNA_def_property(srna, "point_caches", PROP_COLLECTION, PROP_NONE);
   RNA_def_property_collection_funcs(prop,
@@ -1020,6 +1109,7 @@ static void rna_def_pointcache_active(BlenderRNA *brna)
                                     NULL);
   RNA_def_property_struct_type(prop, "PointCacheItem");
   RNA_def_property_ui_text(prop, "Point Cache List", "");
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   rna_def_ptcache_point_caches(brna, prop);
 }
 
@@ -1266,7 +1356,7 @@ static void rna_def_effector_weight(BlenderRNA *brna)
   RNA_def_property_float_sdna(prop, NULL, "weight[13]");
   RNA_def_property_range(prop, -200.0f, 200.0f);
   RNA_def_property_ui_range(prop, 0.0f, 1.0f, 0.1, 3);
-  RNA_def_property_ui_text(prop, "Smoke Flow", "Smoke Flow effector weight");
+  RNA_def_property_ui_text(prop, "Fluid Flow", "Fluid Flow effector weight");
   RNA_def_property_update(prop, 0, "rna_EffectorWeight_update");
 }
 
@@ -1330,11 +1420,11 @@ static void rna_def_field(BlenderRNA *brna)
        "Turbulence",
        "Create turbulence with a noise field"},
       {PFIELD_DRAG, "DRAG", ICON_FORCE_DRAG, "Drag", "Create a force that dampens motion"},
-      {PFIELD_SMOKEFLOW,
-       "SMOKE_FLOW",
-       ICON_FORCE_SMOKEFLOW,
-       "Smoke Flow",
-       "Create a force based on smoke simulation air flow"},
+      {PFIELD_FLUIDFLOW,
+       "FLUID_FLOW",
+       ICON_FORCE_FLUIDFLOW,
+       "Fluid Flow",
+       "Create a force based on fluid simulation velocities"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -1402,10 +1492,11 @@ static void rna_def_field(BlenderRNA *brna)
   prop = RNA_def_property(srna, "texture_mode", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "tex_mode");
   RNA_def_property_enum_items(prop, texture_items);
-  RNA_def_property_ui_text(prop,
-                           "Texture Mode",
-                           "How the texture effect is calculated (RGB & Curl need a RGB texture, "
-                           "else Gradient will be used instead)");
+  RNA_def_property_ui_text(
+      prop,
+      "Texture Mode",
+      "How the texture effect is calculated (RGB and Curl need a RGB texture, "
+      "else Gradient will be used instead)");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
   prop = RNA_def_property(srna, "z_direction", PROP_ENUM, PROP_NONE);
@@ -1448,6 +1539,15 @@ static void rna_def_field(BlenderRNA *brna)
   RNA_def_property_float_sdna(prop, NULL, "f_flow");
   RNA_def_property_range(prop, 0.0f, 10.0f);
   RNA_def_property_ui_text(prop, "Flow", "Convert effector force into air flow velocity");
+  RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
+
+  prop = RNA_def_property(srna, "wind_factor", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_float_sdna(prop, NULL, "f_wind_factor");
+  RNA_def_property_range(prop, 0.0f, 1.0f);
+  RNA_def_property_ui_text(
+      prop,
+      "Wind Factor",
+      "How much the force is reduced when acting parallel to a surface, e.g. cloth");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
   /* different ui range to above */
@@ -1842,7 +1942,7 @@ static void rna_def_softbody(BlenderRNA *brna)
   prop = RNA_def_property(srna, "plastic", PROP_INT, PROP_NONE);
   RNA_def_property_int_sdna(prop, NULL, "plastic");
   RNA_def_property_range(prop, 0.0f, 100.0f);
-  RNA_def_property_ui_text(prop, "Plastic", "Permanent deform");
+  RNA_def_property_ui_text(prop, "Plasticity", "Permanent deform");
   RNA_def_property_update(prop, 0, "rna_softbody_update");
 
   prop = RNA_def_property(srna, "bend", PROP_FLOAT, PROP_NONE);
@@ -1943,13 +2043,14 @@ static void rna_def_softbody(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "use_estimate_matrix", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "solverflags", SBSO_ESTIMATEIPO);
-  RNA_def_property_ui_text(prop, "Estimate Matrix", "Estimate matrix... split to COM, ROT, SCALE");
+  RNA_def_property_ui_text(
+      prop, "Estimate Transforms", "Store the estimated transforms in the soft body settings");
 
   /***********************************************************************************/
-  /* these are not exactly settings, but reading calculated results*/
-  /* but i did not want to start a new property struct */
-  /* so rather rename this from SoftBodySettings to SoftBody */
-  /* translation */
+  /* These are not exactly settings, but reading calculated results
+   * but i did not want to start a new property struct
+   * so rather rename this from SoftBodySettings to SoftBody
+   * translation. */
   prop = RNA_def_property(srna, "location_mass_center", PROP_FLOAT, PROP_TRANSLATION);
   RNA_def_property_float_sdna(prop, NULL, "lcom");
   RNA_def_property_ui_text(prop, "Center of Mass", "Location of center of mass");
@@ -1959,7 +2060,7 @@ static void rna_def_softbody(BlenderRNA *brna)
   prop = RNA_def_property(srna, "rotation_estimate", PROP_FLOAT, PROP_MATRIX);
   RNA_def_property_float_sdna(prop, NULL, "lrot");
   RNA_def_property_multi_array(prop, 2, rna_matrix_dimsize_3x3);
-  RNA_def_property_ui_text(prop, "Rot Matrix", "Estimated rotation matrix");
+  RNA_def_property_ui_text(prop, "Rotation Matrix", "Estimated rotation matrix");
 
   prop = RNA_def_property(srna, "scale_estimate", PROP_FLOAT, PROP_MATRIX);
   RNA_def_property_float_sdna(prop, NULL, "lscale");

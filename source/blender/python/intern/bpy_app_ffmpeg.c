@@ -18,8 +18,8 @@
  * \ingroup pythonintern
  */
 
-#include <Python.h>
 #include "BLI_utildefines.h"
+#include <Python.h>
 
 #include "bpy_app_ffmpeg.h"
 
@@ -75,7 +75,7 @@ static PyObject *make_ffmpeg_info(void)
     return NULL;
   }
 
-#if 0  // UNUSED
+#if 0 /* UNUSED */
 #  define SetIntItem(flag) PyStructSequence_SET_ITEM(ffmpeg_info, pos++, PyLong_FromLong(flag))
 #endif
 #ifndef WITH_FFMPEG
@@ -116,8 +116,8 @@ static PyObject *make_ffmpeg_info(void)
 
 #undef FFMPEG_LIB_VERSION
 
-  if (PyErr_Occurred()) {
-    Py_CLEAR(ffmpeg_info);
+  if (UNLIKELY(PyErr_Occurred())) {
+    Py_DECREF(ffmpeg_info);
     return NULL;
   }
 
@@ -140,7 +140,7 @@ PyObject *BPY_app_ffmpeg_struct(void)
   BlenderAppFFmpegType.tp_init = NULL;
   BlenderAppFFmpegType.tp_new = NULL;
   BlenderAppFFmpegType.tp_hash = (hashfunc)
-      _Py_HashPointer; /* without this we can't do set(sys.modules) [#29635] */
+      _Py_HashPointer; /* without this we can't do set(sys.modules) T29635. */
 
   return ret;
 }

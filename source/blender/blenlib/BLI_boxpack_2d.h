@@ -17,12 +17,15 @@
  * All rights reserved.
  */
 
-#ifndef __BLI_BOXPACK_2D_H__
-#define __BLI_BOXPACK_2D_H__
+#pragma once
 
 /** \file
  * \ingroup bli
  */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct ListBase;
 
@@ -41,10 +44,7 @@ typedef struct BoxPack {
   int index;
 } BoxPack;
 
-void BLI_box_pack_2d(BoxPack *boxarray,
-                     const unsigned int len,
-                     float *tot_width,
-                     float *tot_height);
+void BLI_box_pack_2d(BoxPack *boxarray, const unsigned int len, float *r_tot_x, float *r_tot_y);
 
 typedef struct FixedSizeBoxPack {
   struct FixedSizeBoxPack *next, *prev;
@@ -57,4 +57,6 @@ void BLI_box_pack_2d_fixedarea(struct ListBase *boxes,
                                int height,
                                struct ListBase *packed);
 
-#endif /* __BLI_BOXPACK_2D_H__ */
+#ifdef __cplusplus
+}
+#endif

@@ -21,29 +21,30 @@
  * \ingroup bke
  */
 
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
-#include <stdlib.h>
 #include <ctype.h>
 #include <float.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "MEM_guardedalloc.h"
 
-#include "DNA_object_types.h"
 #include "DNA_meta_types.h"
+#include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 
 #include "BLI_listbase.h"
 #include "BLI_math.h"
+#include "BLI_memarena.h"
 #include "BLI_string_utils.h"
 #include "BLI_utildefines.h"
-#include "BLI_memarena.h"
 
 #include "BKE_global.h"
 
 #include "BKE_displist.h"
 #include "BKE_mball_tessellate.h" /* own include */
+#include "BKE_object.h"
 #include "BKE_scene.h"
 
 #include "DEG_depsgraph.h"
@@ -161,7 +162,7 @@ static void make_box_from_metaelem(Box *r, const MetaElem *ml)
 }
 
 /**
- * Partitions part of mainb array [start, end) along axis s. Returns i,
+ * Partitions part of #process.mainb array [start, end) along axis s. Returns i,
  * where centroids of elements in the [start, i) segment lie "on the right side" of div,
  * and elements in the [i, end) segment lie "on the left"
  */
@@ -262,7 +263,7 @@ static void build_bvh_spatial(PROCESS *process,
  * BASED AT CODE (but mostly rewritten) :
  * C code from the article
  * "An Implicit Surface Polygonizer"
- * by Jules Bloomenthal, jbloom@beauty.gmu.edu
+ * by Jules Bloomenthal <jbloom@beauty.gmu.edu>
  * in "Graphics Gems IV", Academic Press, 1994
  *
  * Authored by Jules Bloomenthal, Xerox PARC.
@@ -271,20 +272,20 @@ static void build_bvh_spatial(PROCESS *process,
  * any and all purposes, provided that this notice appears in all copies.
  */
 
-#define L 0   /* left direction:   -x, -i */
-#define R 1   /* right direction:  +x, +i */
-#define B 2   /* bottom direction: -y, -j */
-#define T 3   /* top direction:    +y, +j */
-#define N 4   /* near direction:   -z, -k */
-#define F 5   /* far direction:    +z, +k */
-#define LBN 0 /* left bottom near corner  */
-#define LBF 1 /* left bottom far corner   */
-#define LTN 2 /* left top near corner     */
-#define LTF 3 /* left top far corner      */
-#define RBN 4 /* right bottom near corner */
-#define RBF 5 /* right bottom far corner  */
-#define RTN 6 /* right top near corner    */
-#define RTF 7 /* right top far corner     */
+#define L 0   /* Left direction:   -x, -i. */
+#define R 1   /* Right direction:  +x, +i. */
+#define B 2   /* Bottom direction: -y, -j. */
+#define T 3   /* Top direction:    +y, +j. */
+#define N 4   /* Near direction:   -z, -k. */
+#define F 5   /* Far direction:    +z, +k. */
+#define LBN 0 /* Left bottom near corner. */
+#define LBF 1 /* Left bottom far corner. */
+#define LTN 2 /* Left top near corner. */
+#define LTF 3 /* Left top far corner. */
+#define RBN 4 /* Right bottom near corner. */
+#define RBF 5 /* Right bottom far corner. */
+#define RTN 6 /* Right top near corner. */
+#define RTF 7 /* Right top far corner. */
 
 /**
  * the LBN corner of cube (i, j, k), corresponds with location
@@ -292,7 +293,8 @@ static void build_bvh_spatial(PROCESS *process,
  */
 
 #define HASHBIT (5)
-#define HASHSIZE (size_t)(1 << (3 * HASHBIT)) /*! < hash table size (32768) */
+/** Hash table size (32768). */
+#define HASHSIZE (size_t)(1 << (3 * HASHBIT))
 
 #define HASH(i, j, k) ((((((i)&31) << 5) | ((j)&31)) << 5) | ((k)&31))
 
@@ -314,7 +316,7 @@ static float densfunc(const MetaElem *ball, float x, float y, float z)
   float dist2;
   float dvec[3] = {x, y, z};
 
-  mul_m4_v3((float(*)[4])ball->imat, dvec);
+  mul_m4_v3((const float(*)[4])ball->imat, dvec);
 
   switch (ball->type) {
     case MB_BALL:
@@ -404,12 +406,11 @@ static float densfunc(const MetaElem *ball, float x, float y, float z)
 }
 
 /**
- * Computes density at given position form all metaballs which contain this point in their box.
+ * Computes density at given position form all meta-balls which contain this point in their box.
  * Traverses BVH using a queue.
  */
 static float metaball(PROCESS *process, float x, float y, float z)
 {
-  int i;
   float dens = 0.0f;
   unsigned int front = 0, back = 0;
   MetaballBVHNode *node;
@@ -419,7 +420,7 @@ static float metaball(PROCESS *process, float x, float y, float z)
   while (front != back) {
     node = process->bvh_queue[back++];
 
-    for (i = 0; i < 2; i++) {
+    for (int i = 0; i < 2; i++) {
       if ((node->bb[i].min[0] <= x) && (node->bb[i].max[0] >= x) && (node->bb[i].min[1] <= y) &&
           (node->bb[i].max[1] >= y) && (node->bb[i].min[2] <= z) && (node->bb[i].max[2] >= z)) {
         if (node->child[i]) {
@@ -807,22 +808,22 @@ static void makecubetable(void)
       INTLIST *edges;
 
       for (edges = polys->list; edges; edges = edges->next) {
-        if (edges->i == LB || edges->i == LT || edges->i == LN || edges->i == LF) {
+        if (ELEM(edges->i, LB, LT, LN, LF)) {
           faces[i] |= 1 << L;
         }
-        if (edges->i == RB || edges->i == RT || edges->i == RN || edges->i == RF) {
+        if (ELEM(edges->i, RB, RT, RN, RF)) {
           faces[i] |= 1 << R;
         }
-        if (edges->i == LB || edges->i == RB || edges->i == BN || edges->i == BF) {
+        if (ELEM(edges->i, LB, RB, BN, BF)) {
           faces[i] |= 1 << B;
         }
-        if (edges->i == LT || edges->i == RT || edges->i == TN || edges->i == TF) {
+        if (ELEM(edges->i, LT, RT, TN, TF)) {
           faces[i] |= 1 << T;
         }
-        if (edges->i == LN || edges->i == RN || edges->i == BN || edges->i == TN) {
+        if (ELEM(edges->i, LN, RN, BN, TN)) {
           faces[i] |= 1 << N;
         }
-        if (edges->i == LF || edges->i == RF || edges->i == BF || edges->i == TF) {
+        if (ELEM(edges->i, LF, RF, BF, TF)) {
           faces[i] |= 1 << F;
         }
       }
@@ -832,18 +833,14 @@ static void makecubetable(void)
 
 void BKE_mball_cubeTable_free(void)
 {
-  int i;
-  INTLISTS *lists, *nlists;
-  INTLIST *ints, *nints;
-
-  for (i = 0; i < 256; i++) {
-    lists = cubetable[i];
+  for (int i = 0; i < 256; i++) {
+    INTLISTS *lists = cubetable[i];
     while (lists) {
-      nlists = lists->next;
+      INTLISTS *nlists = lists->next;
 
-      ints = lists->list;
+      INTLIST *ints = lists->list;
       while (ints) {
-        nints = ints->next;
+        INTLIST *nints = ints->next;
         MEM_freeN(ints);
         ints = nints;
       }
@@ -1013,8 +1010,6 @@ static int vertid(PROCESS *process, const CORNER *c1, const CORNER *c2)
  */
 static void converge(PROCESS *process, const CORNER *c1, const CORNER *c2, float r_p[3])
 {
-  float tmp, dens;
-  unsigned int i;
   float c1_value, c1_co[3];
   float c2_value, c2_co[3];
 
@@ -1031,9 +1026,9 @@ static void converge(PROCESS *process, const CORNER *c1, const CORNER *c2, float
     copy_v3_v3(c2_co, c2->co);
   }
 
-  for (i = 0; i < process->converge_res; i++) {
+  for (uint i = 0; i < process->converge_res; i++) {
     interp_v3_v3v3(r_p, c1_co, c2_co, 0.5f);
-    dens = metaball(process, r_p[0], r_p[1], r_p[2]);
+    float dens = metaball(process, r_p[0], r_p[1], r_p[2]);
 
     if (dens > 0.0f) {
       c1_value = dens;
@@ -1045,7 +1040,7 @@ static void converge(PROCESS *process, const CORNER *c1, const CORNER *c2, float
     }
   }
 
-  tmp = -c1_value / (c2_value - c1_value);
+  float tmp = -c1_value / (c2_value - c1_value);
   interp_v3_v3v3(r_p, c1_co, c2_co, tmp);
 }
 
@@ -1153,7 +1148,6 @@ static void find_first_points(PROCESS *process, const unsigned int em)
 static void polygonize(PROCESS *process)
 {
   CUBE c;
-  unsigned int i;
 
   process->centers = MEM_callocN(HASHSIZE * sizeof(CENTERLIST *), "mbproc->centers");
   process->corners = MEM_callocN(HASHSIZE * sizeof(CORNER *), "mbproc->corners");
@@ -1163,7 +1157,7 @@ static void polygonize(PROCESS *process)
 
   makecubetable();
 
-  for (i = 0; i < process->totelem; i++) {
+  for (uint i = 0; i < process->totelem; i++) {
     find_first_points(process, i);
   }
 
@@ -1177,8 +1171,9 @@ static void polygonize(PROCESS *process)
 
 /**
  * Iterates over ALL objects in the scene and all of its sets, including
- * making all duplis(not only metas). Copies metas to mainb array.
- * Computes bounding boxes for building BVH. */
+ * making all duplis (not only meta-elements). Copies meta-elements to #process.mainb array.
+ * Computes bounding boxes for building BVH.
+ */
 static void init_meta(Depsgraph *depsgraph, PROCESS *process, Scene *scene, Object *ob)
 {
   Scene *sce_iter = scene;
@@ -1191,6 +1186,8 @@ static void init_meta(Depsgraph *depsgraph, PROCESS *process, Scene *scene, Obje
   int obnr, zero_size = 0;
   char obname[MAX_ID_NAME];
   SceneBaseIter iter;
+  const eEvaluationMode deg_eval_mode = DEG_get_mode(depsgraph);
+  const short parenting_dupli_transflag = (OB_DUPLIFACES | OB_DUPLIVERTS);
 
   copy_m4_m4(obmat, ob->obmat); /* to cope with duplicators from BKE_scene_base_iter_next */
   invert_m4_m4(obinv, ob->obmat);
@@ -1203,6 +1200,14 @@ static void init_meta(Depsgraph *depsgraph, PROCESS *process, Scene *scene, Obje
     if (bob->type == OB_MBALL) {
       zero_size = 0;
       ml = NULL;
+
+      /* If this metaball is the original that's used for duplication, only have it visible when
+       * the instancer is visible too. */
+      if ((base->flag_legacy & OB_FROMDUPLI) == 0 && ob->parent != NULL &&
+          (ob->parent->transflag & parenting_dupli_transflag) != 0 &&
+          (BKE_object_visibility(ob->parent, deg_eval_mode) & OB_VISIBLE_SELF) == 0) {
+        continue;
+      }
 
       if (bob == ob && (base->flag_legacy & OB_FROMDUPLI) == 0) {
         mb = ob->data;
@@ -1265,8 +1270,8 @@ static void init_meta(Depsgraph *depsgraph, PROCESS *process, Scene *scene, Obje
             new_ml = BLI_memarena_alloc(process->pgn_elements, sizeof(MetaElem));
             *(new_ml) = *ml;
             new_ml->bb = BLI_memarena_alloc(process->pgn_elements, sizeof(BoundBox));
-            new_ml->mat = BLI_memarena_alloc(process->pgn_elements, 4 * 4 * sizeof(float));
-            new_ml->imat = BLI_memarena_alloc(process->pgn_elements, 4 * 4 * sizeof(float));
+            new_ml->mat = BLI_memarena_alloc(process->pgn_elements, sizeof(float[4][4]));
+            new_ml->imat = BLI_memarena_alloc(process->pgn_elements, sizeof(float[4][4]));
 
             /* too big stiffness seems only ugly due to linear interpolation
              * no need to have possibility for too big stiffness */
@@ -1331,7 +1336,7 @@ static void init_meta(Depsgraph *depsgraph, PROCESS *process, Scene *scene, Obje
             }
 
             /* untransformed Bounding Box of MetaElem */
-            /* TODO, its possible the elem type has been changed and the exp*
+            /* TODO: its possible the elem type has been changed and the exp*
              * values can use a fallback. */
             copy_v3_fl3(new_ml->bb->vec[0], -expx, -expy, -expz); /* 0 */
             copy_v3_fl3(new_ml->bb->vec[1], +expx, -expy, -expz); /* 1 */
@@ -1432,9 +1437,9 @@ void BKE_mball_polygonize(Depsgraph *depsgraph, Scene *scene, Object *ob, ListBa
   if (process.totelem > 0) {
     build_bvh_spatial(&process, &process.metaball_bvh, 0, process.totelem, &process.allbb);
 
-    /* Don't polygonize metaballs with too high resolution (base mball to small)
-     * note: Eps was 0.0001f but this was giving problems for blood animation for durian,
-     * using 0.00001f. */
+    /* Don't polygonize meta-balls with too high resolution (base mball too small)
+     * NOTE: Eps was 0.0001f but this was giving problems for blood animation for
+     * the open movie "Sintel", using 0.00001f. */
     if (ob->scale[0] > 0.00001f * (process.allbb.max[0] - process.allbb.min[0]) ||
         ob->scale[1] > 0.00001f * (process.allbb.max[1] - process.allbb.min[1]) ||
         ob->scale[2] > 0.00001f * (process.allbb.max[2] - process.allbb.min[2])) {

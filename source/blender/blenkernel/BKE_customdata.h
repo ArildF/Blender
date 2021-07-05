@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software  Foundation,
+ * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  * The Original Code is Copyright (C) 2006 Blender Foundation.
@@ -22,25 +22,26 @@
  * \brief CustomData interface, see also DNA_customdata_types.h.
  */
 
-#ifndef __BKE_CUSTOMDATA_H__
-#define __BKE_CUSTOMDATA_H__
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#pragma once
 
 #include "BLI_sys_types.h"
 #include "BLI_utildefines.h"
 
 #include "DNA_customdata_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct BMesh;
+struct BlendDataReader;
+struct BlendWriter;
 struct CustomData;
 struct CustomData_MeshMasks;
 struct ID;
 typedef uint64_t CustomDataMask;
 
-/*a data type large enough to hold 1 element from any customdata layer type*/
+/* A data type large enough to hold 1 element from any custom-data layer type. */
 typedef struct {
   unsigned char data[64];
 } CDBlockBytes;
@@ -108,9 +109,9 @@ bool CustomData_bmesh_has_free(const struct CustomData *data);
  */
 bool CustomData_has_referenced(const struct CustomData *data);
 
-/* copies the "value" (e.g. mloopuv uv or mloopcol colors) from one block to
+/* Copies the "value" (e.g. mloopuv uv or mloopcol colors) from one block to
  * another, while not overwriting anything else (e.g. flags).  probably only
- * implemented for mloopuv/mloopcol, for now.*/
+ * implemented for mloopuv/mloopcol, for now. */
 void CustomData_data_copy_value(int type, const void *source, void *dest);
 
 /* Same as above, but doing advanced mixing.
@@ -120,7 +121,7 @@ void CustomData_data_mix_value(
 
 /* compares if data1 is equal to data2.  type is a valid CustomData type
  * enum (e.g. CD_MLOOPUV). the layer type's equal function is used to compare
- * the data, if it exists, otherwise memcmp is used.*/
+ * the data, if it exists, otherwise memcmp is used. */
 bool CustomData_data_equals(int type, const void *data1, const void *data2);
 void CustomData_data_initminmax(int type, void *min, void *max);
 void CustomData_data_dominmax(int type, const void *data, void *min, void *max);
@@ -157,7 +158,7 @@ void CustomData_realloc(struct CustomData *data, int totelem);
 
 /* bmesh version of CustomData_merge; merges the layouts of source and dest,
  * then goes through the mesh and makes sure all the customdata blocks are
- * consistent with the new layout.*/
+ * consistent with the new layout. */
 bool CustomData_bmesh_merge(const struct CustomData *source,
                             struct CustomData *dest,
                             CustomDataMask mask,
@@ -185,7 +186,7 @@ void CustomData_free_temporary(struct CustomData *data, int totelem);
  */
 void *CustomData_add_layer(
     struct CustomData *data, int type, eCDAllocType alloctype, void *layer, int totelem);
-/*same as above but accepts a name */
+/* Same as above but accepts a name. */
 void *CustomData_add_layer_named(struct CustomData *data,
                                  int type,
                                  eCDAllocType alloctype,
@@ -232,6 +233,9 @@ void *CustomData_duplicate_referenced_layer_named(struct CustomData *data,
                                                   const int totelem);
 bool CustomData_is_referenced_layer(struct CustomData *data, int type);
 
+/* Duplicate all the layers with flag NOFREE, and remove the flag from duplicated layers. */
+void CustomData_duplicate_referenced_layers(CustomData *data, int totelem);
+
 /* set the CD_FLAG_NOCOPY flag in custom data layers where the mask is
  * zero for the layer type, so only layer types specified by the mask
  * will be copied
@@ -248,6 +252,13 @@ void CustomData_copy_data(const struct CustomData *source,
                           int source_index,
                           int dest_index,
                           int count);
+void CustomData_copy_data_layer(const CustomData *source,
+                                CustomData *dest,
+                                int src_layer_index,
+                                int dst_layer_index,
+                                int src_index,
+                                int dst_index,
+                                int count);
 void CustomData_copy_data_named(const struct CustomData *source,
                                 struct CustomData *dest,
                                 int source_index,
@@ -413,11 +424,6 @@ void CustomData_from_bmesh_block(const struct CustomData *source,
                                  void *src_block,
                                  int dest_index);
 
-void CustomData_file_write_prepare(struct CustomData *data,
-                                   struct CustomDataLayer **r_write_layers,
-                                   struct CustomDataLayer *write_layers_buff,
-                                   size_t write_layers_size);
-
 /* query info over types */
 void CustomData_file_write_info(int type, const char **r_struct_name, int *r_struct_num);
 int CustomData_sizeof(int type);
@@ -425,6 +431,7 @@ int CustomData_sizeof(int type);
 /* get the name of a layer type */
 const char *CustomData_layertype_name(int type);
 bool CustomData_layertype_is_singleton(int type);
+bool CustomData_layertype_is_dynamic(int type);
 int CustomData_layertype_layers_max(const int type);
 
 /* make sure the name of layer at index is unique */
@@ -439,7 +446,7 @@ void CustomData_validate_layer_name(const struct CustomData *data,
  * only after this test passes, layer->data should be assigned */
 bool CustomData_verify_versions(struct CustomData *data, int index);
 
-/*BMesh specific customdata stuff*/
+/* BMesh specific custom-data stuff. */
 void CustomData_to_bmeshpoly(struct CustomData *fdata, struct CustomData *ldata, int totloop);
 void CustomData_from_bmeshpoly(struct CustomData *fdata, struct CustomData *ldata, int total);
 void CustomData_bmesh_update_active_layers(struct CustomData *fdata, struct CustomData *ldata);
@@ -455,6 +462,7 @@ bool CustomData_from_bmeshpoly_test(CustomData *fdata, CustomData *ldata, bool f
 bool CustomData_layer_validate(struct CustomDataLayer *layer,
                                const uint totitems,
                                const bool do_fixes);
+void CustomData_layers__print(struct CustomData *data);
 
 /* External file storage */
 
@@ -531,7 +539,7 @@ enum {
   CDT_MIX_ADD = 17,
   CDT_MIX_SUB = 18,
   CDT_MIX_MUL = 19,
-  /* etc. etc. */
+  /* Etc. */
 };
 
 typedef struct CustomDataTransferLayerMap {
@@ -571,8 +579,20 @@ typedef struct CustomDataTransferLayerMap {
 void CustomData_data_transfer(const struct MeshPairRemap *me_remap,
                               const CustomDataTransferLayerMap *laymap);
 
+/* .blend file I/O */
+void CustomData_blend_write_prepare(struct CustomData *data,
+                                    struct CustomDataLayer **r_write_layers,
+                                    struct CustomDataLayer *write_layers_buff,
+                                    size_t write_layers_size);
+
+void CustomData_blend_write(struct BlendWriter *writer,
+                            struct CustomData *data,
+                            CustomDataLayer *layers,
+                            int count,
+                            CustomDataMask cddata_mask,
+                            struct ID *id);
+void CustomData_blend_read(struct BlendDataReader *reader, struct CustomData *data, int count);
+
 #ifdef __cplusplus
 }
-#endif
-
 #endif

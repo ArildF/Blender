@@ -22,10 +22,9 @@
 /* **************** OUTPUT ******************** */
 
 static bNodeSocketTemplate sh_node_bsdf_principled_in[] = {
-    {SOCK_RGBA, 1, N_("Base Color"), 0.8f, 0.8f, 0.8f, 1.0f, 0.0f, 1.0f},
-    {SOCK_FLOAT, 1, N_("Subsurface"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_RGBA, N_("Base Color"), 0.8f, 0.8f, 0.8f, 1.0f, 0.0f, 1.0f},
+    {SOCK_FLOAT, N_("Subsurface"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
     {SOCK_VECTOR,
-     1,
      N_("Subsurface Radius"),
      1.0f,
      0.2f,
@@ -35,35 +34,25 @@ static bNodeSocketTemplate sh_node_bsdf_principled_in[] = {
      100.0f,
      PROP_NONE,
      SOCK_COMPACT},
-    {SOCK_RGBA, 1, N_("Subsurface Color"), 0.8f, 0.8f, 0.8f, 1.0f, 0.0f, 1.0f},
-    {SOCK_FLOAT, 1, N_("Metallic"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Specular"), 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Specular Tint"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Roughness"), 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Anisotropic"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Anisotropic Rotation"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Sheen"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Sheen Tint"), 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Clearcoat"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Clearcoat Roughness"), 0.03f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("IOR"), 1.45f, 0.0f, 0.0f, 0.0f, 0.0f, 1000.0f},
-    {SOCK_FLOAT, 1, N_("Transmission"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_FLOAT, 1, N_("Transmission Roughness"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
-    {SOCK_RGBA, 1, N_("Emission"), 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f},
-    {SOCK_FLOAT, 1, N_("Alpha"), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_RGBA, N_("Subsurface Color"), 0.8f, 0.8f, 0.8f, 1.0f, 0.0f, 1.0f},
+    {SOCK_FLOAT, N_("Metallic"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Specular"), 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Specular Tint"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Roughness"), 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Anisotropic"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Anisotropic Rotation"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Sheen"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Sheen Tint"), 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Clearcoat"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Clearcoat Roughness"), 0.03f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("IOR"), 1.45f, 0.0f, 0.0f, 0.0f, 0.0f, 1000.0f},
+    {SOCK_FLOAT, N_("Transmission"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_FLOAT, N_("Transmission Roughness"), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_RGBA, N_("Emission"), 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f},
+    {SOCK_FLOAT, N_("Emission Strength"), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1000000.0f},
+    {SOCK_FLOAT, N_("Alpha"), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, PROP_FACTOR},
+    {SOCK_VECTOR, N_("Normal"), 0.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, PROP_NONE, SOCK_HIDE_VALUE},
     {SOCK_VECTOR,
-     1,
-     N_("Normal"),
-     0.0f,
-     0.0f,
-     0.0f,
-     1.0f,
-     -1.0f,
-     1.0f,
-     PROP_NONE,
-     SOCK_HIDE_VALUE},
-    {SOCK_VECTOR,
-     1,
      N_("Clearcoat Normal"),
      0.0f,
      0.0f,
@@ -73,23 +62,13 @@ static bNodeSocketTemplate sh_node_bsdf_principled_in[] = {
      1.0f,
      PROP_NONE,
      SOCK_HIDE_VALUE},
-    {SOCK_VECTOR,
-     1,
-     N_("Tangent"),
-     0.0f,
-     0.0f,
-     0.0f,
-     1.0f,
-     -1.0f,
-     1.0f,
-     PROP_NONE,
-     SOCK_HIDE_VALUE},
-    {-1, 0, ""},
+    {SOCK_VECTOR, N_("Tangent"), 0.0f, 0.0f, 0.0f, 1.0f, -1.0f, 1.0f, PROP_NONE, SOCK_HIDE_VALUE},
+    {-1, ""},
 };
 
 static bNodeSocketTemplate sh_node_bsdf_principled_out[] = {
-    {SOCK_SHADER, 0, N_("BSDF")},
-    {-1, 0, ""},
+    {SOCK_SHADER, N_("BSDF")},
+    {-1, ""},
 };
 
 static void node_shader_init_principled(bNodeTree *UNUSED(ntree), bNode *node)
@@ -111,26 +90,26 @@ static int node_shader_gpu_bsdf_principled(GPUMaterial *mat,
   GPUNodeLink *sss_scale;
 
   /* Normals */
-  if (!in[19].link) {
-    GPU_link(mat, "world_normals_get", &in[19].link);
-  }
-
-  /* Clearcoat Normals */
   if (!in[20].link) {
     GPU_link(mat, "world_normals_get", &in[20].link);
   }
 
+  /* Clearcoat Normals */
+  if (!in[21].link) {
+    GPU_link(mat, "world_normals_get", &in[21].link);
+  }
+
 #if 0 /* Not used at the moment. */
   /* Tangents */
-  if (!in[21].link) {
+  if (!in[22].link) {
     GPUNodeLink *orco = GPU_attribute(CD_ORCO, "");
-    GPU_link(mat, "tangent_orco_z", orco, &in[21].link);
+    GPU_link(mat, "tangent_orco_z", orco, &in[22].link);
     GPU_link(mat,
              "node_tangent",
              GPU_builtin(GPU_WORLD_NORMAL),
-             in[21].link,
+             in[22].link,
              GPU_builtin(GPU_OBJECT_MATRIX),
-             &in[21].link);
+             &in[22].link);
   }
 #endif
 
@@ -155,52 +134,33 @@ static int node_shader_gpu_bsdf_principled(GPUMaterial *mat,
     GPU_link(mat, "set_rgb_one", &sss_scale);
   }
 
-  /* Due to the manual effort done per config, we only optimize the most common permutations. */
-  char *node_name;
-  uint flag = 0;
-  if (!use_subsurf && use_diffuse && !use_refract && !use_clear) {
-    static char name[] = "node_bsdf_principled_dielectric";
-    node_name = name;
-    flag = GPU_MATFLAG_DIFFUSE | GPU_MATFLAG_GLOSSY;
+  uint flag = GPU_MATFLAG_GLOSSY;
+  if (use_diffuse) {
+    flag |= GPU_MATFLAG_DIFFUSE;
   }
-  else if (!use_subsurf && !use_diffuse && !use_refract && !use_clear) {
-    static char name[] = "node_bsdf_principled_metallic";
-    node_name = name;
-    flag = GPU_MATFLAG_GLOSSY;
+  if (use_refract) {
+    flag |= GPU_MATFLAG_REFRACT;
   }
-  else if (!use_subsurf && !use_diffuse && !use_refract && use_clear) {
-    static char name[] = "node_bsdf_principled_clearcoat";
-    node_name = name;
-    flag = GPU_MATFLAG_GLOSSY;
-  }
-  else if (use_subsurf && use_diffuse && !use_refract && !use_clear) {
-    static char name[] = "node_bsdf_principled_subsurface";
-    node_name = name;
-    flag = GPU_MATFLAG_DIFFUSE | GPU_MATFLAG_GLOSSY;
-  }
-  else if (!use_subsurf && !use_diffuse && use_refract && !use_clear && !socket_not_zero(4)) {
-    static char name[] = "node_bsdf_principled_glass";
-    node_name = name;
-    flag = GPU_MATFLAG_GLOSSY | GPU_MATFLAG_REFRACT;
-  }
-  else {
-    static char name[] = "node_bsdf_principled";
-    node_name = name;
-    flag = GPU_MATFLAG_DIFFUSE | GPU_MATFLAG_GLOSSY | GPU_MATFLAG_REFRACT;
-  }
-
   if (use_subsurf) {
     flag |= GPU_MATFLAG_SSS;
   }
+
+  float f_use_diffuse = use_diffuse ? 1.0f : 0.0f;
+  float f_use_clearcoat = use_clear ? 1.0f : 0.0f;
+  float f_use_refraction = use_refract ? 1.0f : 0.0f;
+  float use_multi_scatter = (node->custom1 == SHD_GLOSSY_MULTI_GGX) ? 1.0f : 0.0f;
 
   GPU_material_flag_set(mat, flag);
 
   return GPU_stack_link(mat,
                         node,
-                        node_name,
+                        "node_bsdf_principled",
                         in,
                         out,
-                        GPU_builtin(GPU_VIEW_POSITION),
+                        GPU_constant(&f_use_diffuse),
+                        GPU_constant(&f_use_clearcoat),
+                        GPU_constant(&f_use_refraction),
+                        GPU_constant(&use_multi_scatter),
                         GPU_constant(&node->ssr_id),
                         GPU_constant(&node->sss_id),
                         sss_scale);
