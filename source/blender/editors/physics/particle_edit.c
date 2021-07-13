@@ -1563,34 +1563,6 @@ void update_world_cos(Object *ob, PTCacheEdit *edit)
   }
 }
 
-void update_cos_from_world_cos(Object *ob, PTCacheEdit *edit)
-{
-  ParticleSystem *psys = edit->psys;
-  ParticleSystemModifierData *psmd_eval = edit->psmd_eval;
-  POINT_P;
-  KEY_K;
-  float hairmat[4][4];
-
-  if (psys == 0 || psys->edit == 0 || psmd_eval == NULL || psmd_eval->mesh_final == NULL) {
-    return;
-  }
-
-  LOOP_POINTS {
-    if (!(psys->flag & PSYS_GLOBAL_HAIR)) {
-      psys_mat_hair_to_global(
-          ob, psmd_eval->mesh_final, psys->part->from, psys->particles + p, hairmat);
-    }
-
-    invert_m4(hairmat);
-
-    LOOP_KEYS {
-      copy_v3_v3(key->co, key->world_co);
-      if (!(psys->flag & PSYS_GLOBAL_HAIR)) {
-        mul_m4_v3(hairmat, key->co);
-      }
-    }
-  }
-}
 static void update_velocities(PTCacheEdit *edit)
 {
   /* TODO: get frs_sec properly. */
