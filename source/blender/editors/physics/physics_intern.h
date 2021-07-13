@@ -60,6 +60,8 @@ void PARTICLE_OT_edited_clear(struct wmOperatorType *ot);
 
 void PARTICLE_OT_unify_length(struct wmOperatorType *ot);
 
+void PARTICLE_OT_particle_edit_from_simulation(struct wmOperatorType *ot);
+
 void PE_create_particle_edit(struct Depsgraph *depsgraph,
                              struct Scene *scene,
                              struct Object *ob,

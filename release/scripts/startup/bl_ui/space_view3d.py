@@ -2298,6 +2298,10 @@ class VIEW3D_MT_object(Menu):
         layout.operator("object.delete", text="Delete").use_global = False
         layout.operator("object.delete", text="Delete Global").use_global = True
 
+        layout.separator()
+
+        layout.operator("particle.particle_edit_from_simulation")
+
 
 class VIEW3D_MT_object_animation(Menu):
     bl_label = "Animation"

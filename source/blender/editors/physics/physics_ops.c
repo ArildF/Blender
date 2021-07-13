@@ -60,6 +60,7 @@ static void operatortypes_particle(void)
   WM_operatortype_append(PARTICLE_OT_edited_clear);
 
   WM_operatortype_append(PARTICLE_OT_unify_length);
+  WM_operatortype_append(PARTICLE_OT_particle_edit_from_simulation);
 
   WM_operatortype_append(OBJECT_OT_particle_system_add);
   WM_operatortype_append(OBJECT_OT_particle_system_remove);

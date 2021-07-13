@@ -1562,6 +1562,35 @@ void update_world_cos(Object *ob, PTCacheEdit *edit)
     }
   }
 }
+
+void update_cos_from_world_cos(Object *ob, PTCacheEdit *edit)
+{
+  ParticleSystem *psys = edit->psys;
+  ParticleSystemModifierData *psmd_eval = edit->psmd_eval;
+  POINT_P;
+  KEY_K;
+  float hairmat[4][4];
+
+  if (psys == 0 || psys->edit == 0 || psmd_eval == NULL || psmd_eval->mesh_final == NULL) {
+    return;
+  }
+
+  LOOP_POINTS {
+    if (!(psys->flag & PSYS_GLOBAL_HAIR)) {
+      psys_mat_hair_to_global(
+          ob, psmd_eval->mesh_final, psys->part->from, psys->particles + p, hairmat);
+    }
+
+    invert_m4(hairmat);
+
+    LOOP_KEYS {
+      copy_v3_v3(key->co, key->world_co);
+      if (!(psys->flag & PSYS_GLOBAL_HAIR)) {
+        mul_m4_v3(hairmat, key->co);
+      }
+    }
+  }
+}
 static void update_velocities(PTCacheEdit *edit)
 {
   /* TODO: get frs_sec properly. */
@@ -3426,6 +3455,8 @@ static const EnumPropertyItem delete_type_items[] = {
     {0, NULL, 0, NULL, NULL},
 };
 
+static void DumpPathCache(const ParticleSystem *ps, ParticleCacheKey *const *pathCache);
+static void DumpEditPoints(PTCacheEdit *edit);
 static void set_delete_particle(PEData *data, int pa_index)
 {
   PTCacheEdit *edit = data->edit;
@@ -5698,6 +5729,212 @@ void PARTICLE_OT_unify_length(struct wmOperatorType *ot)
   ot->poll = PE_poll_view3d;
 
   /* flags */
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+}
+
+static int particle_edit_from_simulation_exec(bContext *C, wmOperator *UNUSED(op))
+{
+  Scene *scene = CTX_data_scene(C);
+  Depsgraph *depsgraph = CTX_data_depsgraph_pointer(C);
+
+  Object *ob = CTX_data_active_object(C);
+
+  Object* eval_ob = DEG_get_evaluated_object(depsgraph, ob);
+
+  ParticleSystem *psys = (ParticleSystem*)eval_ob->particlesystem.first;
+  ParticleCacheKey **pathCache = psys->pathcache;
+
+  printf("Path cache\r\n");
+  DumpPathCache(psys, pathCache);
+
+  // return OPERATOR_FINISHED;
+
+  PTCacheEdit *edit = PE_create_current(depsgraph, scene, ob);
+
+  if (edit == NULL)
+  {
+    return OPERATOR_CANCELLED;
+  }
+
+  printf("Edit keys\r\n");
+
+  DumpEditPoints(edit);
+
+  POINT_P;
+  KEY_K;
+  ParticleSystemModifierData *psmd_eval = edit->psmd_eval;
+  float hairmat[4][4];
+
+  LOOP_POINTS
+  {
+    ParticleCacheKey* cache = pathCache[p];
+
+    if (!(psys->flag & PSYS_GLOBAL_HAIR)) {
+      psys_mat_hair_to_global(
+          ob, psmd_eval->mesh_final, psys->part->from, psys->particles + p, hairmat);
+    }
+
+    invert_m4(hairmat);
+
+    LOOP_KEYS
+    {
+      copy_v3_v3(key->world_co, cache->co);
+      copy_v3_v3(key->co, cache->co);
+      if (!(psys->flag & PSYS_GLOBAL_HAIR)) {
+        mul_m4_v3(hairmat, key->co);
+      }
+      cache++;
+    }
+  };
+
+  printf("Edit points after copying from physics\r\n");
+  DumpEditPoints(edit);
+
+
+  ED_object_mode_set(C, OB_MODE_PARTICLE_EDIT);
+
+//  update_cos_from_world_cos(ob, edit);
+//  printf("Edit points after mapping back to object space\r\n");
+//  DumpEditPoints(edit);
+
+  //printf("Path cache\r\n");
+
+  //for (int p = 0; p < psys->edit->totpoint; p++)
+  //{
+  //  ParticleCacheKey* cache = psys->pathcache[p];
+  //  const int segments = cache->segments;
+  //  for (int i = 0; i <= segments; i++, cache++)
+  //  {
+  //    printf("%d co: (%f, %f, %f) world_co: (%f, %f, %f) segments: %d\\r\n", i,
+  //      cache->co[0], cache->co[1], cache->co[2],
+  //      cache->col[0], cache->col[1], cache->col[2],
+  //      cache->segments);
+
+  //  }
+
+  //}
+
+  //ClothModifierData* clmd = edit->psys->clmd;
+
+  //if (clmd == NULL)
+  //{
+  //  return OPERATOR_CANCELLED;
+  //}
+
+  //PointCache* ptcache = clmd->point_cache;
+
+  ////ptcache->mem_cache
+
+  ////clmd.ptcaches
+
+  //int frame = 0;
+
+  //for(PTCacheMem* pm = ptcache->mem_cache.first; pm; pm = pm->next)
+  //{
+  //  frame++;
+  //  if (pm->frame == ptcache->simframe)
+  //  {
+  //    //for (char* pt = pm->data; pt; pt += BKE_ptcache_data_size(pm->data_types))
+  //    //{
+  //      void* cur[BPHYS_TOT_DATA];
+  //      int p;
+
+
+  //      LOOP_POINTS{
+  //        if (BKE_ptcache_mem_pointers_seek(p, pm, cur) == 0) {
+  //          continue;
+  //        }
+  //        for (int key = 0; key < point->totkey; key++)
+  //        {
+  //          float* loc = cur[BPHYS_DATA_LOCATION];
+  //          printf("p: %d, key: %d pos: (%f, %f, %f)\r\n", p, key, loc[0], loc[1], loc[2]);
+  //          float* rot = cur[BPHYS_DATA_ROTATION];
+  //          if (rot)
+  //          {
+  //            printf("p: %d, key: %d rot: (%f, %f, %f)\r\n", p, key, rot[0], rot[1], rot[2]);
+  //          }
+  //          BKE_ptcache_mem_pointers_incr(cur);
+  //        }
+  //      }
+  //  }
+  //}
+
+  //printf("Frames: %d", frame);
+
+
+  //PE_update_object(depsgraph, scene, ob, 1);
+  //if (edit->psys) {
+  //  WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_EDITED, ob);
+  //}
+  //else {
+  //  DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
+  //  WM_event_add_notifier(C, NC_OBJECT | ND_MODIFIER, ob);
+  //}
+  ///*for (ParticleSystem *psys = ob->particlesystem.first; psys != NULL; psys = psys->next) {
+  //  if (psys->pathcache == NULL)
+  //  {
+  //    continue;
+  //  }
+  //  for (int p = 0; p < psys->totpart; p++)
+  //  {
+  //    ParticleCacheKey* cache = psys->pathcache[p];
+  //    const int segments = cache->segments;
+  //    for (int i = 0; i < segments; i++, cache++)
+  //    {
+
+  //    }
+
+  //  }
+  //}*/
+  return OPERATOR_FINISHED;
+}
+static void DumpEditPoints(PTCacheEdit *edit)
+{
+  return;
+  PTCacheEditPoint* point = edit->points;
+  for (int i = 0; i < edit->totpoint; i++, point++)
+  {
+    PTCacheEditKey* key = point->keys;
+    continue;
+
+    for (int j = 0; j < point->totkey; j++, key++) {
+      printf("%d co: (%f, %f, %f) world_co: (%f, %f, %f)\r\n", j,
+        key->co[0], key->co[1], key->co[2],
+        key->world_co[0], key->world_co[1], key->world_co[2]);
+    }
+  }
+}
+static void DumpPathCache(const ParticleSystem *ps, ParticleCacheKey *const *pathCache)
+{
+  return;
+  for (int i = 0; i < ps->totpart; ++i) {
+    ParticleCacheKey* cache = pathCache[i];
+    const int segments = cache->segments;
+    for (int i = 0; i <= segments; i++, cache++)
+    {
+      printf("%d co: (%f, %f, %f) world_co: (%f, %f, %f) segments: %d\\r\n", i,
+             cache->co[0], cache->co[1], cache->co[2],
+             cache->col[0], cache->col[1], cache->col[2],
+             cache->segments);
+
+    }
+  }
+}
+
+bool pe_from_simulation_poll(bContext *C)
+{
+  return 1;
+}
+
+void PARTICLE_OT_particle_edit_from_simulation(struct wmOperatorType *ot)
+{
+  ot->name = "Particle edit from simulation";
+  ot->idname = "PARTICLE_OT_particle_edit_from_simulation";
+  ot->description = "Apply the current simulation frame as particle edit";
+
+  ot->exec = particle_edit_from_simulation_exec;
+  ot->poll = pe_from_simulation_poll;
+
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
 
